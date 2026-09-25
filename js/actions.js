@@ -89,6 +89,12 @@ async function submitForm(form){
   const kind = form.dataset.form; const fd = new FormData(form); formErr(form, '');
   const val = k => String(fd.get(k) || '').trim();
 
+  if (kind === 'homeSearch'){
+    S.filter.q = val('q'); S.filter.cat = 'all'; S.filter.status = 'available';
+    go('browse');
+    return;
+  }
+
   if (kind === 'login'){
     const email = val('email'), pass = String(fd.get('password') || ''), signup = form.dataset.mode === 'signup';
     if (!email || !pass) return formErr(form, 'اكتب البريد الإلكتروني وكلمة المرور.');
@@ -260,7 +266,7 @@ const ACT = {
     const r = el.dataset.r, tab = el.dataset.tab;
     if (r === 'staff' && tab){ S.staffTab = tab; if (S.route.name === 'staff'){ updateStaff(); renderNav(); window.scrollTo(0, 0); return; } }
     if (r === 'admin' && tab) S.adminTab = tab;
-    const fromNav = !!el.closest('#nav');
+    const fromNav = !!el.closest('#nav, .top-links, .brand');
     if (fromNav) S.hist = [];
     go(r, {}, !fromNav);
   },
@@ -288,13 +294,14 @@ const ACT = {
         <button class="opt" data-act="signOut">${icon('x')}تسجيل الخروج</button>
       </div>`);
   },
-  async signOut(){ closeSheet(); S.mode = 'visitor'; LS.set('mode', 'visitor'); S.hist = []; S.route = {name: 'browse', params: {}}; await signOut(auth); toast('سُجّل خروجك'); },
+  async signOut(){ closeSheet(); S.mode = 'visitor'; LS.set('mode', 'visitor'); S.hist = []; S.route = {name: 'home', params: {}}; await signOut(auth); toast('سُجّل خروجك'); },
   pickOffice(){ go('pick'); },
   setOffice(el){ setOffice(el.dataset.id); },
   mode(el){ const m = el.dataset.v; if (!modes().includes(m)) return; S.mode = m; LS.set('mode', m); S.hist = []; go(homeRoute(), {}, false); },
   openItem(el){ go('item', {id: el.dataset.id}); },
   goClaim(el){ if (!needLogin()) go('claim', {id: el.dataset.id}); },
   fcat(el){ S.filter.cat = el.dataset.id; updateBrowse(); },
+  catGo(el){ S.filter.cat = el.dataset.id; S.filter.q = ''; S.filter.status = 'available'; go('browse'); },
   fstatus(el){ S.filter.status = el.dataset.v; updateBrowse(); },
   sTab(el){ S.staffTab = el.dataset.v; updateStaff(); renderNav(); },
   closeSheet(){ closeSheet(); },

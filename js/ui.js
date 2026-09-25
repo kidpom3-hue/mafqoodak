@@ -6,11 +6,14 @@ import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vO
 import { vStaff, updateStaff, vItemForm } from './views/staff.js';
 import { vAdmin, vOfficeForm } from './views/admin.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
+import { vHome, updateHome, vFound } from './views/home.js';
 import { cat } from './constants.js';
 
 /* live: تُعاد رسمها عند تغيّر البيانات. النماذج (live:false) لا تُعاد حتى لا يضيع ما كتبه المستخدم */
 const ROUTES = {
   pick: {live: true, v: vPick},
+  home: {live: true, v: vHome, update: updateHome},
+  found: {live: true, v: vFound},
   browse: {live: true, v: vBrowse, update: updateBrowse},
   item: {live: true, v: vItem},
   claim: {live: false, v: vClaimForm},
@@ -58,8 +61,9 @@ function renderMain(){
   if (!S.authReady || !S.configLoaded || !S.officesLoaded){ main.innerHTML = `<div class="loading"><span class="spin"></span></div>`; return; }
   if (S.route.name === 'login' && S.uid) S.route = S.route.params.next || {name: homeRoute(), params: {}};
   if (!S.config){ main.innerHTML = S.route.name === 'login' ? vLogin() : vSetup(); return; }
-  if (!curOffice() && !['pick', 'admin', 'officeForm', 'join', 'login'].includes(S.route.name)) S.route = {name: 'pick', params: {}};
-  const r = ROUTES[S.route.name] || ROUTES.browse;
+  // لا مكان مختار (أو لم يصل بعد من قاعدة البيانات): نعرض قائمة الأماكن دون تغيير الصفحة المطلوبة
+  if (!curOffice() && !['pick', 'admin', 'officeForm', 'join', 'login'].includes(S.route.name)){ main.innerHTML = vPick(); return; }
+  const r = ROUTES[S.route.name] || ROUTES.home;
   main.innerHTML = r.v();
   if (r.update) r.update();
   if (r.after) r.after();
@@ -70,7 +74,11 @@ function renderHeader(){
     : S.uid ? `<button class="avatar-btn" data-act="account" aria-label="حسابي">${S.me?.photo ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span>${esc((S.me?.name || '؟').trim().charAt(0))}</span>`}</button>`
     : `<button class="btn sm ghost" data-act="login">${icon('users')}دخول</button>`;
   $('#hdr').innerHTML = `<div class="top-row">
-      <div class="brand">${LOGO}<span class="wordmark">مفقودك</span></div>
+      <button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="الرئيسية">${LOGO}<span class="wordmark">مفقودك</span></button>
+      ${S.config && (o || S.mode === 'admin') ? `<nav class="top-links" aria-label="التنقل">${navItems().map(n => {
+        const on = S.route.name === n.r && (!n.tab || (n.r === 'staff' ? S.staffTab : S.adminTab) === n.tab);
+        return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}">${n.l}${n.b ? `<span class="count">${n.b}</span>` : ''}</button>`;
+      }).join('')}</nav>` : ''}
       <div class="top-actions">
         ${o ? `<button class="office-chip" data-act="pickOffice" aria-label="تغيير المكان">${icon(otype(o.type).icon)}<span>${esc(o.short || o.name)}</span>${icon('chev')}</button>` : ''}
         ${acct}
@@ -98,10 +106,11 @@ function navItems(){
     ];
   }
   return [
-    {r: 'browse', l: 'تصفّح', i: 'search'},
-    {r: 'report', l: 'بلّغ عن مفقود', i: 'plus'},
+    {r: 'home', l: 'الرئيسية', i: 'building'},
+    {r: 'browse', l: 'المفقودات', i: 'search'},
+    {r: 'report', l: 'بلّغ', i: 'plus'},
     {r: 'mine', l: 'طلباتي', i: 'inbox', b: S.route.name === 'mine' ? 0 : unseenCount()},
-    {r: 'office', l: 'المكتب', i: 'building'},
+    {r: 'office', l: 'المكتب', i: 'info'},
   ];
 }
 function renderNav(){

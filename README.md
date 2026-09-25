@@ -23,13 +23,13 @@
 2. ابقَ على الخطة المجانية **Spark**؛ لا تحتاج بطاقة بنكية.
 
 ### 3) فعّل تسجيل الدخول
-1. **Build ← Authentication ← Get started**.
+1. من القائمة الجانبية: **Security ← Authentication ← Get started**.
 2. في **Sign-in method** فعّل **Google** (اختر بريد الدعم) و**Email/Password**.
-3. في **Settings ← Authorized domains** اضغط **Add domain** وأضف:
+3. افتح تبويب **Settings** أعلى صفحة Authentication، ثم **Authorized domains** ← **Add domain** وأضف:
    `kidpom3-hue.github.io`
 
 ### 4) أنشئ قاعدة البيانات وانشر قواعد الحماية
-1. **Build ← Firestore Database ← Create database**.
+1. من القائمة الجانبية: **Databases & Storage ← Firestore ← Create database**. اترك Database ID كما هو `(default)`.
 2. اختر أقرب موقع متاح لك (مثل `me-central2` في الدمام إن ظهر في القائمة). **لا يمكن تغيير الموقع لاحقاً.**
 3. اختر **Start in production mode**.
 4. افتح تبويب **Rules**، واحذف المكتوب، والصق محتوى الملف [`firestore.rules`](firestore.rules) كاملاً، ثم اضغط **Publish**.
@@ -64,6 +64,7 @@
 | ربط Firebase، وحد التطابق، وتشغيل الذكاء الاصطناعي، وبيانات أول موقع | `js/config.js` |
 | التصنيفات وأنواعها، والألوان، وأنواع المنشآت، والأيقونات | `js/constants.js` |
 | ألوان التطبيق وخطوطه وشكله | `css/styles.css` (المتغيرات في `:root` بالأعلى) |
+| الصفحة الرئيسية، والأسئلة الشائعة، وصفحة «وجدت غرضاً» | `js/views/home.js` |
 | صفحات الزائر (التصفح، البلاغ، طلباتي، المكتب) | `js/views/visitor.js` |
 | صفحات موظف المكتب | `js/views/staff.js` |
 | صفحات الإدارة | `js/views/admin.js` |
@@ -102,7 +103,7 @@ python -m http.server 8000
 
 ## الذكاء الاصطناعي (اختياري ومجاني)
 يضيف ميزتين: التعرّف على الغرض من صورته وتعبئة الحقول، والمطابقة الذكية بين البلاغ والمفقودات.
-1. في Firebase: **Build ← AI Logic ← Get started**، واختر **Gemini Developer API**.
+1. في Firebase افتح قسم **AI Logic** من القائمة الجانبية ← **Get started**، واختر **Gemini Developer API**.
 2. في `js/config.js` غيّر `enableAI` إلى `true`.
 3. إذا ظهرت رسالة أن اسم النموذج غير صحيح، اختر اسماً حالياً من [قائمة النماذج](https://firebase.google.com/docs/ai-logic/models) وضعه في `aiModel`.
 

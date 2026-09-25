@@ -13,7 +13,7 @@ export const S = {
   staffDoc: null, staffLoaded: false, staffList: [], staffReqs: [], myReq: null, priv: {},
   officeId: LS.get('office', null),
   mode: LS.get('mode', 'visitor'),
-  route: {name: ({staff: 'staff', admin: 'admin'})[LS.get('mode', 'visitor')] || 'browse', params: {}},
+  route: {name: ({staff: 'staff', admin: 'admin'})[LS.get('mode', 'visitor')] || 'home', params: {}},
   hist: [],
   filter: {q: '', cat: 'all', status: 'available', range: 'all'},
   staffTab: 'items', staffQ: '', staffStatus: 'active', adminTab: 'overview',
@@ -33,7 +33,7 @@ export const item = id => S.items.find(i => i.id === id) || S.allItems.find(i =>
 export const staffOffices = () => S.isAdmin ? S.offices.map(o => o.id) : (S.staffDoc?.offices || []);
 export const isStaffHere = () => !!S.officeId && staffOffices().includes(S.officeId);
 export function modes(){ const m = ['visitor']; if (isStaffHere()) m.push('staff'); if (S.isAdmin) m.push('admin'); return m; }
-export const homeRoute = () => S.mode === 'staff' ? 'staff' : S.mode === 'admin' ? 'admin' : 'browse';
+export const homeRoute = () => S.mode === 'staff' ? 'staff' : S.mode === 'admin' ? 'admin' : 'home';
 export const myReports = () => S.reports.filter(r => r.uid && r.uid === S.uid).sort((a, b) => b.createdAt - a.createdAt);
 export const myClaims = () => S.claims.filter(c => c.uid && c.uid === S.uid).sort((a, b) => b.createdAt - a.createdAt);
 export const myCode = id => S.priv?.codes?.[id] || LS.get('codes', {})[id] || null;
@@ -143,7 +143,7 @@ export function fixMode(){
   if (!S.officesLoaded || (S.uid && (!S.staffLoaded || !S.adminLoaded))) return;
   if (!modes().includes(S.mode)){
     S.mode = 'visitor'; LS.set('mode', 'visitor');
-    if (['staff', 'add', 'admin', 'officeForm'].includes(S.route.name)) S.route = {name: 'browse', params: {}};
+    if (['staff', 'add', 'admin', 'officeForm'].includes(S.route.name)) S.route = {name: 'home', params: {}};
   }
 }
 
