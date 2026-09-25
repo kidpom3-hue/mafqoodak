@@ -3,6 +3,9 @@ import { start, onChange, onReset } from './state.js';
 import { renderAll, refresh } from './ui.js';
 import { bindEvents } from './actions.js';
 
+// إزالة اختصار الصفحة من الرابط بعد قراءته حتى لا يتكرر عند التحديث
+if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+
 bindEvents();
 onChange(refresh);   // تحديث جزئي عند وصول بيانات جديدة
 onReset(renderAll);  // إعادة رسم كاملة (تسجيل دخول/خروج، تغيير المكان)

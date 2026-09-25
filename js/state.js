@@ -13,7 +13,8 @@ export const S = {
   staffDoc: null, staffLoaded: false, staffList: [], staffReqs: [], myReq: null, priv: {},
   officeId: LS.get('office', null),
   mode: LS.get('mode', 'visitor'),
-  route: {name: ({staff: 'staff', admin: 'admin'})[LS.get('mode', 'visitor')] || 'home', params: {}},
+  // فتح صفحة محددة من اختصارات أيقونة التطبيق (مثل ./#report)
+  route: {name: ['report', 'browse', 'mine', 'found', 'office'].includes(location.hash.slice(1)) ? location.hash.slice(1) : ({staff: 'staff', admin: 'admin'})[LS.get('mode', 'visitor')] || 'home', params: {}},
   hist: [],
   filter: {q: '', cat: 'all', status: 'available', range: 'all'},
   staffTab: 'items', staffQ: '', staffStatus: 'active', adminTab: 'overview',
@@ -136,7 +137,7 @@ export function setOffice(id, silent){
   S.officeId = id; LS.set('office', id);
   fixMode(); ensureOfficeSubs();
   S.hist = []; S.route = {name: homeRoute(), params: {}}; S.sheet = null;
-  reset();
+  reset(); window.scrollTo(0, 0);
   if (!silent && changedOffice) toast('تم الدخول إلى ' + (curOffice()?.name || 'المكتب'));
 }
 export function fixMode(){
