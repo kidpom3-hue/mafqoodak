@@ -7,12 +7,12 @@
 //    هذه القيم ليست سرية؛ الحماية الحقيقية في ملف firestore.rules.
 
 export const firebaseConfig = {
-  apiKey: 'PASTE_API_KEY',
-  authDomain: 'PASTE_PROJECT_ID.firebaseapp.com',
-  projectId: 'PASTE_PROJECT_ID',
-  storageBucket: 'PASTE_PROJECT_ID.firebasestorage.app',
-  messagingSenderId: 'PASTE_SENDER_ID',
-  appId: 'PASTE_APP_ID',
+  apiKey: "AIzaSyDXcxgX8E1glOqnAICuHu1o_dJHTQEPywo",
+  authDomain: "mafqoodak-50269.firebaseapp.com",
+  projectId: "mafqoodak-50269",
+  storageBucket: "mafqoodak-50269.firebasestorage.app",
+  messagingSenderId: "24213358856",
+  appId: "1:24213358856:web:0af63853a50e2f791404bd",
 };
 
 // 2) إعدادات التطبيق
