@@ -1,0 +1,134 @@
+rules_version = '2';
+
+// قواعد حماية بيانات مفقودك
+// انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
+//
+// الأدوار:
+//   المالك/الإدارة  : وثيقة في admins/{uid}
+//   موظف المكتب     : وثيقة في staff/{uid} فيها قائمة offices بالمكاتب المسموحة
+//   الزائر المسجّل   : أي مستخدم سجّل دخوله
+//   الزائر غير المسجّل: يتصفح المواقع والمفقودات فقط
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function isAdmin() { return signedIn() && exists(/databases/$(database)/documents/admins/$(me())); }
+    function isStaffAny() { return isAdmin() || (signedIn() && exists(/databases/$(database)/documents/staff/$(me()))); }
+    function isStaffOf(officeId) {
+      return isAdmin() || (
+        signedIn()
+        && exists(/databases/$(database)/documents/staff/$(me()))
+        && officeId in get(/databases/$(database)/documents/staff/$(me())).data.offices
+      );
+    }
+    function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+    function smallImage() { return request.resource.data.data is string && request.resource.data.data.size() < 350000; }
+
+    // إعداد التطبيق: أول مستخدم يُكمل الإعداد يصبح المالك
+    match /config/app {
+      allow read: if true;
+      allow create: if signedIn()
+        && !exists(/databases/$(database)/documents/config/app)
+        && request.resource.data.ownerUid == me();
+      allow update: if isAdmin() && request.resource.data.ownerUid == resource.data.ownerUid;
+      allow delete: if false;
+    }
+
+    match /admins/{userId} {
+      allow read: if signedIn() && (userId == me() || isAdmin());
+      allow create: if isAdmin() || (
+        userId == me()
+        && !exists(/databases/$(database)/documents/config/app)
+        && getAfter(/databases/$(database)/documents/config/app).data.ownerUid == me()
+      );
+      // لا يمكن حذف المالك أو تعديله
+      allow update, delete: if isAdmin()
+        && userId != get(/databases/$(database)/documents/config/app).data.ownerUid;
+    }
+
+    // الملف العام للمستخدم (الاسم والصورة) يراه صاحبه والموظفون فقط
+    match /users/{userId} {
+      allow read: if signedIn() && (userId == me() || isStaffAny());
+      allow create, update: if signedIn() && userId == me();
+      allow delete: if false;
+
+      // رموز الاستلام الخاصة: لا يراها أحد غير صاحبها
+      match /private/{docId} {
+        allow read, write: if signedIn() && userId == me();
+      }
+    }
+
+    match /offices/{officeId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // المفقودات: يراها الجميع، ويعدّلها موظفو المكتب نفسه فقط
+    match /items/{itemId} {
+      allow read: if true;
+      allow create: if isStaffOf(request.resource.data.officeId);
+      allow update: if isStaffOf(resource.data.officeId)
+        && request.resource.data.officeId == resource.data.officeId;
+      allow delete: if isStaffOf(resource.data.officeId);
+    }
+
+    match /itemPhotos/{itemId} {
+      allow read: if true;
+      allow create, update: if smallImage()
+        && isStaffOf(get(/databases/$(database)/documents/items/$(itemId)).data.officeId);
+      allow delete: if isStaffAny();
+    }
+
+    // بلاغات المفقودات: يراها صاحبها وموظفو المكتب
+    match /reports/{reportId} {
+      allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
+      allow create: if signedIn()
+        && request.resource.data.uid == me()
+        && request.resource.data.status == 'open';
+      allow update: if signedIn() && (
+        (resource.data.uid == me()
+          && request.resource.data.uid == me()
+          && request.resource.data.officeId == resource.data.officeId)
+        || (isStaffOf(resource.data.officeId) && onlyChanges(['staffPick', 'pickedAt']))
+      );
+      allow delete: if signedIn() && (resource.data.uid == me() || isAdmin());
+    }
+
+    match /reportPhotos/{reportId} {
+      function report() { return get(/databases/$(database)/documents/reports/$(reportId)).data; }
+      allow read: if signedIn() && (report().uid == me() || isStaffOf(report().officeId));
+      allow create, update: if signedIn() && smallImage() && report().uid == me();
+      allow delete: if signedIn() && (report().uid == me() || isAdmin());
+    }
+
+    // طلبات الاستلام: يراها صاحبها وموظفو المكتب، ويغيّر حالتها الموظف فقط
+    match /claims/{claimId} {
+      allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
+      allow create: if signedIn()
+        && request.resource.data.uid == me()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.codeHash is string
+        && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.status == 'available'
+        && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.officeId == request.resource.data.officeId;
+      allow update: if isStaffOf(resource.data.officeId)
+        && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy']);
+      allow delete: if isAdmin();
+    }
+
+    // صلاحيات الموظفين: يمنحها ويسحبها المالك فقط
+    match /staff/{userId} {
+      allow read: if signedIn() && (userId == me() || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    match /staffRequests/{userId} {
+      allow read: if signedIn() && (userId == me() || isAdmin());
+      allow create, update: if signedIn() && (
+        (userId == me() && request.resource.data.status == 'pending') || isAdmin()
+      );
+      allow delete: if signedIn() && (userId == me() || isAdmin());
+    }
+  }
+}
