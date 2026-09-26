@@ -1,0 +1,14 @@
+{
+  "name": "mafqoodak-tools",
+  "private": true,
+  "description": "أدوات فحص للمطوّر فقط؛ لا يحمّلها التطبيق",
+  "type": "module",
+  "scripts": {
+    "test:rules": "firebase emulators:exec --only firestore --project demo-mafqoodak \"node rules.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase": "12.19.0",
+    "firebase-tools": "^13.35.1"
+  }
+}

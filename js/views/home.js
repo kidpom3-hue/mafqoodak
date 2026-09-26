@@ -1,6 +1,6 @@
 // الصفحة الرئيسية للمكان المختار + صفحة «وجدت غرضاً»
 import { icon, LOGO, otype } from '../constants.js';
-import { $, esc, daysWord } from '../utils.js';
+import { $, esc, daysWord, plural, W } from '../utils.js';
 import { S, curOffice } from '../state.js';
 import { card, skelCards } from './visitor.js';
 import { hydrate } from '../ui.js';
@@ -25,7 +25,7 @@ export function vHome(){
         <h1>فقدت شيئاً في <span class="hl">${esc(o.name)}</span>؟</h1>
         <p>كل ما يُسلَّم لمكتب المفقودات يُسجَّل هنا. ابحث عن غرضك، أو بلّغ عنه، واستلمه برمز تحقق.</p>
         <form class="hero-search" data-form="homeSearch" role="search">
-          ${icon('search')}<input id="hq" name="q" type="search" placeholder="مثال: محفظة بنية، سماعات، مفتاح" autocomplete="off" aria-label="ابحث في المفقودات">
+          ${icon('search')}<input id="hq" name="q" type="search" placeholder="مثال: محفظة، مفتاح سيارة، سماعات" autocomplete="off" aria-label="ابحث في المفقودات">
           <button class="btn" type="submit">ابحث</button>
         </form>
       </div>
@@ -48,7 +48,7 @@ export function vHome(){
       <div class="sec-head"><h2>كيف يعمل مفقودك؟</h2></div>
       <ol class="how how3">
         <li><b>ابحث أو بلّغ</b><span>ابحث في المفقودات المسجّلة، أو سجّل بلاغاً بوصف غرضك ليقارنه التطبيق بكل ما يُسلَّم.</span></li>
-        <li><b>أثبت ملكيتك</b><span>اضغط «هذا غرضي» واكتب تفاصيل لا يعرفها غير صاحبه، ويراجعها موظف المكتب.</span></li>
+        <li><b>أثبت ملكيتك</b><span>اضغط «هذا غرضي» واكتب تفاصيل لا يعرفها إلا صاحبه، ويراجعها موظف المكتب.</span></li>
         <li><b>استلم برمز التحقق</b><span>عند القبول يظهر لك رمز من 6 أرقام تقدّمه في المكتب وتستلم غرضك.</span></li>
       </ol>
     </section>
@@ -60,13 +60,14 @@ export function vHome(){
 export function updateHome(){
   const o = curOffice(); if (!o) return;
   const avail = S.items.filter(i => i.status === 'available' || i.status === 'reserved');
-  const returned = S.items.filter(i => i.status === 'returned').length;
+  const keep = o.retentionDays || 90;
   const st = $('#home-stats');
+  // «أُعيد لأصحابه» عدد من الخادم (getCountFromServer) بدل تحميل كل الأغراض المُسلَّمة
   if (st) st.innerHTML = !S.itemsLoaded ? '' : `
     <div><b>${avail.length}</b><span>متاح للاستلام</span></div>
-    <div><b>${returned}</b><span>أُعيد لأصحابه</span></div>
-    <div><b>${o.retentionDays || 90}</b><span>يوماً مدة الحفظ</span></div>`;
-  const cc = $('#cta-count'); if (cc && S.itemsLoaded) cc.textContent = avail.length ? `${avail.length} متاح الآن` : 'كل ما سُلّم للمكتب';
+    <div><b>${S.counts.returned ?? '…'}</b><span>أُعيد لأصحابه</span></div>
+    <div><b>${keep}</b><span>${plural(keep, {one: 'يوم', two: 'يومان', few: 'أيام', many: 'يوماً', other: 'يوم'})} مدة الحفظ</span></div>`;
+  const cc = $('#cta-count'); if (cc && S.itemsLoaded) cc.textContent = avail.length ? `المتاح الآن: ${plural(avail.length, W.item)}` : 'كل ما سُلّم للمكتب';
   const latest = $('#home-latest');
   if (latest){
     if (!S.itemsLoaded) latest.innerHTML = `<div class="hscroll" aria-busy="true" aria-label="جارٍ التحميل">${skelCards()}</div>`;
@@ -105,7 +106,7 @@ export function vFound(){
       <h1 class="hero-title">شكراً لأمانتك</h1>
       <p class="hero-sub">سلّم الغرض لمكتب المفقودات، ونحن نوصله لصاحبه.</p></section>
     <ol class="how how3">
-      <li><b>لا تحتفظ به</b><span>سلّمه في نفس اليوم إن استطعت؛ صاحبه يبحث عنه الآن غالباً.</span></li>
+      <li><b>لا تحتفظ به</b><span>سلّمه في اليوم نفسه إن استطعت؛ صاحبه يبحث عنه الآن غالباً.</span></li>
       <li><b>سلّمه لمكتب المفقودات</b><span>أخبر الموظف أين وجدته ومتى، فهذه المعلومات تساعد صاحبه على إثبات ملكيته.</span></li>
       <li><b>يُسجَّل ويظهر لصاحبه</b><span>يسجّله الموظف هنا، ويصل تنبيه لمن سجّل بلاغاً عن غرض مشابه.</span></li>
     </ol>

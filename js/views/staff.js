@@ -1,6 +1,6 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
 import { icon, CATS, cat, catName, colorName, ITEM_STATUS, CLAIM_STATUS } from '../constants.js';
-import { $, $$, esc, today, dayNum, daysAgo, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText } from '../utils.js';
+import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, plural, W } from '../utils.js';
 import { S, curOffice, item, full, candidatesFor } from '../state.js';
 import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, colorPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm } from './common.js';
 import { hydrate } from '../ui.js';
@@ -24,25 +24,37 @@ export function vStaff(){
   </div>`;
 }
 let toolsTab = null;
+const keepOf = () => curOffice()?.retentionDays || 90;
+// أيام متبقية على نهاية مدة الحفظ (سالبة = تجاوزها)
+export const keepLeft = i => keepOf() - daysAgo(i.foundDate);
+// طلبات منافسة: طلبات قيد المراجعة على غرض محجوز لطلب آخر
+export const rivals = i => i?.status === 'reserved' ? S.claims.filter(c => c.itemId === i.id && c.status === 'pending' && c.id !== i.reservedFor) : [];
+// انتهت مهلة الاستلام للطلب المقبول؟
+export const pickupOver = c => c.status === 'approved' && c.pickupBy && Date.now() > c.pickupBy;
+const dateOf = ms => { const d = new Date(ms); return fmtDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`); };
+export { dateOf };
+
 export function updateStaff(){
-  const it = S.items, o = curOffice(), keep = o?.retentionDays || 90;
+  const it = S.items;
   const pend = S.claims.filter(c => c.status === 'pending').length;
   const openR = S.reports.filter(r => r.status === 'open').length;
-  const over = it.filter(i => (i.status === 'available') && daysAgo(i.foundDate) > keep).length;
+  const over = it.filter(i => i.status === 'available' && keepLeft(i) < 0).length;
+  const late = S.claims.filter(pickupOver).length;
   $('#s-stats').innerHTML = `
     <div class="stat"><b>${it.filter(i => i.status === 'available').length}</b><span>متاح للاستلام</span></div>
     <div class="stat"><b>${it.filter(i => i.status === 'reserved').length}</b><span>محجوز بانتظار صاحبه</span></div>
     <div class="stat ${pend ? 'hot' : ''}"><b>${pend}</b><span>طلبات استلام جديدة</span></div>
     <div class="stat"><b>${openR}</b><span>بلاغات مفتوحة</span></div>
-    <div class="stat"><b>${it.filter(i => i.status === 'returned').length}</b><span>سُلّم لأصحابه</span></div>
-    ${over ? `<div class="stat hot"><b>${over}</b><span>تجاوز مدة الحفظ</span></div>` : ''}`;
+    <div class="stat"><b>${S.counts.returned ?? '…'}</b><span>سُلّم لأصحابه</span></div>
+    ${over ? `<div class="stat hot"><b>${over}</b><span>تجاوز مدة الحفظ</span></div>` : ''}
+    ${late ? `<div class="stat hot"><b>${late}</b><span>انتهت مهلة استلامه</span></div>` : ''}`;
   $$('#s-tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === S.staffTab));
   if (toolsTab !== S.staffTab || !$('#s-tools').innerHTML){
     toolsTab = S.staffTab;
     $('#s-tools').innerHTML = S.staffTab === 'items' ? `<div class="filters">
         <label class="searchbar" style="flex:1;min-width:200px">${icon('search')}<input id="sq" type="search" placeholder="ابحث برقم القيد أو الاسم…" value="${esc(S.staffQ)}" aria-label="بحث في المستودع"></label>
         <select class="select-sm" id="sstatus" aria-label="الحالة">
-          <option value="active">المتاح والمحجوز</option><option value="returned">المُسلّم</option><option value="archived">المؤرشف</option><option value="all">الكل</option>
+          <option value="active">المتاح والمحجوز</option><option value="returned">المُسلّم</option><option value="archived">المؤرشف</option><option value="disposed">المُتصرَّف فيه</option><option value="all">الكل</option>
         </select>
         <button class="btn sm" data-act="nav" data-r="add">${icon('plus')}أضف غرضاً</button>
       </div>` : '';
@@ -52,39 +64,57 @@ export function updateStaff(){
   hydrate();
   migrateItems();   // نقل تفاصيل الأغراض القديمة إلى الملف السري (مرة واحدة)
 }
+// تنبيه مدة الحفظ: قائمة ما تجاوزها مع إجراء جماعي «تصرّف»، وما سينتهي خلال 7 أيام
+function retentionBox(){
+  const avail = S.items.filter(i => i.status === 'available');
+  const over = avail.filter(i => keepLeft(i) < 0), soon = avail.filter(i => keepLeft(i) >= 0 && keepLeft(i) <= 7);
+  if (!over.length && !soon.length) return '';
+  return `<div class="note warn retention">${icon('clock')}<span>
+      ${over.length ? `<b>تجاوز مدة الحفظ: ${plural(over.length, W.item)}.</b> اختر طريقة التصرّف.` : ''}
+      ${soon.length ? `${over.length ? '<br>' : ''}تنتهي خلال 7 أيام مدة حفظ ${plural(soon.length, W.itemGen)}.` : ''}</span>
+    ${over.length ? `<button class="btn sm" data-act="dispose">${icon('check')}تصرّف</button>` : ''}</div>`;
+}
 export function staffItems(){
-  const keep = curOffice()?.retentionDays || 90;
-  let arr = S.items.slice();
-  if (S.staffStatus === 'active') arr = arr.filter(i => i.status === 'available' || i.status === 'reserved');
-  else if (S.staffStatus !== 'all') arr = arr.filter(i => i.status === S.staffStatus);
+  const st = S.staffStatus;
+  let arr;
+  if (st === 'active') arr = S.items.slice();
+  else {
+    // غير النشط يُجلب عند اختيار الفلتر فقط
+    const need = st === 'all' ? ['returned', 'archived', 'disposed'] : [st];
+    if (need.some(k => !S.extraItems[k])) return `<div class="list" aria-busy="true">${[1, 2, 3].map(() => '<div class="row skel"><div class="row-thumb"></div><div class="row-main"><span class="skel-line"></span><span class="skel-line short"></span></div></div>').join('')}</div>`;
+    arr = [...(st === 'all' ? S.items : []), ...need.flatMap(k => S.extraItems[k])];
+  }
   arr = arr.map(full);   // الموظف يبحث ويرى التفاصيل السرية أيضاً
   const q = tokens(S.staffQ);
   if (q.length) arr = arr.filter(i => textScore(q, i) > 0 || norm(i.ref).includes(norm(S.staffQ)));
   arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
-  if (!arr.length) return `<div class="empty">${icon('box')}<b>لا توجد عناصر</b><button class="btn soft" data-act="nav" data-r="add">${icon('plus')}سجّل أول غرض</button></div>`;
-  return `<div class="list">${arr.map(i => `
+  const head = st === 'active' ? retentionBox() : '';
+  if (!arr.length) return head + `<div class="empty">${icon('box')}<b>لا توجد عناصر</b>${st === 'active' ? `<button class="btn soft" data-act="nav" data-r="add">${icon('plus')}سجّل أول غرض</button>` : ''}</div>`;
+  return head + `<div class="list">${arr.map(i => { const left = keepLeft(i), rv = rivals(i).length; return `
     <article class="row" role="button" tabindex="0" data-act="openItem" data-id="${esc(i.id)}">
       ${thumbHtml(i)}
       <div class="row-main">
-        <div class="row-top"><span class="ref">${esc(i.ref)}</span>${pill(ITEM_STATUS, i.status)}${i.sample ? '<span class="pill mute">مثال</span>' : ''}</div>
+        <div class="row-top"><span class="ref">${esc(i.ref)}</span>${pill(ITEM_STATUS, i.status)}${rv ? '<span class="pill bad">طلب منافس</span>' : ''}${i.sample ? '<span class="pill mute">مثال</span>' : ''}</div>
         <div class="row-title">${esc(i.title)}</div>
-        <div class="meta">${esc(spotText(i))} · ${relDay(i.foundDate)}${i.storage ? ' · ' + esc(i.storage) : ''}${i.status === 'available' && daysAgo(i.foundDate) > keep ? ' · <span class="flag">تجاوز مدة الحفظ</span>' : ''}</div>
+        <div class="meta">${esc(spotText(i))} · ${relDay(i.foundDate)}${i.storage ? ' · ' + esc(i.storage) : ''}${i.status === 'available' && left < 0 ? ' · <span class="flag">تجاوز مدة الحفظ</span>' : i.status === 'available' && left <= 7 ? ` · <span class="flag">${left ? `تنتهي مدة حفظه خلال ${daysWord(left)}` : 'تنتهي مدة حفظه اليوم'}</span>` : ''}</div>
       </div>
-    </article>`).join('')}</div>`;
+    </article>`; }).join('')}</div>`;
 }
 /* مقارنة إجابات صاحب الطلب بالحقيقة (من itemSecrets) */
 const OK = '<span class="v ok">✓</span>', OK2 = '<span class="v ok">✓✓</span>', NO = '<span class="v bad">✗</span>', NA = '<span class="v mute">لم يحدد</span>';
+// نتيجة المقارنة الآلية: اللون والمكان والتاريخ (تُستخدم في الجدول وفي تحذير القبول)
+export function claimChecks(c, f){
+  const color = !c.color ? NA : !f?.color ? '' : c.color === f.color ? OK : NO;
+  const place = !c.lostSpot ? NA : !f?.spot ? '' : c.lostSpot !== f.spot ? NO : (c.bldg && c.bldg === f.bldg ? OK2 : OK);
+  const gap = c.lostDate && f?.foundDate ? dayNum(f.foundDate) - dayNum(c.lostDate) : null;
+  const date = !c.lostDate ? NA : gap === null ? '' : gap >= 0 && gap <= 14 ? OK : NO;
+  return {color, place, date, hits: [color, place, date].filter(v => v === OK || v === OK2).length};
+}
 function claimCompare(c, f){
   if (!f) return '';
   const said = x => x ? esc(x) : '<span class="muted">لم يحدد</span>', truth = x => x ? esc(x) : '<span class="muted">—</span>';
-  // اللون: مطابقة تلقائية
-  const color = !c.color ? NA : !f.color ? '' : c.color === f.color ? OK : NO;
-  // المكان: ✓ المنطقة نفسها، ✓✓ والمبنى نفسه أيضاً
-  const place = !c.lostSpot ? NA : !f.spot ? '' : c.lostSpot !== f.spot ? NO : (c.bldg && c.bldg === f.bldg ? OK2 : OK);
-  // التاريخ: فُقد قبل العثور أو في يومه، وبفارق 14 يوماً على الأكثر
-  const gap = c.lostDate && f.foundDate ? dayNum(f.foundDate) - dayNum(c.lostDate) : null;
-  const date = !c.lostDate ? NA : gap === null ? '' : gap >= 0 && gap <= 14 ? OK : NO;
-  const hits = [color, place, date].filter(v => v === OK || v === OK2).length;
+  // اللون: مطابقة تلقائية · المكان: ✓ المنطقة نفسها، ✓✓ والمبنى نفسه · التاريخ: فُقد قبل العثور أو في يومه، بفارق 14 يوماً على الأكثر
+  const {color, place, date, hits} = claimChecks(c, f);
   const row = (k, a, b, v = '') => `<div class="cmp-row"><b>${k}</b><span>${a}</span><span>${b}</span>${v || '<span class="v"></span>'}</div>`;
   return `<div class="cmp">
     <div class="cmp-row cmp-head"><b></b><span>قال صاحب الطلب</span><span>الحقيقة</span><span class="v"></span></div>
@@ -99,29 +129,44 @@ function claimCompare(c, f){
 export function claimCardStaff(c){
   const i = item(c.itemId);
   // تحذير: طلبات كثيرة من المستخدم نفسه في هذا المكتب خلال 30 يوماً
-  const month = c.uid === 'deleted' ? 0 : S.claims.filter(x => x.uid === c.uid && x.createdAt >= Date.now() - 30 * 864e5).length;
-  const actions = c.status === 'pending' ? `<div class="btn-row">
+  const all = [...S.claims, ...(S.claimHist || []).filter(h => !S.claims.some(x => x.id === h.id))];
+  const month = c.uid === 'deleted' ? 0 : all.filter(x => x.uid === c.uid && x.createdAt >= Date.now() - 30 * 864e5).length;
+  const own = c.uid === S.uid;   // فصل المهام: لا يقرر الموظف في طلب أرسله هو
+  const late = pickupOver(c);
+  const rv = c.status === 'approved' && i ? rivals(i).length : 0;
+  const actions = own && ['pending', 'approved'].includes(c.status) ? `<div class="note">${icon('info')}<span>طلبك الشخصي: يراجعه موظف آخر.</span></div>`
+    : c.status === 'pending' ? `<div class="btn-row">
       <button class="btn sm" data-act="approve" data-id="${esc(c.id)}">${icon('check')}قبول</button>
       <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}رفض</button></div>`
-    : c.status === 'approved' ? `<button class="btn sm" data-act="verify" data-id="${esc(c.id)}">${icon('shield')}تحقق من الرمز وسلّم</button>` : '';
+    : c.status === 'approved' ? `<div class="btn-row">
+      <button class="btn sm" data-act="verify" data-id="${esc(c.id)}">${icon('shield')}تحقق من الرمز وسلّم</button>
+      ${late ? `<button class="btn sm ghost" data-act="release" data-id="${esc(c.id)}">${icon('swap')}أعد إتاحته</button>` : ''}
+      <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}ألغِ القبول</button></div>` : '';
   return `<div class="box">
-    <div class="box-head"><div class="claim-who">${person(c.uid)}<span class="meta">${relTime(c.createdAt)}</span>${month >= 3 ? `<span class="pill bad">أرسل ${month} طلبات هذا الشهر</span>` : ''}</div>${pill(CLAIM_STATUS, c.status)}</div>
+    <div class="box-head"><div class="claim-who">${person(c.uid)}<span class="meta">${relTime(c.createdAt)}</span>${month >= 3 ? `<span class="pill bad">أرسل ${plural(month, W.claim)} هذا الشهر</span>` : ''}${rv ? '<span class="pill bad">طلب منافس</span>' : ''}</div>${pill(CLAIM_STATUS, c.status)}</div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
+    ${c.status === 'approved' && c.pickupBy ? `<div class="meta ${late ? 'flag' : ''}">${late ? 'انتهت مهلة الاستلام في ' : 'مهلة الاستلام حتى '}${dateOf(c.pickupBy)}</div>` : ''}
+    ${rv ? `<div class="note warn">${icon('info')}<span>وصل طلب آخر على هذا الغرض بعد قبول هذا الطلب. راجِعه قبل التسليم.</span></div>` : ''}
     ${i ? claimCompare(c, full(i)) : `<div class="proof">${esc(c.proof)}</div>`}
-    ${c.status === 'rejected' && c.note ? `<div class="meta">سبب الرفض: ${esc(c.note)}</div>` : ''}
+    ${['rejected', 'expired', 'cancelled'].includes(c.status) && c.note ? `<div class="meta">${c.status === 'rejected' ? 'سبب الرفض' : 'ملاحظة'}: ${esc(c.note)}</div>` : ''}
     ${actions}
   </div>`;
 }
 export function staffClaims(){
   const cs = S.claims.slice().sort((a,b) => b.createdAt - a.createdAt);
-  const pend = cs.filter(c => c.status === 'pending'), appr = cs.filter(c => c.status === 'approved'), hist = cs.filter(c => c.status === 'done' || c.status === 'rejected').slice(0, 20);
-  if (!cs.length) return `<div class="empty">${icon('inbox')}<b>لا توجد طلبات استلام بعد</b></div>`;
+  const pend = cs.filter(c => c.status === 'pending'), appr = cs.filter(c => c.status === 'approved' && !pickupOver(c)), late = cs.filter(pickupOver);
+  const hist = (S.claimHist || []).slice().sort((a,b) => (b.decidedAt || b.doneAt || b.createdAt) - (a.decidedAt || a.doneAt || a.createdAt)).slice(0, 50);
   return `
     <div class="section-title">بانتظار المراجعة ${pend.length ? `<span class="count">${pend.length}</span>` : ''}</div>
-    ${pend.length ? `<div class="list">${pend.map(claimCardStaff).join('')}</div>` : `<p class="muted">لا يوجد.</p>`}
+    ${pend.length ? `<div class="list">${pend.map(claimCardStaff).join('')}</div>` : `<p class="muted">لا توجد طلبات جديدة.</p>`}
+    ${late.length ? `<div class="section-title">انتهت مهلة الاستلام <span class="count">${late.length}</span></div>
+      <p class="muted">لم يحضر أصحاب هذه الطلبات في المهلة. أعد إتاحة الغرض ليطلبه صاحبه الحقيقي.</p>
+      <div class="list">${late.map(claimCardStaff).join('')}</div>` : ''}
     <div class="section-title">مقبولة — بانتظار حضور صاحبها</div>
     ${appr.length ? `<div class="list">${appr.map(claimCardStaff).join('')}</div>` : `<p class="muted">لا يوجد.</p>`}
-    ${hist.length ? `<div class="section-title">السجل</div><div class="list">${hist.map(claimCardStaff).join('')}</div>` : ''}`;
+    <div class="section-title">السجل</div>
+    ${S.claimHist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}اعرض الطلبات المنتهية</button>`
+      : hist.length ? `<div class="list">${hist.map(claimCardStaff).join('')}</div>` : `<p class="muted">لا يوجد.</p>`}`;
 }
 export function staffReports(){
   const rs = S.reports.filter(r => r.status === 'open').sort((a,b) => b.createdAt - a.createdAt);
@@ -134,7 +179,7 @@ export function staffReports(){
       ${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}
       <div class="meta">${person(r.uid)} · فُقد ${r.spot ? 'في ' + esc(spotText(r)) + ' ' : ''}${fmtDate(r.lostDate)}</div>
       ${acceptBtn(r)}
-      ${cands.length ? `<span class="label">مرشحون من المستودع</span><div class="list">${cands.map(({i, s}) => `<div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
+      ${cands.length ? `<span class="label">مرشّحون من المستودع</span><div class="list">${cands.map(({i, s}) => `<div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
         ${r.staffPick === i.id ? `<span class="pill ok">${icon('check')}مُرشّح</span>` : `<button class="btn sm soft" data-act="pickFor" data-r="${esc(r.id)}" data-i="${esc(i.id)}">رشّح</button>`}</div>`).join('')}</div>`
         : `<p class="muted">لا يوجد غرض مشابه في المستودع حالياً.</p>`}
     </div>`; }).join('')}</div>`;

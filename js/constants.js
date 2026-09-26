@@ -64,7 +64,7 @@ export const CATS = [
   {id:'study', name:'كتب وأدوات دراسية', icon:'book', subs:['كتاب','دفتر','ملف أوراق','مقلمة','أدوات هندسية']},
   {id:'clothes', name:'ملابس', icon:'shirt', subs:['شماغ أو غترة','عباية','جاكيت','قبعة','حذاء']},
   {id:'tools', name:'عُدد وأدوات ورش', icon:'wrench', subs:['عدة يدوية','جهاز قياس','خوذة سلامة','نظارة سلامة','قفازات']},
-  {id:'bottles', name:'قوارير ومطارات', icon:'bottle', subs:['قارورة ماء','مطارة قهوة','علبة طعام']},
+  {id:'bottles', name:'قوارير وحافظات', icon:'bottle', subs:['قارورة ماء','حافظة قهوة (ترمس)','علبة طعام']},
   {id:'other', name:'أخرى', icon:'box', subs:[]},
 ];
 export const COLORS = [
@@ -99,16 +99,23 @@ export const ITEM_STATUS = {
   reserved:{l:'محجوز بانتظار صاحبه',c:'warn'},
   returned:{l:'سُلّم لصاحبه',c:'info'},
   archived:{l:'مؤرشف',c:'mute'},
+  disposed:{l:'انتهت مدة حفظه',c:'mute'},
 };
 export const CLAIM_STATUS = {
   pending:{l:'قيد المراجعة',c:'warn'},
   approved:{l:'جاهز للاستلام',c:'ok'},
   done:{l:'تم الاستلام',c:'info'},
   rejected:{l:'لم يُقبل',c:'bad'},
+  expired:{l:'انتهت مهلة الاستلام',c:'mute'},
+  cancelled:{l:'أُلغي',c:'mute'},
 };
 export const REPORT_STATUS = { open:{l:'بلاغ مفتوح',c:'warn'}, closed:{l:'مغلق',c:'mute'} };
 export const MODE_LABEL = {visitor:'زائر', staff:'موظف المكتب', admin:'الإدارة'};
 
+// أسماء أنواع قديمة غيّرناها: القيمة المخزّنة في المستندات القديمة ← الاسم الحالي (للعرض والبحث والمطابقة)
+// «مطارة» كانت تُقرأ «مطار» في منصة ستخدم المطارات
+export const LEGACY_SUBS = {'مطارة قهوة': 'حافظة قهوة (ترمس)'};
+export const subName = s => LEGACY_SUBS[s] || s || '';
 export const cat = id => CATS.find(c => c.id === id) || CATS[CATS.length-1];
 export const catName = id => cat(id).name;
 export const color = id => COLORS.find(c => c.id === id);

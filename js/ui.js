@@ -123,6 +123,8 @@ function renderHeader(){
         ${acct}
       </div>
     </div>
+    ${S.uid && !S.verified ? `<div class="verify-bar" role="status">${icon('lock')}<span>وثّق بريدك لتستطيع تسجيل البلاغات وطلبات الاستلام.</span>
+      <button class="btn sm" data-act="checkVerified">وثّقته</button><button class="btn sm ghost" data-act="resendVerify">أعد الإرسال</button></div>` : ''}
     ${ms.length > 1 ? `<div class="seg modes" role="tablist" aria-label="طريقة العرض">${ms.map(m => `<button class="${S.mode === m ? 'on' : ''}" data-act="mode" data-v="${m}" role="tab" aria-selected="${S.mode === m}">${({visitor: 'زائر', staff: 'موظف المكتب', admin: 'الإدارة'})[m]}</button>`).join('')}</div>` : ''}`;
   syncHeader();
 }
