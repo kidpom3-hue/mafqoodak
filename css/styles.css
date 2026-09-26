@@ -400,3 +400,24 @@ form.hero-search{flex-direction:row;align-items:center;gap:8px;background:var(--
   #app{padding-bottom:32px}
   #toast{bottom:24px}
 }
+
+/* الجوالات الصغيرة: نعطي اسم المكتب في الشريط العلوي مساحة كافية بدل قطعه */
+@media (max-width:719px){
+  .brand{flex:none}
+  .top-actions{flex:1;justify-content:flex-end;max-width:none}
+}
+@media (max-width:400px){
+  .top-row{gap:8px}
+  .wordmark{font-size:18px}
+  .office-chip{padding-inline:10px 8px;gap:4px}
+  .office-chip svg:last-child{display:none}   /* سهم القائمة */
+}
+@media (max-width:340px){
+  .wordmark{display:none}   /* يبقى الشعار ظاهراً */
+}
+
+/* صفحة سياسة الخصوصية */
+.legal h2{font-size:17px;font-weight:700}
+.legal p,.legal li{font-size:14.5px;line-height:1.8}
+.legal ul{margin:0;padding-inline-start:20px;display:flex;flex-direction:column;gap:6px}
+.legal-link{align-self:center;font-size:13px}

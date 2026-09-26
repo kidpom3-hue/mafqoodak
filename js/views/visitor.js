@@ -94,6 +94,7 @@ export function updateBrowse(){
 /* ---------- item detail ---------- */
 export function vItem(){
   const i = item(S.route.params.id);
+  if (!i && !S.itemsLoaded) return `<div class="loading"><span class="spin"></span></div>`;   // رابط مشاركة: ننتظر تحميل المفقودات
   if (!i) return `<div class="wrap">${backBtn()}<div class="empty">${icon('box')}<b>لم يعد هذا الغرض موجوداً.</b></div></div>`;
   const c = cat(i.cat); const o = S.offices.find(x => x.id === i.officeId) || curOffice();
   const staffMode = S.mode === 'staff' || S.mode === 'admin';
@@ -139,6 +140,7 @@ export function vItem(){
           ${i.status === 'available' || i.status === 'reserved' ? `<dt>مدة الحفظ</dt><dd>${keepDays > 0 ? `متبقٍّ ${daysWord(keepDays)}` : '<span class="flag">انتهت مدة الحفظ</span>'}</dd>` : ''}
         </dl>
         ${actions}
+        <button class="btn ghost" data-act="share" data-id="${esc(i.id)}">${icon('share')}مشاركة</button>
       </div>
     </div>
     ${o ? `<div class="panel"><div class="section-title">${icon('building')}أين تستلم؟</div>
@@ -252,6 +254,17 @@ export function reportCardMine(r, focus){
 }
 
 /* ---------- visitor: office info ---------- */
+/* أسئلة شائعة — عدّلها كما تريد */
+const FAQ = [
+  ['كيف أعرف أن غرضي وصل إلى مكتب المفقودات؟', 'كل ما يُسلَّم للمكتب يُسجَّل هنا مع تصنيفه ولونه ومكان العثور عليه. ابحث عنه بكلمة أو تصفّح حسب التصنيف. إن لم تجده، سجّل بلاغاً وسننبّهك عند تسجيل غرض مشابه.'],
+  ['كيف أستلم غرضي؟', 'اضغط «هذا غرضي» واكتب تفاصيل لا تظهر في الإعلان. بعد أن يراجعها موظف المكتب ويقبل طلبك، يظهر لك رمز من 6 أرقام في «طلباتي» تقدّمه عند الاستلام.'],
+  ['لماذا لا تظهر كل تفاصيل الغرض؟', 'نُخفي بعض التفاصيل عمداً حتى لا يدّعي أحد ملكية غرض ليس له. هذه التفاصيل هي ما تثبت به أنك صاحبه.'],
+  ['وجدت غرضاً، ماذا أفعل؟', 'سلّمه لمكتب المفقودات مباشرة، ولا تحتفظ به أو تنشر صوره. الموظف يسجّله ليظهر لصاحبه هنا.'],
+  ['كم يُحفظ الغرض في المكتب؟', 'مدة الحفظ مذكورة أعلى هذه الصفحة. بعد انتهائها يتصرّف المكتب فيه وفق أنظمة المنشأة.'],
+  ['هل بياناتي ظاهرة للآخرين؟', 'لا. بلاغاتك وطلباتك لا يراها إلا أنت وموظف المكتب، وصور البطاقات والوثائق الشخصية لا تُنشر أبداً.'],
+  ['كيف أحذف حسابي وبياناتي؟', 'من صورة حسابك أعلى الشاشة اختر «حذف حسابي»، فتُحذف بياناتك وبلاغاتك وحسابك نهائياً. التفاصيل في «سياسة الخصوصية وشروط الاستخدام».'],
+];
+
 export function vOffice(){
   const o = curOffice();
   const req = S.myReq; const isStaff = isStaffHere();
@@ -266,13 +279,6 @@ export function vOffice(){
         <dt>مدة حفظ المفقودات</dt><dd>${daysWord(o.retentionDays || 90)}</dd>
       </dl>
     </div>
-    <div class="section-title">كيف يعمل مفقودك؟</div>
-    <ol class="how">
-      <li><b>ابحث في المفقودات</b><span>تصفّح ما سجّله المكتب حسب التصنيف واللون والمكان.</span></li>
-      <li><b>اطلب الاستلام</b><span>اكتب تفاصيل لا يعرفها إلا صاحب الغرض ليتحقق منها الموظف.</span></li>
-      <li><b>استلم برمز التحقق</b><span>بعد القبول يظهر لك رمز من 6 أرقام تقدّمه في المكتب.</span></li>
-      <li><b>أو سجّل بلاغاً</b><span>إن لم تجده، صف غرضك وسننبّهك عند تسجيل غرض مطابق.</span></li>
-    </ol>
     <button class="btn ghost" data-act="pickOffice">${icon('pin')}تغيير المكان</button>
     <div class="panel">
       <div class="section-title">${icon('users')}هل تعمل في مكتب المفقودات؟</div>
@@ -280,6 +286,21 @@ export function vOffice(){
       : req?.status === 'pending' ? `<div class="note warn">${icon('clock')}<span>طلب الصلاحية قيد المراجعة من إدارة التطبيق.</span></div>`
       : `<p class="muted">يمنح مالك التطبيق صلاحية إدخال المفقودات لموظفي كل مكتب.</p><button class="btn soft" data-act="nav" data-r="join">${icon('shield')}اطلب صلاحية موظف</button>`}
     </div>
+    <section class="home-sec">
+      <div class="sec-head"><h2>خصوصيتك أولاً</h2></div>
+      <div class="features">
+        <div class="feat">${icon('lock')}<b>بياناتك لا تظهر للآخرين</b><span>بلاغاتك وطلباتك يراها موظف المكتب فقط.</span></div>
+        <div class="feat">${icon('idcard')}<b>الوثائق بلا صور</b><span>البطاقات والهويات لا تُصوَّر ولا تُنشر تفاصيلها.</span></div>
+        <div class="feat">${icon('shield')}<b>تسليم برمز تحقق</b><span>رمز الاستلام لا يعرفه أحد غيرك.</span></div>
+        <div class="feat">${icon('spark')}<b>مطابقة تلقائية</b><span>نقارن بلاغك بكل غرض جديد وننبّهك عند التشابه.</span></div>
+      </div>
+    </section>
+
+    <section class="home-sec">
+      <div class="sec-head"><h2>أسئلة شائعة</h2></div>
+      <div class="faq">${FAQ.map(([q, a]) => `<details><summary>${esc(q)}${icon('chev')}</summary><p>${esc(a)}</p></details>`).join('')}</div>
+    </section>
+    <button class="link" data-act="nav" data-r="privacy" style="align-self:center">${icon('lock')}سياسة الخصوصية وشروط الاستخدام</button>
   </div>`;
 }
 export function vJoin(){

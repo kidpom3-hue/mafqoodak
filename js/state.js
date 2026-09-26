@@ -3,6 +3,10 @@ import { auth, db, dbx, configured, onAuthStateChanged, getRedirectResult } from
 import { LS, matchScore, toast } from './utils.js';
 import { SETTINGS } from './config.js';
 
+// رابط مشاركة غرض: ./#item/<رقم المكتب>/<رقم الغرض> يفتح صفحة الغرض مباشرة
+const SHARED = /^item\/([\w-]+)\/([\w-]+)$/.exec(location.hash.slice(1));
+if (SHARED) LS.set('office', SHARED[1]);
+
 export const S = {
   configured,
   authReady: false, uid: null, me: null,
@@ -14,7 +18,7 @@ export const S = {
   officeId: LS.get('office', null),
   mode: LS.get('mode', 'visitor'),
   // فتح صفحة محددة من اختصارات أيقونة التطبيق (مثل ./#report)
-  route: {name: ['report', 'browse', 'mine', 'found', 'office'].includes(location.hash.slice(1)) ? location.hash.slice(1) : ({staff: 'staff', admin: 'admin'})[LS.get('mode', 'visitor')] || 'home', params: {}},
+  route: SHARED ? {name: 'item', params: {id: SHARED[2]}} : {name: ['report', 'browse', 'mine', 'found', 'office', 'privacy'].includes(location.hash.slice(1)) ? location.hash.slice(1) : ({staff: 'staff', admin: 'admin'})[LS.get('mode', 'visitor')] || 'home', params: {}},
   hist: [],
   filter: {q: '', cat: 'all', status: 'available', range: 'all'},
   staffTab: 'items', staffQ: '', staffStatus: 'active', adminTab: 'overview',
@@ -191,6 +195,7 @@ export function authErr(e){
   if (c.includes('too-many-requests')) return 'محاولات كثيرة. انتظر قليلاً ثم حاول.';
   if (c.includes('network-request-failed')) return 'لا يوجد اتصال بالإنترنت.';
   if (c.includes('unauthorized-domain')) return 'هذا النطاق غير مصرّح له في Firebase. أضفه من Authentication ← Settings ← Authorized domains.';
+  if (c.includes('user-mismatch')) return 'اخترت حساب Google مختلفاً عن حسابك الحالي.';
   if (c.includes('operation-not-allowed')) return 'طريقة الدخول هذه غير مفعّلة في Firebase Authentication.';
   return 'تعذّر تسجيل الدخول. حاول مرة أخرى.';
 }

@@ -26,6 +26,7 @@ export function vLogin(){
       <button class="btn block" type="submit">${mode === 'signup' ? 'إنشاء الحساب' : 'دخول'}</button>
       ${mode === 'signin' ? `<button type="button" class="link" data-act="resetPass" style="align-self:center">نسيت كلمة المرور؟</button>` : ''}
     </form>
+    <p class="hint legal-link">بالمتابعة فأنت توافق على <button class="link" data-act="nav" data-r="privacy">سياسة الخصوصية وشروط الاستخدام</button>.</p>
   </div>`;
 }
 

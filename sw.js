@@ -1,12 +1,12 @@
 // Service Worker: يحفظ ملفات التطبيق ليفتح بسرعة ويعمل عند ضعف الاتصال.
 // الاستراتيجية: الشبكة أولاً (لتظهر تعديلاتك فوراً)، ثم النسخة المحفوظة إذا انقطع الاتصال.
 // عند تغيير أسماء الملفات غيّر رقم الإصدار هنا.
-const CACHE = 'mafqoodak-v3';
+const CACHE = 'mafqoodak-v4';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/styles.css',
   './js/main.js', './js/config.js', './js/firebase.js', './js/state.js', './js/ui.js', './js/actions.js',
   './js/constants.js', './js/utils.js', './js/ai.js', './js/sample-data.js',
-  './js/views/common.js', './js/views/home.js', './js/views/visitor.js', './js/views/staff.js', './js/views/admin.js', './js/views/auth.js',
+  './js/views/common.js', './js/views/home.js', './js/views/visitor.js', './js/views/staff.js', './js/views/admin.js', './js/views/auth.js', './js/views/privacy.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
 ];
 

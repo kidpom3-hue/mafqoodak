@@ -7,6 +7,7 @@ import { vStaff, updateStaff, vItemForm } from './views/staff.js';
 import { vAdmin, vOfficeForm } from './views/admin.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
 import { vHome, updateHome, vFound } from './views/home.js';
+import { vPrivacy } from './views/privacy.js';
 import { cat } from './constants.js';
 
 /* live: تُعاد رسمها عند تغيّر البيانات. النماذج (live:false) لا تُعاد حتى لا يضيع ما كتبه المستخدم */
@@ -27,6 +28,7 @@ const ROUTES = {
   officeForm: {live: false, v: vOfficeForm},
   login: {live: false, v: vLogin},
   setup: {live: false, v: vSetup},
+  privacy: {live: false, v: vPrivacy},
 };
 
 export function initForm(){
@@ -60,9 +62,9 @@ function renderMain(){
   if (!S.configured){ main.innerHTML = vNotConfigured(); return; }
   if (!S.authReady || !S.configLoaded || !S.officesLoaded){ main.innerHTML = `<div class="loading"><span class="spin"></span></div>`; return; }
   if (S.route.name === 'login' && S.uid) S.route = S.route.params.next || {name: homeRoute(), params: {}};
-  if (!S.config){ main.innerHTML = S.route.name === 'login' ? vLogin() : vSetup(); return; }
+  if (!S.config){ main.innerHTML = S.route.name === 'login' ? vLogin() : S.route.name === 'privacy' ? vPrivacy() : vSetup(); return; }
   // لا مكان مختار (أو لم يصل بعد من قاعدة البيانات): نعرض قائمة الأماكن دون تغيير الصفحة المطلوبة
-  if (!curOffice() && !['pick', 'admin', 'officeForm', 'join', 'login'].includes(S.route.name)){ main.innerHTML = vPick(); return; }
+  if (!curOffice() && !['pick', 'admin', 'officeForm', 'join', 'login', 'privacy'].includes(S.route.name)){ main.innerHTML = vPick(); return; }
   const r = ROUTES[S.route.name] || ROUTES.home;
   main.innerHTML = r.v();
   if (r.update) r.update();

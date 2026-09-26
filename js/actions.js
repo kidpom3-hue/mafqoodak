@@ -3,7 +3,8 @@ import { icon, cat, catName, colorName, ITEM_STATUS } from './constants.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord } from './utils.js';
 import { S, curOffice, item, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN } from './state.js';
 import { auth, dbx, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
-  signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut } from './firebase.js';
+  signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut,
+  deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider } from './firebase.js';
 import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav } from './ui.js';
 import { updateBrowse } from './views/visitor.js';
 import { updateStaff, staffItems } from './views/staff.js';
@@ -260,6 +261,40 @@ async function submitForm(form){
     closeSheet(); return;
   }
 
+  if (kind === 'delAccount'){
+    const user = auth.currentUser; if (!user) return;
+    busy(form, true);
+    // 1) إعادة التحقق من هويتك: Firebase يشترط دخولاً حديثاً قبل حذف الحساب
+    try {
+      if (user.providerData.some(p => p.providerId === 'password')){
+        const pass = String(fd.get('password') || '');
+        if (!pass){ busy(form, false); return formErr(form, 'اكتب كلمة المرور لتأكيد الحذف.'); }
+        await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, pass));
+      } else await reauthenticateWithPopup(user, new GoogleAuthProvider());
+    } catch (e){ busy(form, false); return formErr(form, authErr(e) || 'لم يكتمل التحقق. حاول مرة أخرى.'); }
+    try {
+      // 2) لا نحذف إن كان هناك طلب مقبول بانتظار الاستلام (الغرض محجوز له في المكتب)
+      const claims = await dbx.list('claims', [['uid', '==', user.uid]]);
+      if (claims.some(c => c.status === 'approved')){ busy(form, false); return formErr(form, 'لديك طلب استلام مقبول بانتظار حضورك. استلم غرضك أو اطلب من المكتب إلغاء الطلب، ثم احذف حسابك.'); }
+      // 3) حذف البيانات: الصورة قبل البلاغ (ترتيب تشترطه القواعد)، ثم الطلبات، ثم الملف الشخصي
+      const reports = await dbx.list('reports', [['uid', '==', user.uid]]);
+      for (const r of reports){ if (r.photo) await dbx.del('reportPhotos/' + r.id).catch(() => {}); await dbx.del('reports/' + r.id); }
+      for (const c of claims) await dbx.del('claims/' + c.id);
+      await dbx.del('users/' + user.uid + '/private/codes');
+      await dbx.del('staffRequests/' + user.uid).catch(() => {});
+      await dbx.del('users/' + user.uid);
+      // 4) حذف الحساب نفسه من Firebase Authentication
+      await deleteUser(user);
+    } catch (e){
+      console.warn(e); busy(form, false);
+      return formErr(form, String(e?.code || '').includes('permission-denied') ? 'تعذّر الحذف: قد تكون قواعد Firestore الجديدة لم تُنشر بعد. تواصل مع إدارة التطبيق.' : 'تعذّر إكمال الحذف. تحقق من الاتصال وحاول مرة أخرى.');
+    }
+    LS.set('codes', {}); LS.set('seen', []); LS.set('mode', 'visitor');
+    S.mode = 'visitor'; S.hist = []; S.route = {name: 'home', params: {}};
+    closeSheet(); renderAll(); toast('حُذف حسابك وبياناتك نهائياً');
+    return;
+  }
+
   if (kind === 'reject'){
     const c = S.claims.find(x => x.id === form.dataset.id); if (!c) return;
     busy(form, true);
@@ -309,7 +344,31 @@ const ACT = {
       <div class="list">
         <button class="opt" data-act="nav" data-r="mine">${icon('inbox')}طلباتي وبلاغاتي</button>
         <button class="opt" data-act="signOut">${icon('x')}تسجيل الخروج</button>
+        <button class="opt" data-act="nav" data-r="privacy">${icon('lock')}سياسة الخصوصية</button>
+        <button class="opt" data-act="deleteAccount" style="color:var(--bad)">${icon('trash')}حذف حسابي</button>
       </div>`);
+  },
+  deleteAccount(){
+    // مالك التطبيق ومديروه لا يحذفون حساباتهم من هنا حتى لا يفقد التطبيق إدارته
+    if (S.isAdmin) return openSheet(`<h2>حذف الحساب</h2><p class="muted">حسابك من حسابات إدارة التطبيق، ولا يمكن حذفه من هنا. انقل الإدارة لحساب آخر أولاً.</p><button class="btn ghost" data-act="closeSheet">حسناً</button>`);
+    const pw = auth.currentUser?.providerData.some(p => p.providerId === 'password');
+    openSheet(`<h2>${icon('trash')} حذف حسابي نهائياً</h2>
+      <p class="muted">سيُحذف حسابك واسمك وبريدك، وكل بلاغاتك وصورها، وطلبات الاستلام ورموزها. لا يمكن التراجع عن هذا.</p>
+      <form data-form="delAccount" novalidate>
+        ${pw ? `<div class="field"><label for="da-pass">اكتب كلمة المرور للتأكيد</label><input id="da-pass" name="password" type="password" class="input" dir="ltr" autocomplete="current-password"></div>`
+          : `<p class="hint">ستظهر نافذة Google لتأكيد هويتك.</p>`}
+        <div class="form-err" hidden></div>
+        <div class="btn-row"><button class="btn danger" type="submit">${icon('trash')}احذف حسابي</button><button type="button" class="btn ghost" data-act="closeSheet">إلغاء</button></div>
+      </form>`);
+  },
+  async share(el){
+    const i = item(el.dataset.id); if (!i) return;
+    // رابط مباشر يفتح نفس الغرض: ./#item/<المكتب>/<الغرض>
+    const url = location.origin + location.pathname + '#item/' + i.officeId + '/' + i.id;
+    const data = {title: `${i.title} — مفقودك`, text: `هل هذا غرضك؟ «${i.title}» (${i.ref}) في مكتب المفقودات.`, url};
+    if (navigator.share){ try { await navigator.share(data); return; } catch (e){ if (e?.name === 'AbortError') return; } }
+    try { await navigator.clipboard.writeText(url); toast('نُسخ رابط الغرض'); }
+    catch { openSheet(`<h2>${icon('share')} رابط الغرض</h2><input class="input" dir="ltr" readonly value="${esc(url)}" onfocus="this.select()"><button class="btn ghost" data-act="closeSheet">إغلاق</button>`); }
   },
   async signOut(){ closeSheet(); S.mode = 'visitor'; LS.set('mode', 'visitor'); S.hist = []; S.route = {name: 'home', params: {}}; await signOut(auth); toast('سُجّل خروجك'); },
   pickOffice(){ go('pick'); },
