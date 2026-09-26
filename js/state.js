@@ -1,6 +1,8 @@
 // حالة التطبيق والاشتراك في البيانات من Firestore
 import { auth, db, dbx, configured, onAuthStateChanged, getRedirectResult } from './firebase.js';
-import { LS, matchScore, toast, dayNum, subKey } from './utils.js';
+import { LS, matchScore, toast, dayNum, subKey, setSpotHook } from './utils.js';
+import { t, LANG, saved, setLang } from './i18n.js';
+import { oName, spotLabel } from './constants.js';
 import { SETTINGS } from './config.js';
 
 // رابط مشاركة غرض: ./#item/<رقم المكتب>/<رقم الغرض> يفتح صفحة الغرض مباشرة
@@ -66,7 +68,9 @@ export function modes(){ const m = ['visitor']; if (isStaffHere()) m.push('staff
 export const homeRoute = () => S.mode === 'staff' ? 'staff' : S.mode === 'admin' ? 'admin' : 'home';
 export const myReports = () => S.myReports.slice().sort((a, b) => b.createdAt - a.createdAt);
 export const myClaims = () => S.myClaims.slice().sort((a, b) => b.createdAt - a.createdAt);
-export const officeName = id => S.offices.find(o => o.id === id)?.name || '';
+export const officeName = id => oName(S.offices.find(o => o.id === id));
+// اسم المكان بلغة الواجهة (من spotsEn في المكتب)
+setSpotHook((s, officeId) => spotLabel(S.offices.find(o => o.id === (officeId || S.officeId)), s));
 export const myCode = id => S.priv?.codes?.[id] || LS.get('codes', {})[id] || null;
 export const MATCH_MIN = SETTINGS.matchThreshold;
 
@@ -128,14 +132,16 @@ export function start(){
 function onUser(user){
   clear('user'); clear('admin');
   S.uid = user?.uid || null;
-  S.me = user ? {name: user.displayName || (user.email || '').split('@')[0] || 'مستخدم', email: user.email || '', photo: user.photoURL || ''} : null;
+  S.me = user ? {name: user.displayName || (user.email || '').split('@')[0] || t('user.anon'), email: user.email || '', photo: user.photoURL || ''} : null;
   S.isAdmin = false; S.adminLoaded = !user; S.staffDoc = null; S.staffLoaded = !user;
   S.myReq = null; S.priv = {}; S.staffList = []; S.staffReqs = []; S.allItems = [];
   S.verified = !!user?.emailVerified;   // حسابات Google موثّقة تلقائياً
   clear('mine'); S.myReports = []; S.myClaims = [];
   S.authReady = true;
   if (user){
-    dbx.set('users/' + user.uid, {name: S.me.name, email: S.me.email, photo: S.me.photo, lastSeen: Date.now()}, {merge: true}).catch(errH('users'));
+    dbx.set('users/' + user.uid, {name: S.me.name, email: S.me.email, photo: S.me.photo, lastSeen: Date.now(), ...(saved() ? {lang: LANG} : {})}, {merge: true}).catch(errH('users'));
+    // لغة المستخدم المحفوظة في حسابه تُطبَّق إن لم يختر لغة على هذا الجهاز
+    if (!saved()) dbx.get('users/' + user.uid).then(d => { if (d?.lang && d.lang !== LANG){ setLang(d.lang); if (auth) auth.languageCode = d.lang; reset(); } }).catch(() => {});
     subs.user.push(dbx.watchDoc('admins/' + user.uid, d => {
       const was = S.isAdmin; S.isAdmin = !!d; S.adminLoaded = true;
       if (S.isAdmin && !was) startAdmin();
@@ -244,7 +250,7 @@ export function setOffice(id, silent){
   fixMode(); ensureOfficeSubs();
   S.hist = []; S.route = {name: homeRoute(), params: {}}; S.sheet = null;
   reset(); window.scrollTo(0, 0);
-  if (!silent && changedOffice) toast('تم الدخول إلى ' + (curOffice()?.name || 'المكتب'));
+  if (!silent && changedOffice) toast(t('office.entered', {name: oName(curOffice()) || t('office.generic')}));
 }
 export function fixMode(){
   // ننتظر تسجيل الدخول أيضاً: وإلا يعود الموظف إلى وضع الزائر إذا وصلت المواقع قبل حالة الدخول
@@ -270,11 +276,11 @@ export function getPhoto(key){
 export const cachePhoto = (key, dataUrl) => { if (dataUrl) PHOTO.set(key, Promise.resolve(dataUrl)); else PHOTO.delete(key); };
 const NAMES = new Map();
 export function getName(uid){
-  if (uid === S.uid) return Promise.resolve({name: 'أنت', photo: S.me?.photo || ''});
+  if (uid === S.uid) return Promise.resolve({name: t('user.you'), photo: S.me?.photo || ''});
   if (NAMES.has(uid)) return NAMES.get(uid);
   // صورة الحساب تُقبل من صور حسابات Google فقط (لا روابط تتبّع)
   const okPhoto = v => typeof v === 'string' && /^https:\/\/[a-z0-9.-]+\.googleusercontent\.com\//.test(v);
-  const p = dbx.get('users/' + uid).then(d => ({name: d?.name || 'مستخدم', photo: okPhoto(d?.photo) ? d.photo : ''})).catch(() => ({name: 'مستخدم', photo: ''}));
+  const p = dbx.get('users/' + uid).then(d => ({name: d?.name || t('user.anon'), photo: okPhoto(d?.photo) ? d.photo : ''})).catch(() => ({name: t('user.anon'), photo: ''}));
   NAMES.set(uid, p); return p;
 }
 
@@ -285,25 +291,16 @@ export async function write(fn, okMsg){
     console.warn(e);
     if (e?.msg){ toast(e.msg); return false; }   // رسالة عربية جاهزة من workflow.js
     const c = e?.code || '';
-    toast(c.includes('permission-denied') ? 'ليست لديك صلاحية لهذا الإجراء.'
-      : c.includes('resource-exhausted') ? 'تجاوز التطبيق حد الاستخدام اليومي المجاني. حاول لاحقاً.'
-      : c.includes('unavailable') ? 'لا يوجد اتصال بالإنترنت. سيُحفظ التغيير عند عودة الاتصال.'
-      : c.includes('invalid-argument') ? 'البيانات غير مكتملة أو كبيرة جداً.'
-      : 'تعذّر الحفظ الآن. حاول مرة أخرى.');
+    toast(t(c.includes('permission-denied') ? 'err.denied' : c.includes('resource-exhausted') ? 'err.quota'
+      : c.includes('unavailable') ? 'err.offline' : c.includes('invalid-argument') ? 'err.invalid' : 'err.save'));
     return false;
   }
 }
 export function authErr(e){
   const c = e?.code || '';
   if (c.includes('popup-closed') || c.includes('cancelled-popup')) return '';
-  if (c.includes('invalid-credential') || c.includes('wrong-password') || c.includes('user-not-found')) return 'البريد أو كلمة المرور غير صحيحة.';
-  if (c.includes('email-already-in-use')) return 'هذا البريد مسجّل من قبل. سجّل الدخول بدلاً من إنشاء حساب.';
-  if (c.includes('weak-password')) return 'كلمة المرور ضعيفة؛ استخدم 6 أحرف على الأقل.';
-  if (c.includes('invalid-email')) return 'صيغة البريد الإلكتروني غير صحيحة.';
-  if (c.includes('too-many-requests')) return 'محاولات كثيرة. انتظر قليلاً ثم حاول.';
-  if (c.includes('network-request-failed')) return 'لا يوجد اتصال بالإنترنت.';
-  if (c.includes('unauthorized-domain')) return 'هذا النطاق غير مصرّح له في Firebase. أضفه من Authentication ← Settings ← Authorized domains.';
-  if (c.includes('user-mismatch')) return 'اخترت حساب Google مختلفاً عن حسابك الحالي.';
-  if (c.includes('operation-not-allowed')) return 'طريقة الدخول هذه غير مفعّلة في Firebase Authentication.';
-  return 'تعذّر تسجيل الدخول. حاول مرة أخرى.';
+  const k = [['invalid-credential', 'badCred'], ['wrong-password', 'badCred'], ['user-not-found', 'badCred'], ['email-already-in-use', 'emailUsed'],
+    ['weak-password', 'weakPass'], ['invalid-email', 'badEmail'], ['too-many-requests', 'tooMany'], ['network-request-failed', 'offline'],
+    ['unauthorized-domain', 'domain'], ['user-mismatch', 'mismatch'], ['operation-not-allowed', 'method']].find(([x]) => c.includes(x));
+  return t('auth.' + (k ? k[1] : 'fail'));
 }

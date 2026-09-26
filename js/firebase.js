@@ -11,12 +11,13 @@ import {
   collection, doc, query, where, onSnapshot, getDoc, getDocs, getCountFromServer, setDoc, updateDoc, deleteDoc, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import { firebaseConfig } from './config.js';
+import { LANG } from './i18n.js';
 
 export const configured = !Object.values(firebaseConfig).some(v => String(v).includes('PASTE_'));
 
 export const app = configured ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null;
-if (auth) auth.languageCode = 'ar';
+if (auth) auth.languageCode = LANG;   // لغة رسائل Firebase تتبع لغة الواجهة
 
 let _db = null;
 if (app){

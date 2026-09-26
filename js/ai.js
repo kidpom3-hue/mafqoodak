@@ -4,6 +4,7 @@ import { SETTINGS } from './config.js';
 import { app } from './firebase.js';
 import { CATS, COLORS, catName, colorName } from './constants.js';
 import { spotText } from './utils.js';
+import { t } from './i18n.js';
 
 export const aiReady = () => !!(SETTINGS.enableAI && app);
 
@@ -38,10 +39,10 @@ async function askJson(prompt, blobs = []){
 }
 export function aiErrMsg(e){
   const s = String(e?.message || e || '');
-  if (/quota|429|RESOURCE_EXHAUSTED/i.test(s)) return 'تجاوزت حد الاستخدام المجاني للذكاء الاصطناعي اليوم. حاول لاحقاً.';
-  if (/not.*enabled|403|PERMISSION|has not been used|api-not-enabled/i.test(s)) return 'الذكاء الاصطناعي غير مفعّل في Firebase. راجع خطوة AI Logic في ملف README.';
-  if (/not found|404|model/i.test(s)) return 'اسم النموذج غير صحيح. عدّل aiModel في js/config.js.';
-  return 'تعذّر الاتصال بالذكاء الاصطناعي. حاول مرة أخرى.';
+  if (/quota|429|RESOURCE_EXHAUSTED/i.test(s)) return t('ai.quota');
+  if (/not.*enabled|403|PERMISSION|has not been used|api-not-enabled/i.test(s)) return t('ai.disabled');
+  if (/not found|404|model/i.test(s)) return t('ai.model');
+  return t('ai.fail');
 }
 
 /* يتعرّف على الغرض من صورته ويقترح التصنيف واللون والاسم والوصف */
@@ -50,7 +51,7 @@ export function analyzePhoto(blob){
 Identify the main object in the photo. Reply with ONLY one JSON object:
 {"cat":"<category id>","sub":"<one subcategory exactly as written below, or empty>","color":"<color id>","title":"<short Arabic name, 2-5 words>","desc":"<one Arabic sentence: brand if visible, material, shape, notable marks>"}
 Categories (id: name [subcategories]):
-${CATS.map(c => `${c.id}: ${c.name} [${c.subs.join('، ')}]`).join('\n')}
+${CATS.map(c => `${c.id}: ${c.name} [${c.subs.join(' | ')}]`).join('\n')}
 Color ids: ${COLORS.map(c => `${c.id}=${c.name}`).join(', ')}
 Never transcribe personal names, ID numbers, card numbers or phone numbers even if visible.`;
   return askJson(prompt, [blob]);

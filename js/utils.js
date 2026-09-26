@@ -1,5 +1,8 @@
 // أدوات مساعدة عامة: التواريخ، البحث العربي، المطابقة، الصور
-import { color, colorName, catName, subName } from './constants.js';
+import { color, colorName, cat, catName, subName, subLabel, searchWords, statusLabel, isBuilding, roomKind, norm, tokens, STOP } from './constants.js';
+import { t, tp, locale, isEn } from './i18n.js';
+// كانت هنا سابقاً؛ نعيد تصديرها حتى لا تتغيّر أماكن الاستيراد
+export { isBuilding, norm, tokens, STOP };
 
 /* ---------- helpers ---------- */
 export const $ = (s, r=document) => r.querySelector(s);
@@ -13,82 +16,55 @@ export const pad = n => String(n).padStart(2,'0');
 export const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
 export const dayNum = s => { if (!s) return NaN; const [y,m,d] = s.split('-').map(Number); return Date.UTC(y, m-1, d) / 864e5; };
 export const daysAgo = s => dayNum(today()) - dayNum(s);
-export let DF; try { DF = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', {day:'numeric', month:'long'}); } catch { DF = new Intl.DateTimeFormat('ar', {day:'numeric', month:'long'}); }
-export const fmtDate = s => { if (!s) return ''; const [y,m,d] = s.split('-').map(Number); return DF.format(new Date(y, m-1, d)); };
-/* ---------- العدد والمعدود بالعربية ----------
-   Intl.PluralRules('ar') يعطي: zero (0)، one (1)، two (2)، few (3–10)، many (11–99)، other (100 فأكثر)
-   plural(5, W.item) ← «5 أغراض»، و{n} في النص يُستبدل بالعدد */
-let PR; try { PR = new Intl.PluralRules('ar'); } catch { PR = {select: n => n === 0 ? 'zero' : n === 1 ? 'one' : n === 2 ? 'two' : n % 100 >= 3 && n % 100 <= 10 ? 'few' : n % 100 >= 11 ? 'many' : 'other'}; }
-export function plural(n, f){ const s = f[PR.select(n)] ?? f.other; return s.replace('{n}', n); }
-export const W = {
-  // item للرفع («المتاح: غرضان»)، itemAcc للنصب («أعدنا غرضين»)، itemGen للجر («تفاصيل غرضين»)
-  item:    {zero: 'لا أغراض', one: 'غرض واحد', two: 'غرضان', few: '{n} أغراض', many: '{n} غرضاً', other: '{n} غرض'},
-  itemAcc: {zero: 'لا أغراض', one: 'غرضاً واحداً', two: 'غرضين', few: '{n} أغراض', many: '{n} غرضاً', other: '{n} غرض'},
-  itemGen: {zero: 'لا أغراض', one: 'غرض واحد', two: 'غرضين', few: '{n} أغراض', many: '{n} غرضاً', other: '{n} غرض'},
-  openClaims: {one: 'طلب مفتوح', two: 'طلبان مفتوحان', few: '{n} طلبات مفتوحة', many: '{n} طلباً مفتوحاً', other: '{n} طلب مفتوح'},
-  alert:   {one: 'تنبيه جديد', two: 'تنبيهان جديدان', few: '{n} تنبيهات جديدة', many: '{n} تنبيهاً جديداً', other: '{n} تنبيه جديد'},
-  report:  {one: 'بلاغ واحد', two: 'بلاغان', few: '{n} بلاغات', many: '{n} بلاغاً', other: '{n} بلاغ'},
-  claim:   {zero: 'لا طلبات', one: 'طلباً واحداً', two: 'طلبين', few: '{n} طلبات', many: '{n} طلباً', other: '{n} طلب'},
-  sampleGen: {one: 'عنصر توضيحي واحد', two: 'عنصرين توضيحيين', few: '{n} عناصر توضيحية', many: '{n} عنصراً توضيحياً', other: '{n} عنصر توضيحي'},
-  staff:   {zero: 'لا موظفين', one: 'موظف واحد', two: 'موظفان', few: '{n} موظفين', many: '{n} موظفاً', other: '{n} موظف'},
-  stored:  {zero: 'لا محفوظات', one: 'غرض محفوظ', two: 'غرضان محفوظان', few: '{n} أغراض محفوظة', many: '{n} غرضاً محفوظاً', other: '{n} غرض محفوظ'},
-};
+// التاريخ حسب اللغة: ar-SA أو en-GB، بالتقويم الميلادي والأرقام اللاتينية في اللغتين
+const DFS = {};
+const df = () => DFS[locale()] || (DFS[locale()] = (() => { try { return new Intl.DateTimeFormat(locale(), {day: 'numeric', month: 'long'}); } catch { return new Intl.DateTimeFormat(isEn() ? 'en' : 'ar', {day: 'numeric', month: 'long'}); } })());
+export const fmtDate = s => { if (!s) return ''; const [y,m,d] = s.split('-').map(Number); return df().format(new Date(y, m-1, d)); };
 // المدة بالأيام: nom للرفع («متبقٍّ يومان»)، وبدونه للجر والنصب («قبل يومين»، «مدة الحفظ 90 يوماً»)
-export const daysWord = (n, nom = false) => plural(n, {zero: '0 يوم', one: 'يوم واحد', two: nom ? 'يومان' : 'يومين', few: '{n} أيام', many: '{n} يوماً', other: '{n} يوم'});
+export const daysWord = (n, nom = false) => tp(nom ? 'n.daysNom' : 'n.days', n);
 export function relDay(s){
   const d = daysAgo(s);
   if (isNaN(d)) return '';
-  if (d <= 0) return 'اليوم';
-  if (d === 1) return 'أمس';
-  if (d === 2) return 'قبل يومين';
-  if (d < 14) return `قبل ${plural(d, {two: 'يومين', few: '{n} أيام', many: '{n} يوماً', other: '{n} يوم'})}`;
+  if (d <= 0) return t('time.today');
+  if (d === 1) return t('time.yesterday');
+  if (d < 14) return tp('time.daysAgo', d);
   return fmtDate(s);
 }
 export function relTime(ms){
   if (!ms) return '';
   const m = Math.round((Date.now() - ms) / 6e4);
-  if (m < 1) return 'الآن';
-  if (m < 60) return 'قبل ' + plural(m, {one: 'دقيقة', two: 'دقيقتين', few: '{n} دقائق', many: '{n} دقيقة', other: '{n} دقيقة'});
+  if (m < 1) return t('time.now');
+  if (m < 60) return tp('time.minAgo', m);
   const h = Math.round(m / 60);
-  if (h < 24) return 'قبل ' + plural(h, {one: 'ساعة', two: 'ساعتين', few: '{n} ساعات', many: '{n} ساعة', other: '{n} ساعة'});
+  if (h < 24) return tp('time.hourAgo', h);
   const d = new Date(ms);
   return relDay(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`);
 }
-export const pill = (map, s) => map[s] ? `<span class="pill ${map[s].c}">${map[s].l}</span>` : '';
+export const pill = (map, s) => map[s] ? `<span class="pill ${map[s].c}">${statusLabel(map[s])}</span>` : '';
 export const colorDot = id => { const c = color(id); return c ? `<span class="dot" style="background:${c.hex}"></span>` : ''; };
 
-/* Arabic-aware text normalisation for search + matching */
-export const STOP = new Set(['في','من','على','عن','مع','الى','او','و','لون','فيه','فيها','به','بها','هذا','هذه','لي','كان','تم','عند','قرب','جنب','داخل']);
-export function norm(s){
-  return String(s || '').toLowerCase()
-    .replace(/[ً-ٰٟـ]/g, '')
-    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
-    .replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي').replace(/ء/g, '')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
-}
-export function tokens(s){
-  return norm(s).split(' ').map(t => {
-    if (t.length > 4 && (t.startsWith('وال') || t.startsWith('بال'))) t = t.slice(3);
-    else if (t.length > 3 && t.startsWith('ال')) t = t.slice(2);
-    return t;
-  }).filter(t => t.length > 1 && !STOP.has(t));
-}
-/* ---------- الأماكن داخل المباني ---------- */
-// الأماكن التي تقع داخل مبنى (قاعات، معامل، ورش، المبنى الإداري) نطلب لها رقم المبنى ورقم القاعة
-export const isBuilding = s => /قاع|معمل|معامل|ورش|مبنى|مباني/.test(s || '');
-// الكلمة المناسبة لرقم الغرفة حسب نوع المكان
-export const roomWord = s => /معمل|معامل/.test(s || '') ? 'المعمل' : /ورش/.test(s || '') ? 'الورشة' : /قاع/.test(s || '') ? 'القاعة' : /إدار/.test(s || '') ? 'المكتب' : 'الغرفة';
+/* ---------- المكان ---------- */
+// اسم المكان للعرض (بالإنجليزية من spotsEn في المكتب إن وُجد). تضبطه state.js بعد تحميل المكاتب
+let spotHook = s => s;
+export const setSpotHook = f => { spotHook = f; };
+// عنوان خانة رقم الغرفة: «رقم المعمل» / «Lab number»
+export const roomWord = s => t('room.label.' + roomKind(s));
 // نص المكان كاملاً، مثل: «معامل الحاسب · مبنى 3 · معمل 105» (بدون escape؛ استخدم esc عند العرض)
-export const spotText = x => !x?.spot ? '' : x.spot + (x.bldg ? ' · مبنى ' + x.bldg : '') + (x.room ? ' · ' + roomWord(x.spot).replace(/^ال/, '') + ' ' + x.room : '');
+export const spotText = x => !x?.spot ? '' : spotHook(x.spot, x.officeId)
+  + (x.bldg ? ' · ' + t('place.bldg', {n: x.bldg}) : '') + (x.room ? ' · ' + t('room.' + roomKind(x.spot), {n: x.room}) : '');
+export const spotName = (s, officeId) => s ? spotHook(s, officeId) : '';
 
 // الاسم العام للغرض في الإعلان: اسم النوع إن وُجد، وإلا اسم التصنيف (الاسم التفصيلي سري للموظفين)
-export const publicTitle = (catId, sub) => subName(sub) || catName(catId);
+// يُخزَّن بالعربية دائماً (قيمة في قاعدة البيانات)، ويُترجم عند العرض عبر showTitle
+export const publicTitle = (catId, sub) => subName(sub) || cat(catId).name;
 // النوع بصيغة للمقارنة: الاسم الحالي حتى لو خُزّن بالاسم القديم
 export const subKey = s => subName(s);
 // العنوان العام للعرض (الأغراض القديمة خُزّن عنوانها باسم النوع القديم)
-export const showTitle = i => subName(i?.title);
+// وبالإنجليزية: اسم النوع أو التصنيف المقابل
+export const showTitle = i => { const v = subName(i?.title); if (!isEn() || !v) return v; return v === cat(i.cat).name ? catName(i.cat) : subLabel(v); };
 
-export const itemText = i => [showTitle(i), i.desc, subName(i.sub), i.sub, catName(i.cat), colorName(i.color), color(i.color)?.alt, i.brand, i.spot, i.bldg, i.room, i.ref].join(' ');
+// نص البحث: أسماء التصنيف والنوع واللون باللغتين، فكلمة إنجليزية (wallet، keys) تجد الأغراض العربية
+export const itemText = i => [subName(i.title), i.desc, i.sub, searchWords(i.cat, i.sub, i.color), i.brand, i.spot, spotName(i.spot, i.officeId), i.bldg, i.room, i.ref].join(' ');
 export function textScore(q, i){
   const t = tokens(itemText(i)); let s = 0;
   for (const w of q){

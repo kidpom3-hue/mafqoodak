@@ -1,8 +1,10 @@
 // الثوابت: الأيقونات، التصنيفات، الألوان، أنواع المنشآت، الحالات
-// لإضافة تصنيف جديد عدّل مصفوفة CATS بالأسفل.
+// لإضافة تصنيف جديد عدّل مصفوفة CATS بالأسفل (مع اسمه الإنجليزي en وأنواعه subsEn).
+import { isEn } from './i18n.js';
 
 /* ---------- icons ---------- */
 export const P = {
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.7 5.7 3.7 9s-1.2 6.3-3.7 9c-2.5-2.7-3.7-5.7-3.7-9S9.5 5.7 12 3Z"/>',
   search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   idcard:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6.5 16c.6-1.3 1.5-2 2.5-2s1.9.7 2.5 2M14 10h4M14 13h3"/>',
   wallet:'<path d="M4 7h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z"/><path d="M4 7l11-3v3M16 13h2"/>',
@@ -48,77 +50,129 @@ export const P = {
   swap:'<path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/>',
   sample:'<path d="M4 4h16v16H4z" stroke-dasharray="3 3"/>',
 };
-export const icon = (n, cls='') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[n]||P.box}</svg>`;
+// أسهم الاتجاه (رجوع/تقدّم) تنقلب في الإنجليزية (من اليسار لليمين) عبر الصنف dir في CSS
+const DIR_ICONS = new Set(['back', 'fwd']);
+export const icon = (n, cls='') => `<svg class="i ${DIR_ICONS.has(n) ? 'dir ' : ''}${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[n]||P.box}</svg>`;
 export const LOGO = `<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><path d="M9 6h17.5L35 14.5V33a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" fill="var(--primary)"/><circle cx="27.5" cy="12.5" r="2.6" fill="var(--bg)"/><circle cx="18" cy="21" r="5.6" fill="none" stroke="var(--primary-ink)" stroke-width="2.4"/><path d="m22.2 25.2 4.3 4.3" stroke="var(--primary-ink)" stroke-width="2.6" stroke-linecap="round"/><path d="M27.5 12.5C30 7 33 4.5 37 4" fill="none" stroke="var(--tag-line)" stroke-width="1.6" stroke-linecap="round"/></svg>`;
 
 /* ---------- reference data ---------- */
+// name وsubs: القيم العربية المخزّنة (لا تتغيّر). en وsubsEn: للعرض بالإنجليزية فقط، بنفس الترتيب.
 export const CATS = [
-  {id:'ids', name:'بطاقات ووثائق', icon:'idcard', sensitive:true, subs:['هوية وطنية','هوية مقيم','بطاقة متدرب','رخصة قيادة','بطاقة بنكية','جواز سفر','وثيقة أخرى']},
-  {id:'wallets', name:'محافظ', icon:'wallet', subs:['محفظة رجالية','محفظة نسائية','حافظة بطاقات','محفظة جوال']},
-  {id:'phones', name:'جوالات وأجهزة', icon:'phone', subs:['جوال','جهاز لوحي','لابتوب','ساعة ذكية']},
-  {id:'acc', name:'ملحقات إلكترونية', icon:'plug', subs:['سماعات','شاحن','كيبل','باور بانك','فلاش USB','آلة حاسبة']},
-  {id:'keys', name:'مفاتيح', icon:'key', subs:['مفتاح سيارة','مفاتيح منزل','ميدالية','بطاقة دخول']},
-  {id:'jewelry', name:'مجوهرات وساعات', icon:'ring', subs:['خاتم','سلسال','أسورة','ساعة يد','أقراط']},
-  {id:'glasses', name:'نظارات', icon:'glasses', subs:['نظارة طبية','نظارة شمسية','علبة نظارة']},
-  {id:'bags', name:'حقائب', icon:'bag', subs:['حقيبة ظهر','حقيبة لابتوب','حقيبة يد','حقيبة رياضية']},
-  {id:'study', name:'كتب وأدوات دراسية', icon:'book', subs:['كتاب','دفتر','ملف أوراق','مقلمة','أدوات هندسية']},
-  {id:'clothes', name:'ملابس', icon:'shirt', subs:['شماغ أو غترة','عباية','جاكيت','قبعة','حذاء']},
-  {id:'tools', name:'عُدد وأدوات ورش', icon:'wrench', subs:['عدة يدوية','جهاز قياس','خوذة سلامة','نظارة سلامة','قفازات']},
-  {id:'bottles', name:'قوارير وحافظات', icon:'bottle', subs:['قارورة ماء','حافظة قهوة (ترمس)','علبة طعام']},
-  {id:'other', name:'أخرى', icon:'box', subs:[]},
+  {id:'ids', name:'بطاقات ووثائق', en:'Cards & documents', icon:'idcard', sensitive:true, subs:['هوية وطنية','هوية مقيم','بطاقة متدرب','رخصة قيادة','بطاقة بنكية','جواز سفر','وثيقة أخرى'], subsEn:['National ID','Resident ID (Iqama)','Trainee card','Driving licence','Bank card','Passport','Other document']},
+  {id:'wallets', name:'محافظ', en:'Wallets', icon:'wallet', subs:['محفظة رجالية','محفظة نسائية','حافظة بطاقات','محفظة جوال'], subsEn:["Men's wallet","Women's wallet",'Card holder','Phone wallet']},
+  {id:'phones', name:'جوالات وأجهزة', en:'Phones & devices', icon:'phone', subs:['جوال','جهاز لوحي','لابتوب','ساعة ذكية'], subsEn:['Phone','Tablet','Laptop','Smartwatch']},
+  {id:'acc', name:'ملحقات إلكترونية', en:'Electronic accessories', icon:'plug', subs:['سماعات','شاحن','كيبل','باور بانك','فلاش USB','آلة حاسبة'], subsEn:['Headphones','Charger','Cable','Power bank','USB flash drive','Calculator']},
+  {id:'keys', name:'مفاتيح', en:'Keys', icon:'key', subs:['مفتاح سيارة','مفاتيح منزل','ميدالية','بطاقة دخول'], subsEn:['Car key','House keys','Keyring','Access card']},
+  {id:'jewelry', name:'مجوهرات وساعات', en:'Jewellery & watches', icon:'ring', subs:['خاتم','سلسال','أسورة','ساعة يد','أقراط'], subsEn:['Ring','Necklace','Bracelet','Wristwatch','Earrings']},
+  {id:'glasses', name:'نظارات', en:'Glasses', icon:'glasses', subs:['نظارة طبية','نظارة شمسية','علبة نظارة'], subsEn:['Prescription glasses','Sunglasses','Glasses case']},
+  {id:'bags', name:'حقائب', en:'Bags', icon:'bag', subs:['حقيبة ظهر','حقيبة لابتوب','حقيبة يد','حقيبة رياضية'], subsEn:['Backpack','Laptop bag','Handbag','Sports bag']},
+  {id:'study', name:'كتب وأدوات دراسية', en:'Books & study supplies', icon:'book', subs:['كتاب','دفتر','ملف أوراق','مقلمة','أدوات هندسية'], subsEn:['Book','Notebook','Document folder','Pencil case','Geometry set']},
+  {id:'clothes', name:'ملابس', en:'Clothing', icon:'shirt', subs:['شماغ أو غترة','عباية','جاكيت','قبعة','حذاء'], subsEn:['Shemagh or ghutra','Abaya','Jacket','Cap','Shoes']},
+  {id:'tools', name:'عُدد وأدوات ورش', en:'Workshop tools', icon:'wrench', subs:['عدة يدوية','جهاز قياس','خوذة سلامة','نظارة سلامة','قفازات'], subsEn:['Hand tools','Measuring device','Safety helmet','Safety glasses','Gloves']},
+  {id:'bottles', name:'قوارير وحافظات', en:'Bottles & flasks', icon:'bottle', subs:['قارورة ماء','حافظة قهوة (ترمس)','علبة طعام'], subsEn:['Water bottle','Coffee flask (thermos)','Food container']},
+  {id:'other', name:'أخرى', en:'Other', icon:'box', subs:[], subsEn:[]},
 ];
+// alt/altEn: كلمات إضافية للبحث باللغتين
 export const COLORS = [
-  {id:'black',name:'أسود',hex:'#1c1c1c',alt:'اسود سوداء سودا'},
-  {id:'white',name:'أبيض',hex:'#f7f7f5',alt:'ابيض بيضاء بيضا'},
-  {id:'gray',name:'رمادي',hex:'#8a8f8e',alt:'رمادي رماديه رصاصي'},
-  {id:'silver',name:'فضي',hex:'#c9ccd0',alt:'فضي فضيه'},
-  {id:'gold',name:'ذهبي',hex:'#c9a13b',alt:'ذهبي ذهبيه'},
-  {id:'brown',name:'بني',hex:'#7a4e2d',alt:'بني بنيه جلد'},
-  {id:'beige',name:'بيج',hex:'#d8c3a0',alt:'بيج'},
-  {id:'red',name:'أحمر',hex:'#c0392b',alt:'احمر حمراء'},
-  {id:'pink',name:'وردي',hex:'#e48fb0',alt:'وردي زهري'},
-  {id:'orange',name:'برتقالي',hex:'#e67e22',alt:'برتقالي'},
-  {id:'yellow',name:'أصفر',hex:'#f1c40f',alt:'اصفر صفراء'},
-  {id:'green',name:'أخضر',hex:'#2e8b57',alt:'اخضر خضراء'},
-  {id:'blue',name:'أزرق',hex:'#2f74c0',alt:'ازرق زرقاء'},
-  {id:'navy',name:'كحلي',hex:'#1f2f56',alt:'كحلي'},
-  {id:'purple',name:'بنفسجي',hex:'#7d4fa8',alt:'بنفسجي موف'},
-  {id:'multi',name:'متعدد',hex:'conic-gradient(#c0392b,#f1c40f,#2e8b57,#2f74c0,#7d4fa8,#c0392b)',alt:'ملون متعدد'},
+  {id:'black',name:'أسود',en:'Black',hex:'#1c1c1c',alt:'اسود سوداء سودا',altEn:'black dark'},
+  {id:'white',name:'أبيض',en:'White',hex:'#f7f7f5',alt:'ابيض بيضاء بيضا',altEn:'white'},
+  {id:'gray',name:'رمادي',en:'Grey',hex:'#8a8f8e',alt:'رمادي رماديه رصاصي',altEn:'grey gray'},
+  {id:'silver',name:'فضي',en:'Silver',hex:'#c9ccd0',alt:'فضي فضيه',altEn:'silver'},
+  {id:'gold',name:'ذهبي',en:'Gold',hex:'#c9a13b',alt:'ذهبي ذهبيه',altEn:'gold golden'},
+  {id:'brown',name:'بني',en:'Brown',hex:'#7a4e2d',alt:'بني بنيه جلد',altEn:'brown leather'},
+  {id:'beige',name:'بيج',en:'Beige',hex:'#d8c3a0',alt:'بيج',altEn:'beige'},
+  {id:'red',name:'أحمر',en:'Red',hex:'#c0392b',alt:'احمر حمراء',altEn:'red'},
+  {id:'pink',name:'وردي',en:'Pink',hex:'#e48fb0',alt:'وردي زهري',altEn:'pink'},
+  {id:'orange',name:'برتقالي',en:'Orange',hex:'#e67e22',alt:'برتقالي',altEn:'orange'},
+  {id:'yellow',name:'أصفر',en:'Yellow',hex:'#f1c40f',alt:'اصفر صفراء',altEn:'yellow'},
+  {id:'green',name:'أخضر',en:'Green',hex:'#2e8b57',alt:'اخضر خضراء',altEn:'green'},
+  {id:'blue',name:'أزرق',en:'Blue',hex:'#2f74c0',alt:'ازرق زرقاء',altEn:'blue'},
+  {id:'navy',name:'كحلي',en:'Navy',hex:'#1f2f56',alt:'كحلي',altEn:'navy'},
+  {id:'purple',name:'بنفسجي',en:'Purple',hex:'#7d4fa8',alt:'بنفسجي موف',altEn:'purple violet'},
+  {id:'multi',name:'متعدد',en:'Multicolour',hex:'conic-gradient(#c0392b,#f1c40f,#2e8b57,#2f74c0,#7d4fa8,#c0392b)',alt:'ملون متعدد',altEn:'multicolour multicolor colourful'},
 ];
 export const OFFICE_TYPES = [
-  {id:'college',name:'كلية',icon:'college'},
-  {id:'university',name:'جامعة',icon:'college'},
-  {id:'school',name:'مدرسة / معهد',icon:'school'},
-  {id:'airport',name:'مطار',icon:'airport'},
-  {id:'mall',name:'مجمع تجاري',icon:'mall'},
-  {id:'hospital',name:'مستشفى',icon:'hospital'},
-  {id:'other',name:'منشأة أخرى',icon:'pin'},
+  {id:'college',name:'كلية',en:'College',icon:'college'},
+  {id:'university',name:'جامعة',en:'University',icon:'college'},
+  {id:'school',name:'مدرسة / معهد',en:'School / institute',icon:'school'},
+  {id:'airport',name:'مطار',en:'Airport',icon:'airport'},
+  {id:'mall',name:'مجمع تجاري',en:'Shopping mall',icon:'mall'},
+  {id:'hospital',name:'مستشفى',en:'Hospital',icon:'hospital'},
+  {id:'other',name:'منشأة أخرى',en:'Other facility',icon:'pin'},
 ];
+// l: الاسم العربي، en: الإنجليزي. اعرضها عبر statusLabel()
 export const ITEM_STATUS = {
-  available:{l:'متاح للاستلام',c:'ok'},
-  reserved:{l:'محجوز بانتظار صاحبه',c:'warn'},
-  returned:{l:'سُلّم لصاحبه',c:'info'},
-  archived:{l:'مؤرشف',c:'mute'},
-  disposed:{l:'انتهت مدة حفظه',c:'mute'},
+  available:{l:'متاح للاستلام',en:'Available',c:'ok'},
+  reserved:{l:'محجوز بانتظار صاحبه',en:'Reserved',c:'warn'},
+  returned:{l:'سُلّم لصاحبه',en:'Returned to owner',c:'info'},
+  archived:{l:'مؤرشف',en:'Archived',c:'mute'},
+  disposed:{l:'انتهت مدة حفظه',en:'Retention period ended',c:'mute'},
 };
 export const CLAIM_STATUS = {
-  pending:{l:'قيد المراجعة',c:'warn'},
-  approved:{l:'جاهز للاستلام',c:'ok'},
-  done:{l:'تم الاستلام',c:'info'},
-  rejected:{l:'لم يُقبل',c:'bad'},
-  expired:{l:'انتهت مهلة الاستلام',c:'mute'},
-  cancelled:{l:'أُلغي',c:'mute'},
+  pending:{l:'قيد المراجعة',en:'Under review',c:'warn'},
+  approved:{l:'جاهز للاستلام',en:'Ready to collect',c:'ok'},
+  done:{l:'تم الاستلام',en:'Collected',c:'info'},
+  rejected:{l:'لم يُقبل',en:'Not accepted',c:'bad'},
+  expired:{l:'انتهت مهلة الاستلام',en:'Pickup window ended',c:'mute'},
+  cancelled:{l:'أُلغي',en:'Cancelled',c:'mute'},
 };
-export const REPORT_STATUS = { open:{l:'بلاغ مفتوح',c:'warn'}, closed:{l:'مغلق',c:'mute'} };
-export const MODE_LABEL = {visitor:'زائر', staff:'موظف المكتب', admin:'الإدارة'};
+export const REPORT_STATUS = { open:{l:'بلاغ مفتوح',en:'Open report',c:'warn'}, closed:{l:'مغلق',en:'Closed',c:'mute'} };
+export const MODE_LABEL = {visitor:{l:'زائر',en:'Visitor'}, staff:{l:'موظف المكتب',en:'Office staff'}, admin:{l:'الإدارة',en:'Admin'}};
+export const statusLabel = e => e ? (isEn() ? e.en : e.l) : '';
 
 // أسماء أنواع قديمة غيّرناها: القيمة المخزّنة في المستندات القديمة ← الاسم الحالي (للعرض والبحث والمطابقة)
 // «مطارة» كانت تُقرأ «مطار» في منصة ستخدم المطارات
 export const LEGACY_SUBS = {'مطارة قهوة': 'حافظة قهوة (ترمس)'};
 export const subName = s => LEGACY_SUBS[s] || s || '';
 export const cat = id => CATS.find(c => c.id === id) || CATS[CATS.length-1];
-export const catName = id => cat(id).name;
+export const catName = id => isEn() ? cat(id).en : cat(id).name;
+// النوع للعرض: القيمة العربية المخزّنة ← اسمها بالإنجليزية إن كانت اللغة إنجليزية
+export function subLabel(s){
+  const v = subName(s); if (!isEn() || !v) return v;
+  for (const c of CATS){ const k = c.subs.indexOf(v); if (k >= 0) return c.subsEn[k] || v; }
+  return v;
+}
+// كل أسماء التصنيف والنوع واللون باللغتين (للبحث: كلمة إنجليزية تجد الأغراض العربية)
+export function searchWords(catId, s, colorId){
+  const c = cat(catId), v = subName(s), k = c.subs.indexOf(v), col = color(colorId);
+  return [c.name, c.en, v, k >= 0 ? c.subsEn[k] : '', col?.name, col?.en, col?.alt, col?.altEn].filter(Boolean).join(' ');
+}
 export const color = id => COLORS.find(c => c.id === id);
-export const colorName = id => color(id)?.name || '';
+export const colorName = id => { const c = color(id); return c ? (isEn() ? c.en : c.name) : ''; };
 export const otype = id => OFFICE_TYPES.find(t => t.id === id) || OFFICE_TYPES[OFFICE_TYPES.length-1];
+export const otypeName = id => isEn() ? otype(id).en : otype(id).name;
+// بيانات المكتب بلغة الواجهة: الحقول الإنجليزية اختيارية، وإن غابت يُعرض النص العربي
+export const oName = o => (isEn() && o?.nameEn) || o?.name || '';
+export const oShort = o => (isEn() && (o?.shortEn || o?.nameEn)) || o?.short || o?.name || '';
+export const oPlace = o => (isEn() && o?.placeEn) || o?.place || '';
+export const oHours = o => (isEn() && o?.hoursEn) || o?.hours || '';
+export const oCity = o => (isEn() && o?.cityEn) || o?.city || '';
+export function spotLabel(o, s){
+  if (!isEn() || !s || !o) return s || '';
+  const k = (o.spots || []).indexOf(s);
+  return (k >= 0 && o.spotsEn?.[k]) || s;
+}
 
+/* ---------- بيانات نصية عربية للبحث والمطابقة (ليست نصوص واجهة) ---------- */
+// كلمات شائعة لا تفيد البحث
+export const STOP = new Set(['في','من','على','عن','مع','الى','او','و','لون','فيه','فيها','به','بها','هذا','هذه','لي','كان','تم','عند','قرب','جنب','داخل',
+  'the','a','an','of','in','on','at','with','and','or','my','is','it','near']);
+// توحيد الكتابة العربية: حذف التشكيل، والأرقام الهندية إلى لاتينية، وتوحيد الهمزات والتاء المربوطة
+export function norm(s){
+  return String(s || '').toLowerCase()
+    .replace(/[ً-ٰٟـ]/g, '')
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي').replace(/ء/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+export function tokens(s){
+  return norm(s).split(' ').map(t => {
+    if (t.length > 4 && (t.startsWith('وال') || t.startsWith('بال'))) t = t.slice(3);
+    else if (t.length > 3 && t.startsWith('ال')) t = t.slice(2);
+    return t;
+  }).filter(t => t.length > 1 && !STOP.has(t));
+}
+// الأماكن داخل مبنى (قاعات، معامل، ورش، المبنى الإداري): نطلب لها رقم المبنى ورقم القاعة
+export const isBuilding = s => /قاع|معمل|معامل|ورش|مبنى|مباني/.test(s || '');
+// نوع الغرفة حسب المكان (مفتاح في القاموس: room.lab / room.workshop / room.hall / room.office / room.room)
+export const roomKind = s => /معمل|معامل/.test(s || '') ? 'lab' : /ورش/.test(s || '') ? 'workshop' : /قاع/.test(s || '') ? 'hall' : /إدار/.test(s || '') ? 'office' : 'room';
