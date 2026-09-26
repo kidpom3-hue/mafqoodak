@@ -2,7 +2,8 @@
 // يعمل تلقائياً عند فتح لوحة الموظف، ولكل مكتب مرة واحدة في الجلسة.
 import { dbx } from './firebase.js';
 import { S, isStaffHere, cachePhoto } from './state.js';
-import { makeBlur, publicTitle, toast, plural, W } from './utils.js';
+import { makeBlur, publicTitle, toast } from './utils.js';
+import { t, tp } from './i18n.js';
 
 const SECRET = ['color', 'brand', 'desc', 'bldg', 'room', 'storage'];
 const done = new Set(); let running = false, denied = null;
@@ -28,7 +29,7 @@ export async function migrateItems(){
       } catch (e){
         console.warn(e);
         // القواعد القديمة ما زالت منشورة: نتوقف تماماً ولا نحذف شيئاً
-        if (String(e?.code || '').includes('permission-denied')){ done.delete(office); denied = office; toast('انشر قواعد Firestore الجديدة ثم أعد فتح لوحة الموظف.'); return; }
+        if (String(e?.code || '').includes('permission-denied')){ done.delete(office); denied = office; toast(t('migrate.publishRules')); return; }
         continue;
       }
       // 2) الصورة: الأصل إلى itemPhotosPrivate، والعامة تصبح نسخة مموّهة
@@ -52,6 +53,6 @@ export async function migrateItems(){
       for (const k of ['fromReport', 'reservedFor', 'returnedAt']) if (i[k] !== undefined) pub[k] = i[k];
       try { await dbx.set('items/' + i.id, pub); n++; } catch (e){ console.warn(e); }
     }
-    if (n) toast(`نُقلت تفاصيل ${plural(n, W.itemGen)} إلى الملف السري`);
+    if (n) toast(t('migrate.done', {items: tp('n.itemGen', n)}));
   } finally { running = false; }
 }

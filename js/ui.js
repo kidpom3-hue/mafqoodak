@@ -1,5 +1,6 @@
 // هيكل الواجهة: التنقل بين الصفحات، الشريط العلوي، الشريط السفلي، النوافذ المنبثقة
-import { icon, LOGO, otype } from './constants.js';
+import { icon, LOGO, otype, oShort, statusLabel, MODE_LABEL } from './constants.js';
+import { t } from './i18n.js';
 import { $, $$, esc } from './utils.js';
 import { S, curOffice, modes, homeRoute, unseenCount, markSeen, candidatesFor, getPhoto, getName, SHARE_RE, full } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice, vJoin } from './views/visitor.js';
@@ -110,22 +111,24 @@ function renderMain(){
 function renderHeader(){
   const o = curOffice(); const ms = S.config ? modes() : ['visitor'];
   const acct = !S.configured || !S.authReady ? ''
-    : S.uid ? `<button class="avatar-btn" data-act="account" aria-label="حسابي">${S.me?.photo ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span>${esc((S.me?.name || '؟').trim().charAt(0))}</span>`}</button>`
-    : `<button class="btn sm ghost" data-act="login">${icon('users')}دخول</button>`;
+    : S.uid ? `<button class="avatar-btn" data-act="account" aria-label="${t('ui.account')}">${safeAvatar(S.me?.photo) ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span>${esc((S.me?.name || '?').trim().charAt(0))}</span>`}</button>`
+    : `<button class="btn sm ghost" data-act="login">${icon('users')}${t('ui.signIn')}</button>`;
+  // زر اللغة: يعرض اللغة الأخرى («EN» في العربية، «عربي» في الإنجليزية)
+  const langBtn = `<button class="lang-btn" data-act="lang" lang="${t('lang.otherCode')}" aria-label="${t('lang.switch')}">${t('lang.other')}</button>`;
   $('#hdr').innerHTML = `<div class="top-row">
-      <button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="الرئيسية">${LOGO}<span class="wordmark">مفقودك</span></button>
-      ${S.config && (o || S.mode === 'admin') ? `<nav class="top-links" aria-label="التنقل">${navItems().map(n => {
+      <button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="${t('nav.home')}">${LOGO}<span class="wordmark">${t('app.name')}</span></button>
+      ${S.config && (o || S.mode === 'admin') ? `<nav class="top-links" aria-label="${t('ui.navigation')}">${navItems().map(n => {
         const on = S.route.name === n.r && (!n.tab || (n.r === 'staff' ? S.staffTab : S.adminTab) === n.tab);
         return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}">${n.l}${n.b ? `<span class="count">${n.b}</span>` : ''}</button>`;
       }).join('')}</nav>` : ''}
       <div class="top-actions">
-        ${o ? `<button class="office-chip" data-act="pickOffice" aria-label="تغيير المكان">${icon(otype(o.type).icon)}<span>${esc(o.short || o.name)}</span>${icon('chev')}</button>` : ''}
-        ${acct}
+        ${o ? `<button class="office-chip" data-act="pickOffice" aria-label="${t('ui.changePlace')}">${icon(otype(o.type).icon)}<span>${esc(oShort(o))}</span>${icon('chev')}</button>` : ''}
+        ${langBtn}${acct}
       </div>
     </div>
-    ${S.uid && !S.verified ? `<div class="verify-bar" role="status">${icon('lock')}<span>وثّق بريدك لتستطيع تسجيل البلاغات وطلبات الاستلام.</span>
-      <button class="btn sm" data-act="checkVerified">وثّقته</button><button class="btn sm ghost" data-act="resendVerify">أعد الإرسال</button></div>` : ''}
-    ${ms.length > 1 ? `<div class="seg modes" role="tablist" aria-label="طريقة العرض">${ms.map(m => `<button class="${S.mode === m ? 'on' : ''}" data-act="mode" data-v="${m}" role="tab" aria-selected="${S.mode === m}">${({visitor: 'زائر', staff: 'موظف المكتب', admin: 'الإدارة'})[m]}</button>`).join('')}</div>` : ''}`;
+    ${S.uid && !S.verified ? `<div class="verify-bar" role="status">${icon('lock')}<span>${t('ui.verifyBar')}</span>
+      <button class="btn sm" data-act="checkVerified">${t('c.verified')}</button><button class="btn sm ghost" data-act="resendVerify">${t('ui.resend')}</button></div>` : ''}
+    ${ms.length > 1 ? `<div class="seg modes" role="tablist" aria-label="${t('ui.viewMode')}">${ms.map(m => `<button class="${S.mode === m ? 'on' : ''}" data-act="mode" data-v="${m}" role="tab" aria-selected="${S.mode === m}">${statusLabel(MODE_LABEL[m])}</button>`).join('')}</div>` : ''}`;
   syncHeader();
 }
 function navItems(){
@@ -133,26 +136,26 @@ function navItems(){
     const pend = S.claims.filter(c => c.status === 'pending').length;
     const open = S.reports.filter(r => r.status === 'open' && !r.staffPick && candidatesFor(r, 1, full).length).length;
     return [
-      {r: 'staff', tab: 'items', l: 'المستودع', i: 'box'},
-      {r: 'add', l: 'أضف غرضاً', i: 'plus'},
-      {r: 'staff', tab: 'claims', l: 'الاستلام', i: 'inbox', b: pend},
-      {r: 'staff', tab: 'reports', l: 'البلاغات', i: 'bell', b: open},
+      {r: 'staff', tab: 'items', l: t('nav.store'), i: 'box'},
+      {r: 'add', l: t('nav.add'), i: 'plus'},
+      {r: 'staff', tab: 'claims', l: t('nav.claims'), i: 'inbox', b: pend},
+      {r: 'staff', tab: 'reports', l: t('nav.reports'), i: 'bell', b: open},
     ];
   }
   if (S.mode === 'admin'){
     const pend = S.staffReqs.filter(r => r.status === 'pending').length;
     return [
-      {r: 'admin', tab: 'overview', l: 'نظرة عامة', i: 'grid'},
-      {r: 'admin', tab: 'offices', l: 'المواقع', i: 'pin'},
-      {r: 'admin', tab: 'people', l: 'الصلاحيات', i: 'users', b: pend},
+      {r: 'admin', tab: 'overview', l: t('nav.overview'), i: 'grid'},
+      {r: 'admin', tab: 'offices', l: t('nav.offices'), i: 'pin'},
+      {r: 'admin', tab: 'people', l: t('nav.people'), i: 'users', b: pend},
     ];
   }
   return [
-    {r: 'home', l: 'الرئيسية', i: 'building'},
-    {r: 'browse', l: 'المفقودات', i: 'search'},
-    {r: 'report', l: 'بلّغ', i: 'plus'},
-    {r: 'mine', l: 'طلباتي', i: 'inbox', b: S.route.name === 'mine' ? 0 : unseenCount()},
-    {r: 'office', l: 'المكتب', i: 'info'},
+    {r: 'home', l: t('nav.home'), i: 'building'},
+    {r: 'browse', l: t('nav.browse'), i: 'search'},
+    {r: 'report', l: t('nav.report'), i: 'plus'},
+    {r: 'mine', l: t('nav.mine'), i: 'inbox', b: S.route.name === 'mine' ? 0 : unseenCount()},
+    {r: 'office', l: t('nav.office'), i: 'info'},
   ];
 }
 function renderNav(){

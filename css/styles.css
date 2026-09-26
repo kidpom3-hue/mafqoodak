@@ -47,7 +47,7 @@ header.top{position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1
 .brand{display:flex;align-items:center;gap:8px;min-width:0}
 .brand svg{width:30px;height:30px;flex:none}
 .wordmark{font-family:var(--f-display);font-weight:800;font-size:21px;letter-spacing:-.01em}
-.office-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 12px 6px 10px;font-size:13.5px;font-weight:600}
+.office-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding-block:6px;padding-inline:12px 10px;font-size:13.5px;font-weight:600}
 .office-chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .office-chip svg{width:16px;height:16px;color:var(--primary)}
 
@@ -534,3 +534,25 @@ input[type=date].input::-webkit-date-and-time-value{text-align:start}
 /* جدول المقارنة: عنوان الصف لا يُكسر وسط الكلمة */
 .cmp-row{grid-template-columns:minmax(64px,.8fr) minmax(0,1.2fr) minmax(0,1.2fr) auto}
 .cmp-row>b{overflow-wrap:normal}
+
+/* ---------- اللغة والاتجاه (الجزء ب) ---------- */
+/* زر اللغة في الترويسة: 36px على الأقل للمس المريح */
+.lang-btn{min-width:40px;height:36px;padding-inline:10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:13px;display:inline-grid;place-items:center;flex:none;cursor:pointer}
+.lang-btn:hover{border-color:var(--primary-line);color:var(--primary)}
+.lang-btn[lang=ar]{font-family:var(--f-body)}
+/* أسهم الرجوع والتقدّم مرسومة للعربية؛ تنقلب في الإنجليزية */
+html[dir=ltr] svg.i.dir{transform:scaleX(-1)}
+/* نموذج الموقع: الأسماء بالإنجليزية داخل قسم قابل للطي */
+.en-fields{border:1px dashed var(--line);border-radius:14px;padding:4px 14px 12px;display:flex;flex-direction:column;gap:12px}
+.en-fields summary{cursor:pointer;display:flex;align-items:center;gap:8px;font-weight:700;padding:10px 0 0;min-height:36px}
+.en-fields:not([open]){padding-bottom:10px}
+/* أزرار الترويسة وروابط العناوين لا تنكسر على سطرين (الكلمات الإنجليزية أطول) */
+.top-actions .btn,.sec-head .link{white-space:nowrap}
+.cta b{overflow-wrap:anywhere}
+/* جدول المقارنة على الشاشات الضيقة: عنوان الصف في سطر مستقل، فيتسع عمودا الإجابة والحقيقة (الكلمات الإنجليزية أطول) */
+@media (max-width:480px){
+  .cmp-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;row-gap:2px}
+  .cmp-row>b{grid-column:1/-1}
+  .cmp-head>b{display:none}
+  .cmp-row>*{overflow-wrap:break-word}
+}

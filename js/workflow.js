@@ -4,6 +4,8 @@
 import { dbx } from './firebase.js';
 import { S, full } from './state.js';
 import { pubPhoto } from './views/common.js';
+import { t, tAr } from './i18n.js';
+// ملاحظات النظام تُخزَّن بالعربية (قيم في قاعدة البيانات) عبر tAr، وتُترجم عند العرض بـ noteText
 
 // خطأ برسالة عربية تُعرض للموظف كما هي
 export class FlowError extends Error { constructor(msg){ super(msg); this.msg = msg; } }
@@ -25,10 +27,10 @@ function secretOf(i){ const {id, ...s} = S.secrets[i.id] || {}; return {...s, of
 // الغرض بأحدث نسخة: من الاشتراك، أو من الخادم إن لم يكن محمّلاً (مثل المُسلَّم)
 async function freshItem(id){
   const i = S.items.find(x => x.id === id) || await dbx.get('items/' + id).then(d => d && {id, ...d}).catch(() => null);
-  if (!i) fail('لم يعد هذا الغرض موجوداً.');
+  if (!i) fail(t('wf.gone'));
   return i;
 }
-const notMine = c => { if (c.uid === S.uid) fail('طلبك الشخصي: يراجعه موظف آخر.'); };
+const notMine = c => { if (c.uid === S.uid) fail(t('wf.own')); };
 // إنهاء بقية الطلبات المفتوحة على الغرض. طلب الموظف نفسه يُستثنى لأن القواعد تمنعه من تعديله.
 function closeOthers(b, itemId, exceptId, status, note){
   let skippedOwn = false;
@@ -43,10 +45,10 @@ function closeOthers(b, itemId, exceptId, status, note){
 /* قبول طلب: الغرض متاح، أو محجوز دون طلب مقبول فعلي */
 export async function approveClaim(c){
   notMine(c);
-  if (c.status !== 'pending') fail('هذا الطلب ليس قيد المراجعة.');
+  if (c.status !== 'pending') fail(t('wf.notPending'));
   const i = await freshItem(c.itemId);
   const holder = i.status === 'reserved' && S.claims.find(x => x.id === i.reservedFor && x.status === 'approved');
-  if (!(i.status === 'available' || (i.status === 'reserved' && !holder))) fail('الغرض ليس متاحاً الآن؛ قد يكون محجوزاً لطلب مقبول آخر أو سُلّم.');
+  if (!(i.status === 'available' || (i.status === 'reserved' && !holder))) fail(t('wf.notAvailable'));
   const o = S.offices.find(x => x.id === i.officeId);
   const pickupBy = Date.now() + pickupDays(o) * 864e5;
   const b = dbx.batch();
@@ -71,18 +73,18 @@ export async function rejectClaim(c, note){
 export async function verifyHandover(c){
   notMine(c);
   const i = await freshItem(c.itemId);
-  if (c.status !== 'approved' || i.status !== 'reserved' || i.reservedFor !== c.id) fail('هذا الغرض ليس محجوزاً لهذا الطلب؛ لا يمكن تسليمه به.');
+  if (c.status !== 'approved' || i.status !== 'reserved' || i.reservedFor !== c.id) fail(t('wf.notReserved'));
   const b = dbx.batch();
   b.update(dbx.ref('claims/' + c.id), {status: 'done', doneAt: Date.now(), doneBy: S.uid});
   b.update(dbx.ref('items/' + i.id), {status: 'returned', returnedAt: Date.now(), updatedAt: Date.now()});
-  const skippedOwn = closeOthers(b, i.id, c.id, 'rejected', 'سُلّم الغرض لصاحبه بعد التحقق');
+  const skippedOwn = closeOthers(b, i.id, c.id, 'rejected', tAr('sys.handedVerified'));
   log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id});
   await b.commit();
   return {skippedOwn};
 }
 
 /* إنهاء الحجز: انتهت مهلة الاستلام أو قرار الموظف. الطلب «انتهى» والغرض متاح */
-export async function releaseReservation(c, note = 'انتهت مهلة الاستلام'){
+export async function releaseReservation(c, note = tAr('sys.pickupEnded')){
   notMine(c);
   const b = dbx.batch();
   b.update(dbx.ref('claims/' + c.id), {status: 'expired', note, decidedAt: Date.now(), decidedBy: S.uid});
@@ -102,27 +104,28 @@ export async function setItemStatus(i, to, note = ''){
   if (to === 'available'){
     const held = S.claims.find(x => x.id === i.reservedFor && x.status === 'approved');
     if (held){
-      if (held.uid === S.uid) fail('الغرض محجوز لطلبك الشخصي؛ يراجعه موظف آخر.');
-      b.update(dbx.ref('claims/' + held.id), {status: 'expired', note: 'أعاد المكتب إتاحة الغرض', decidedAt: now, decidedBy: S.uid});
+      if (held.uid === S.uid) fail(t('wf.heldForOwn'));
+      b.update(dbx.ref('claims/' + held.id), {status: 'expired', note: tAr('sys.madeAvailable'), decidedAt: now, decidedBy: S.uid});
     }
   } else if (to === 'returned'){
-    if (String(note).trim().length < 6) fail('اكتب اسم المستلم وآخر 4 أرقام من بطاقته.');
+    if (String(note).trim().length < 6) fail(t('wf.needHandoverNote'));
     patch.returnedAt = now;
     b.set(dbx.ref('itemSecrets/' + i.id), {...secretOf(i), handoverNote: String(note).slice(0, 600)});
-    skippedOwn = closeOthers(b, i.id, '', 'cancelled', 'سُلّم الغرض لصاحبه مباشرة في المكتب');
+    skippedOwn = closeOthers(b, i.id, '', 'cancelled', tAr('sys.handedDirect'));
   } else if (to === 'archived'){
-    skippedOwn = closeOthers(b, i.id, '', 'cancelled', 'أُرشف الغرض');
-  } else fail('حالة غير معروفة.');
+    skippedOwn = closeOthers(b, i.id, '', 'cancelled', tAr('sys.archived'));
+  } else fail(t('wf.badStatus'));
   b.update(dbx.ref('items/' + i.id), patch);
-  log(b, i.officeId, 'status:' + to, {itemId: i.id, note: to === 'returned' ? 'تسليم مباشر' : note});
+  log(b, i.officeId, 'status:' + to, {itemId: i.id, note: to === 'returned' ? tAr('sys.directHandover') : note});
   await b.commit();
   return {skippedOwn};
 }
 
 /* التصرّف في الأغراض بعد انتهاء مدة الحفظ (تبرّع، إتلاف، تسليم للجهة المختصة، أخرى) */
-export const DISPOSAL = {donated: 'تبرّع', destroyed: 'إتلاف', authority: 'تسليم للجهة المختصة', other: 'أخرى'};
+// طرق التصرّف (أسماؤها في القاموس: disposal.<key>)
+export const DISPOSAL = {donated: 1, destroyed: 1, authority: 1, other: 1};
 export async function disposeItems(items, method, note = ''){
-  if (!DISPOSAL[method]) fail('اختر طريقة التصرّف.');
+  if (!DISPOSAL[method]) fail(t('wf.pickMethod'));
   let n = 0;
   // دفعات صغيرة: حد writeBatch في Firestore 500 عملية
   for (let k = 0; k < items.length; k += 60){
@@ -131,8 +134,8 @@ export async function disposeItems(items, method, note = ''){
       if (i.status !== 'available') continue;
       b.update(dbx.ref('items/' + i.id), {status: 'disposed', disposal: method, disposedAt: now, reservedFor: '', updatedAt: now});
       b.set(dbx.ref('itemSecrets/' + i.id), {...secretOf(i), disposalNote: String(note).slice(0, 600)});
-      closeOthers(b, i.id, '', 'cancelled', 'انتهت مدة حفظ الغرض');
-      log(b, i.officeId, 'dispose', {itemId: i.id, note: DISPOSAL[method] + (note ? ' — ' + note : '')});
+      closeOthers(b, i.id, '', 'cancelled', tAr('sys.retentionEnded'));
+      log(b, i.officeId, 'dispose', {itemId: i.id, note: tAr('disposal.' + method) + (note ? ' — ' + note : '')});
       n++;
     }
     await b.commit();
@@ -144,7 +147,7 @@ export async function disposeItems(items, method, note = ''){
    القواعد ترفض حذف مستند غير موجود، لذلك نضيف الموجود فقط. */
 export async function deleteItem(i){
   const b = dbx.batch();
-  const skippedOwn = closeOthers(b, i.id, '', 'cancelled', 'حُذف الغرض من المستودع');
+  const skippedOwn = closeOthers(b, i.id, '', 'cancelled', tAr('sys.deleted'));
   if (pubPhoto(i)) b.delete(dbx.ref('itemPhotos/' + i.id));
   if (['clear', 'blur', 'none'].includes(i.photo)) b.delete(dbx.ref('itemPhotosPrivate/' + i.id));
   if (S.secrets[i.id]) b.delete(dbx.ref('itemSecrets/' + i.id));

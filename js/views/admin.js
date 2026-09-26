@@ -1,16 +1,17 @@
 // صفحات الإدارة: نظرة عامة، المواقع، الصلاحيات، نموذج الموقع
-import { icon, OFFICE_TYPES, otype } from '../constants.js';
-import { esc, relTime, plural, W } from '../utils.js';
+import { icon, OFFICE_TYPES, otype, otypeName, oName, oCity } from '../constants.js';
+import { esc, relTime } from '../utils.js';
+import { t, tp } from '../i18n.js';
 import { S, loadAdminCounts } from '../state.js';
 import { backBtn, person } from './common.js';
 
 /* ---------- admin ---------- */
 export function vAdmin(){
   if (S.route.params.tab) S.adminTab = S.route.params.tab;
-  const t = S.adminTab;
-  const body = t === 'offices' ? adminOffices() : t === 'people' ? adminPeople() : adminOverview();
+  const tab = S.adminTab;
+  const body = tab === 'offices' ? adminOffices() : tab === 'people' ? adminPeople() : adminOverview();
   return `<div class="wrap" data-view="admin">
-    <section class="hero"><div class="hero-kicker">${icon('grid')}إدارة التطبيق</div><h1 class="hero-title">${t === 'offices' ? 'المواقع ومكاتب المفقودات' : t === 'people' ? 'الموظفون والصلاحيات' : 'نظرة عامة'}</h1></section>
+    <section class="hero"><div class="hero-kicker">${icon('grid')}${t('adm.kicker')}</div><h1 class="hero-title">${t(tab === 'offices' ? 'adm.tOffices' : tab === 'people' ? 'adm.tPeople' : 'adm.tOverview')}</h1></section>
     ${body}
   </div>`;
 }
@@ -21,77 +22,89 @@ export function adminOverview(){
   const sum = k => C ? Object.values(C).reduce((a, x) => a + (x[k] || 0), 0) : '…';
   const pendReq = S.staffReqs.filter(r => r.status === 'pending').length;
   return `
-    ${samples ? `<div class="note warn">${icon('sample')}<span>عدد العناصر التوضيحية المعلّمة بـ«مثال»: ${samples}. احذفها قبل الإطلاق الفعلي.</span></div>
-      <button class="btn sm danger" data-act="delSamples" style="align-self:flex-start">${icon('trash')}حذف البيانات التوضيحية</button>` : ''}
+    ${samples ? `<div class="note warn">${icon('sample')}<span>${t('adm.samples', {n: samples})}</span></div>
+      <button class="btn sm danger" data-act="delSamples" style="align-self:flex-start">${icon('trash')}${t('adm.delSamples')}</button>` : ''}
     <div class="stats">
-      <div class="stat"><b>${S.offices.filter(o => o.active !== false).length}</b><span>مواقع مفعّلة</span></div>
-      <div class="stat"><b>${C ? sum('available') + sum('reserved') : '…'}</b><span>مفقودات محفوظة</span></div>
-      <div class="stat"><b>${sum('returned')}</b><span>أُعيدت لأصحابها</span></div>
-      <div class="stat"><b>${S.staffList.length}</b><span>موظفون</span></div>
-      <div class="stat ${pendReq ? 'hot' : ''}"><b>${pendReq}</b><span>طلبات صلاحية</span></div>
+      <div class="stat"><b>${S.offices.filter(o => o.active !== false).length}</b><span>${t('adm.sActive')}</span></div>
+      <div class="stat"><b>${C ? sum('available') + sum('reserved') : '…'}</b><span>${t('adm.sStored')}</span></div>
+      <div class="stat"><b>${sum('returned')}</b><span>${t('home.statReturned')}</span></div>
+      <div class="stat"><b>${S.staffList.length}</b><span>${t('adm.sStaff')}</span></div>
+      <div class="stat ${pendReq ? 'hot' : ''}"><b>${pendReq}</b><span>${t('adm.sReqs')}</span></div>
     </div>
-    <div class="panel"><div class="section-title">حسب الموقع</div>
-      <div class="table-wrap"><table class="t"><thead><tr><th scope="col">الموقع</th><th scope="col">متاح</th><th scope="col">محجوز</th><th scope="col">مُسلّم</th><th scope="col">نسبة الإعادة</th></tr></thead><tbody>
+    <div class="panel"><div class="section-title">${t('adm.byOffice')}</div>
+      <div class="table-wrap"><table class="t"><thead><tr><th scope="col">${t('adm.colOffice')}</th><th scope="col">${t('adm.colAvail')}</th><th scope="col">${t('adm.colRes')}</th><th scope="col">${t('adm.colRet')}</th><th scope="col">${t('adm.colRate')}</th></tr></thead><tbody>
       ${S.offices.map(o => { const x = C?.[o.id]; const a = x?.available ?? '…', r = x?.reserved ?? '…', d = x?.returned ?? '…'; const tot = x ? x.available + x.reserved + x.returned + x.disposed : 0;
-        return `<tr><td>${esc(o.name)}${o.active === false ? ' <span class="pill mute">موقوف</span>' : ''}</td><td class="n">${a}</td><td class="n">${r}</td><td class="n">${d}</td><td class="n">${tot ? Math.round(100 * x.returned / tot) + '%' : '—'}</td></tr>`; }).join('')}
+        return `<tr><td>${esc(oName(o))}${o.active === false ? ` <span class="pill mute">${t('adm.off')}</span>` : ''}</td><td class="n">${a}</td><td class="n">${r}</td><td class="n">${d}</td><td class="n">${tot ? Math.round(100 * x.returned / tot) + '%' : '—'}</td></tr>`; }).join('')}
       </tbody></table></div>
-      <button class="btn sm ghost" data-act="adminRefresh" style="align-self:flex-start">${icon('swap')}حدّث الأرقام</button>
+      <button class="btn sm ghost" data-act="adminRefresh" style="align-self:flex-start">${icon('swap')}${t('adm.refresh')}</button>
     </div>`;
 }
 export function adminOffices(){
   loadAdminCounts();
-  return `<div class="btn-row"><button class="btn" data-act="newOffice">${icon('plus')}أضف موقعاً</button></div>
+  return `<div class="btn-row"><button class="btn" data-act="newOffice">${icon('plus')}${t('adm.addOffice')}</button></div>
     <div class="office-list">${S.offices.map(o => {
       const x = S.counts.admin?.[o.id]; const n = x ? x.available + x.reserved : null;
       const staffN = S.staffList.filter(s => (s.offices || []).includes(o.id)).length;
       return `<div class="office-card">
         <span class="oi">${icon(otype(o.type).icon)}</span>
-        <span class="grow"><b>${esc(o.name)}</b><span class="meta">${esc(otype(o.type).name)} · ${esc(o.city || '')} · رمز القيد ${esc(o.code || '')}</span><span class="meta">${n === null ? '' : esc(plural(n, W.stored)) + ' · '}${esc(plural(staffN, W.staff))}</span></span>
+        <span class="grow"><b>${esc(oName(o))}</b><span class="meta">${esc([otypeName(o.type), oCity(o), t('adm.refCode', {code: o.code || ''})].filter(Boolean).join(' · '))}</span><span class="meta">${n === null ? '' : esc(tp('n.stored', n)) + ' · '}${esc(tp('n.staff', staffN))}</span></span>
         <span class="btn-row" style="flex-direction:column;align-items:flex-end">
-          <button class="switch ${o.active !== false ? 'on' : ''}" data-act="toggleOffice" data-id="${esc(o.id)}" role="switch" aria-checked="${o.active !== false}" aria-label="تفعيل الموقع"></button>
-          <button class="link" data-act="editOffice" data-id="${esc(o.id)}">${icon('edit')}تعديل</button>
+          <button class="switch ${o.active !== false ? 'on' : ''}" data-act="toggleOffice" data-id="${esc(o.id)}" role="switch" aria-checked="${o.active !== false}" aria-label="${t('adm.activeAria')}"></button>
+          <button class="link" data-act="editOffice" data-id="${esc(o.id)}">${icon('edit')}${t('c.edit')}</button>
         </span>
-      </div>`; }).join('') || `<div class="empty">${icon('pin')}<b>لا توجد مواقع</b></div>`}</div>`;
+      </div>`; }).join('') || `<div class="empty">${icon('pin')}<b>${t('adm.noOffices')}</b></div>`}</div>`;
 }
 export function adminPeople(){
   const reqs = S.staffReqs.filter(r => r.status === 'pending');
-  const oname = id => S.offices.find(o => o.id === id)?.name || id;
+  const oname = id => oName(S.offices.find(o => o.id === id)) || id;
   return `
-    <div class="section-title">طلبات الصلاحية ${reqs.length ? `<span class="count">${reqs.length}</span>` : ''}</div>
+    <div class="section-title">${t('adm.reqs')} ${reqs.length ? `<span class="count">${reqs.length}</span>` : ''}</div>
     ${reqs.length ? `<div class="list">${reqs.map(r => `<div class="box">
       <div class="box-head"><div>${person(r.id)}<span class="meta">${esc(r.note || '')}</span></div><span class="meta">${relTime(r.createdAt)}</span></div>
       <div class="tags">${(r.offices || []).map(id => `<span class="tagchip">${esc(oname(id))}</span>`).join('')}</div>
-      <div class="btn-row"><button class="btn sm" data-act="approveReq" data-id="${esc(r.id)}">${icon('check')}منح الصلاحية</button><button class="btn sm danger" data-act="rejectReq" data-id="${esc(r.id)}">${icon('x')}رفض</button></div>
-    </div>`).join('')}</div>` : `<div class="note">${icon('info')}<span>أرسل رابط التطبيق للموظف؛ يسجّل دخوله ثم يطلب الصلاحية من صفحة «المكتب» ← «اطلب صلاحية موظف»، فيظهر طلبه هنا.</span></div>`}
-    <div class="section-title">الموظفون الحاليون</div>
-    <div class="note">${icon('shield')}<span>مالك التطبيق لديه صلاحية موظف في كل المكاتب تلقائياً.</span></div>
+      <div class="btn-row"><button class="btn sm" data-act="approveReq" data-id="${esc(r.id)}">${icon('check')}${t('adm.grant')}</button><button class="btn sm danger" data-act="rejectReq" data-id="${esc(r.id)}">${icon('x')}${t('c.reject')}</button></div>
+    </div>`).join('')}</div>` : `<div class="note">${icon('info')}<span>${t('adm.reqHow')}</span></div>`}
+    <div class="section-title">${t('adm.current')}</div>
+    <div class="note">${icon('shield')}<span>${t('adm.ownerNote')}</span></div>
     ${S.staffList.length ? `<div class="list">${S.staffList.map(s => `<div class="box">
-      <div class="box-head"><div>${person(s.id)}<span class="meta">${esc(s.note || '')}</span></div><button class="btn sm danger" data-act="revoke" data-id="${esc(s.id)}">${icon('x')}سحب الصلاحية</button></div>
+      <div class="box-head"><div>${person(s.id)}<span class="meta">${esc(s.note || '')}</span></div><button class="btn sm danger" data-act="revoke" data-id="${esc(s.id)}">${icon('x')}${t('adm.revoke')}</button></div>
       <div class="tags">${(s.offices || []).map(id => `<span class="tagchip">${esc(oname(id))}</span>`).join('')}</div>
-    </div>`).join('')}</div>` : `<p class="muted">لا يوجد موظفون بعد.</p>`}`;
+    </div>`).join('')}</div>` : `<p class="muted">${t('adm.noStaff')}</p>`}`;
 }
 export function vOfficeForm(){
   const o = S.route.params.id ? S.offices.find(x => x.id === S.route.params.id) : null;
   return `<div class="wrap" data-view="officeForm">${backBtn()}
-    <section class="hero"><div class="hero-kicker">${icon('pin')}${o ? 'تعديل موقع' : 'موقع جديد'}</div><h1 class="hero-title">${o ? esc(o.name) : 'أضف مكتب مفقودات'}</h1></section>
+    <section class="hero"><div class="hero-kicker">${icon('pin')}${t(o ? 'of.edit' : 'of.new')}</div><h1 class="hero-title">${o ? esc(oName(o)) : t('of.add')}</h1></section>
     <form data-form="office" data-id="${esc(o?.id || '')}" class="panel" novalidate>
-      <div class="field"><label for="o-name">اسم المنشأة</label><input id="o-name" name="name" class="input" required maxlength="80" value="${esc(o?.name || '')}" placeholder="مثال: مطار الملك فهد الدولي"></div>
+      <div class="field"><label for="o-name">${t('of.name')}</label><input id="o-name" name="name" class="input" required maxlength="80" value="${esc(o?.name || '')}" placeholder="${t('of.namePh')}"></div>
       <div class="two">
-        <div class="field"><label for="o-short">اسم مختصر</label><input id="o-short" name="short" class="input" maxlength="30" value="${esc(o?.short || '')}" placeholder="يظهر في الشريط العلوي"></div>
-        <div class="field"><label for="o-type">النوع</label><select id="o-type" name="type" class="input">${OFFICE_TYPES.map(t => `<option value="${t.id}" ${o?.type === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}</select></div>
-        <div class="field"><label for="o-city">المدينة</label><input id="o-city" name="city" class="input" maxlength="40" value="${esc(o?.city || '')}"></div>
-        <div class="field"><label for="o-code">رمز القيد (حروف لاتينية)</label><input id="o-code" name="code" class="input" maxlength="4" dir="ltr" value="${esc(o?.code || '')}" placeholder="TCA"></div>
+        <div class="field"><label for="o-short">${t('of.short')}</label><input id="o-short" name="short" class="input" maxlength="30" value="${esc(o?.short || '')}" placeholder="${t('of.shortPh')}"></div>
+        <div class="field"><label for="o-type">${t('of.type')}</label><select id="o-type" name="type" class="input">${OFFICE_TYPES.map(x => `<option value="${x.id}" ${o?.type === x.id ? 'selected' : ''}>${esc(otypeName(x.id))}</option>`).join('')}</select></div>
+        <div class="field"><label for="o-city">${t('setup.city')}</label><input id="o-city" name="city" class="input" maxlength="40" value="${esc(o?.city || '')}"></div>
+        <div class="field"><label for="o-code">${t('of.code')}</label><input id="o-code" name="code" class="input" maxlength="4" dir="ltr" value="${esc(o?.code || '')}" placeholder="TCA"></div>
       </div>
-      <div class="field"><label for="o-place">موقع المكتب داخل المنشأة</label><input id="o-place" name="place" class="input" maxlength="120" value="${esc(o?.place || '')}"></div>
+      <div class="field"><label for="o-place">${t('of.place')}</label><input id="o-place" name="place" class="input" maxlength="120" value="${esc(o?.place || '')}"></div>
       <div class="two">
-        <div class="field"><label for="o-hours">أوقات العمل</label><input id="o-hours" name="hours" class="input" maxlength="80" value="${esc(o?.hours || '')}"></div>
-        <div class="field"><label for="o-phone">رقم التواصل</label><input id="o-phone" name="phone" class="input" maxlength="30" dir="ltr" value="${esc(o?.phone || '')}"></div>
-        <div class="field"><label for="o-ret">مدة الحفظ (أيام)</label><input id="o-ret" name="retentionDays" type="number" min="7" max="365" class="input" value="${esc(o?.retentionDays || 90)}"></div>
-        <div class="field"><label for="o-pick">مهلة الاستلام بعد قبول الطلب (أيام)</label><input id="o-pick" name="pickupDays" type="number" min="1" max="60" class="input" value="${esc(o?.pickupDays || 7)}"><span class="hint">إن لم يحضر صاحب الطلب خلالها يستطيع الموظف إعادة إتاحة الغرض.</span></div>
+        <div class="field"><label for="o-hours">${t('found.hours')}</label><input id="o-hours" name="hours" class="input" maxlength="80" value="${esc(o?.hours || '')}"></div>
+        <div class="field"><label for="o-phone">${t('of.phone')}</label><input id="o-phone" name="phone" class="input" maxlength="30" dir="ltr" value="${esc(o?.phone || '')}"></div>
+        <div class="field"><label for="o-ret">${t('of.ret')}</label><input id="o-ret" name="retentionDays" type="number" min="7" max="365" class="input" value="${esc(o?.retentionDays || 90)}"></div>
+        <div class="field"><label for="o-pick">${t('of.pick')}</label><input id="o-pick" name="pickupDays" type="number" min="1" max="60" class="input" value="${esc(o?.pickupDays || 7)}"><span class="hint">${t('of.pickHint')}</span></div>
       </div>
-      <div class="field"><label for="o-spots">أماكن العثور داخل المنشأة</label><textarea id="o-spots" name="spots" class="input" placeholder="مكان في كل سطر">${esc((o?.spots || []).join('\n'))}</textarea><span class="hint">تظهر كقائمة اختيار عند تسجيل المفقودات والبلاغات.</span></div>
+      <div class="field"><label for="o-spots">${t('of.spots')}</label><textarea id="o-spots" name="spots" class="input" placeholder="${t('of.spotsPh')}">${esc((o?.spots || []).join('\n'))}</textarea><span class="hint">${t('of.spotsHint')}</span></div>
+      <details class="en-fields" ${o?.nameEn ? 'open' : ''}>
+        <summary>${icon('globe')}${t('of.enTitle')}</summary>
+        <p class="hint">${t('of.enHint')}</p>
+        <div class="two" dir="ltr" lang="en">
+          <div class="field"><label for="o-nameEn">${t('of.name')}</label><input id="o-nameEn" name="nameEn" class="input" maxlength="80" value="${esc(o?.nameEn || '')}" placeholder="Technical College Al-Ahsa"></div>
+          <div class="field"><label for="o-shortEn">${t('of.short')}</label><input id="o-shortEn" name="shortEn" class="input" maxlength="30" value="${esc(o?.shortEn || '')}"></div>
+          <div class="field"><label for="o-cityEn">${t('setup.city')}</label><input id="o-cityEn" name="cityEn" class="input" maxlength="40" value="${esc(o?.cityEn || '')}"></div>
+          <div class="field"><label for="o-hoursEn">${t('found.hours')}</label><input id="o-hoursEn" name="hoursEn" class="input" maxlength="80" value="${esc(o?.hoursEn || '')}"></div>
+        </div>
+        <div class="field" dir="ltr" lang="en"><label for="o-placeEn">${t('of.place')}</label><input id="o-placeEn" name="placeEn" class="input" maxlength="120" value="${esc(o?.placeEn || '')}"></div>
+        <div class="field" dir="ltr" lang="en"><label for="o-spotsEn">${t('of.spots')}</label><textarea id="o-spotsEn" name="spotsEn" class="input" placeholder="${t('of.spotsPh')}">${esc((o?.spotsEn || []).join('\n'))}</textarea><span class="hint">${t('of.spotsEnHint')}</span></div>
+      </details>
       <div class="form-err" hidden></div>
-      <button class="btn block" type="submit">${icon('check')}حفظ</button>
+      <button class="btn block" type="submit">${icon('check')}${t('c.save')}</button>
     </form>
   </div>`;
 }
