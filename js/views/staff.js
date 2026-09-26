@@ -1,14 +1,16 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
 import { icon, CATS, cat, catName, colorName, ITEM_STATUS, CLAIM_STATUS } from '../constants.js';
-import { $, $$, esc, today, daysAgo, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText } from '../utils.js';
-import { S, curOffice, item, candidatesFor } from '../state.js';
-import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, colorPicker, photoField, spotOptions, spotExtra, resetForm } from './common.js';
+import { $, $$, esc, today, dayNum, daysAgo, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText } from '../utils.js';
+import { S, curOffice, item, full, candidatesFor } from '../state.js';
+import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, colorPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm } from './common.js';
 import { hydrate } from '../ui.js';
+import { migrateItems, allowMigrationRetry } from '../migrate.js';
 
 /* ---------- staff dashboard ---------- */
 export function vStaff(){
   const o = curOffice();
   if (S.route.params.tab) { S.staffTab = S.route.params.tab; }
+  allowMigrationRetry();
   return `<div class="wrap" data-view="staff">
     <section class="hero"><div class="hero-kicker">${icon('shield')}لوحة مكتب المفقودات</div><h1 class="hero-title">${esc(o.name)}</h1></section>
     <div class="stats" id="s-stats"></div>
@@ -48,12 +50,14 @@ export function updateStaff(){
   }
   $('#s-body').innerHTML = S.staffTab === 'claims' ? staffClaims() : S.staffTab === 'reports' ? staffReports() : staffItems();
   hydrate();
+  migrateItems();   // نقل تفاصيل الأغراض القديمة إلى الملف السري (مرة واحدة)
 }
 export function staffItems(){
   const keep = curOffice()?.retentionDays || 90;
   let arr = S.items.slice();
   if (S.staffStatus === 'active') arr = arr.filter(i => i.status === 'available' || i.status === 'reserved');
   else if (S.staffStatus !== 'all') arr = arr.filter(i => i.status === S.staffStatus);
+  arr = arr.map(full);   // الموظف يبحث ويرى التفاصيل السرية أيضاً
   const q = tokens(S.staffQ);
   if (q.length) arr = arr.filter(i => textScore(q, i) > 0 || norm(i.ref).includes(norm(S.staffQ)));
   arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
@@ -68,17 +72,42 @@ export function staffItems(){
       </div>
     </article>`).join('')}</div>`;
 }
+/* مقارنة إجابات صاحب الطلب بالحقيقة (من itemSecrets) */
+const OK = '<span class="v ok">✓</span>', OK2 = '<span class="v ok">✓✓</span>', NO = '<span class="v bad">✗</span>', NA = '<span class="v mute">لم يحدد</span>';
+function claimCompare(c, f){
+  if (!f) return '';
+  const said = x => x ? esc(x) : '<span class="muted">لم يحدد</span>', truth = x => x ? esc(x) : '<span class="muted">—</span>';
+  // اللون: مطابقة تلقائية
+  const color = !c.color ? NA : !f.color ? '' : c.color === f.color ? OK : NO;
+  // المكان: ✓ المنطقة نفسها، ✓✓ والمبنى نفسه أيضاً
+  const place = !c.lostSpot ? NA : !f.spot ? '' : c.lostSpot !== f.spot ? NO : (c.bldg && c.bldg === f.bldg ? OK2 : OK);
+  // التاريخ: فُقد قبل العثور أو في يومه، وبفارق 14 يوماً على الأكثر
+  const gap = c.lostDate && f.foundDate ? dayNum(f.foundDate) - dayNum(c.lostDate) : null;
+  const date = !c.lostDate ? NA : gap === null ? '' : gap >= 0 && gap <= 14 ? OK : NO;
+  const hits = [color, place, date].filter(v => v === OK || v === OK2).length;
+  const row = (k, a, b, v = '') => `<div class="cmp-row"><b>${k}</b><span>${a}</span><span>${b}</span>${v || '<span class="v"></span>'}</div>`;
+  return `<div class="cmp">
+    <div class="cmp-row cmp-head"><b></b><span>قال صاحب الطلب</span><span>الحقيقة</span><span class="v"></span></div>
+    ${row('اللون', said(colorName(c.color)), truth(colorName(f.color)), color)}
+    ${row('المكان', said(spotText({spot: c.lostSpot, bldg: c.bldg, room: c.room})), truth(spotText(f)), place)}
+    ${row('التاريخ', said(c.lostDate && fmtDate(c.lostDate)), truth(f.foundDate && 'وُجد ' + fmtDate(f.foundDate)), date)}
+    ${row('الماركة', said(c.brand), truth(f.brand))}
+    ${row('المحتوى أو العلامة', said(c.proof), truth(f.desc))}
+    <div class="cmp-sum">تطابق ${hits} من 3</div>
+  </div>`;
+}
 export function claimCardStaff(c){
   const i = item(c.itemId);
+  // تحذير: طلبات كثيرة من المستخدم نفسه في هذا المكتب خلال 30 يوماً
+  const month = c.uid === 'deleted' ? 0 : S.claims.filter(x => x.uid === c.uid && x.createdAt >= Date.now() - 30 * 864e5).length;
   const actions = c.status === 'pending' ? `<div class="btn-row">
       <button class="btn sm" data-act="approve" data-id="${esc(c.id)}">${icon('check')}قبول</button>
       <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}رفض</button></div>`
     : c.status === 'approved' ? `<button class="btn sm" data-act="verify" data-id="${esc(c.id)}">${icon('shield')}تحقق من الرمز وسلّم</button>` : '';
   return `<div class="box">
-    <div class="box-head"><div>${person(c.uid)}<span class="meta">${relTime(c.createdAt)}</span></div>${pill(CLAIM_STATUS, c.status)}</div>
-    ${i && S.route.name !== 'item' ? miniItem(i) : ''}
-    <div class="proof">${esc(c.proof)}</div>
-    ${c.lostSpot || c.lostDate ? `<div class="meta">فُقد ${c.lostSpot ? 'في ' + esc(c.lostSpot) : ''} ${c.lostDate ? '· ' + fmtDate(c.lostDate) : ''}</div>` : ''}
+    <div class="box-head"><div class="claim-who">${person(c.uid)}<span class="meta">${relTime(c.createdAt)}</span>${month >= 3 ? `<span class="pill bad">أرسل ${month} طلبات هذا الشهر</span>` : ''}</div>${pill(CLAIM_STATUS, c.status)}</div>
+    ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
+    ${i ? claimCompare(c, full(i)) : `<div class="proof">${esc(c.proof)}</div>`}
     ${c.status === 'rejected' && c.note ? `<div class="meta">سبب الرفض: ${esc(c.note)}</div>` : ''}
     ${actions}
   </div>`;
@@ -98,7 +127,7 @@ export function staffReports(){
   const rs = S.reports.filter(r => r.status === 'open').sort((a,b) => b.createdAt - a.createdAt);
   if (!rs.length) return `<div class="empty">${icon('bell')}<b>لا توجد بلاغات مفتوحة</b><span>بلاغات الزوار عن مفقوداتهم تظهر هنا مع المرشحين من المستودع.</span></div>`;
   return `<div class="list">${rs.map(r => {
-    const cands = candidatesFor(r, 3);
+    const cands = candidatesFor(r, 3, full);   // الموظف يقارن بالتفاصيل السرية أيضاً
     return `<div class="box">
       <div class="box-head"><div><h3>${esc(r.title)}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(r.sub) : ''}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''}</span></div><span class="meta">${relTime(r.createdAt)}</span></div>
       ${r.photo ? `<div class="row-thumb" style="width:84px;height:84px">${icon('camera')}<img data-photo="r_${esc(r.id)}" alt="" hidden></div>` : ''}
@@ -119,23 +148,28 @@ function acceptBtn(r){
 }
 
 /* ---------- staff: add / edit item ---------- */
+// الحقول السرية (الاسم التفصيلي، اللون، الماركة، الوصف، المبنى والقاعة، موضع الحفظ) تُقرأ من itemSecrets وتُحفظ فيها
 export function vItemForm(){
-  const o = curOffice(); const i = S.route.params.id ? item(S.route.params.id) : null;
+  const o = curOffice(); const i = S.route.params.id ? full(item(S.route.params.id)) : null;
   // عند قبول بلاغ: نعبّئ النموذج من بيانات البلاغ (التصنيف، النوع، اللون، الصورة...)
   const r = !i && S.route.params.fromReport ? S.reports.find(x => x.id === S.route.params.fromReport) : null;
   const src = i || (r ? {cat: r.cat, sub: r.sub, color: r.color, title: r.title, desc: r.desc, spot: r.spot, bldg: r.bldg, room: r.room} : null);
-  const photoKey = i?.photo ? i.id : r?.photo && !cat(r.cat).sensitive ? 'r_' + r.id : null;
+  // الموظف يرى الأصل الواضح (p_)، والقيمة القديمة true صورتها في itemPhotos
+  const photoKey = i?.photo ? (i.photo === true ? i.id : 'p_' + i.id) : r?.photo && !cat(r.cat).sensitive ? 'r_' + r.id : null;
+  const mode = ['clear', 'blur', 'none'].includes(i?.photo) ? i.photo : i?.photo === true ? 'clear' : 'blur';
   resetForm(!!i?.photo, i ? null : photoKey);
   return `<div class="wrap" data-view="add">${i || r ? backBtn() : ''}
     <section class="hero"><div class="hero-kicker">${icon('tag')}${i ? 'تعديل ' + esc(i.ref) : r ? 'قبول بلاغ · ' + esc(o.name) : 'قيد جديد · ' + esc(o.name)}</div><h1 class="hero-title">${i ? 'تعديل بيانات الغرض' : r ? 'إضافة الغرض المُبلَّغ عنه للمستودع' : 'تسجيل غرض معثور عليه'}</h1></section>
-    ${r ? `<div class="note info">${icon('bell')}<span>عبّأنا الحقول من البلاغ. راجعها، واحذف من الوصف أي تفصيل يثبت به صاحبه ملكيته لأن الوصف يظهر للجميع. بعد الحفظ يُرشَّح الغرض لصاحب البلاغ ويصله تنبيه.</span></div>` : ''}
+    ${r ? `<div class="note info">${icon('bell')}<span>عبّأنا الحقول من البلاغ، راجعها قبل الحفظ. بعد الحفظ يُرشَّح الغرض لصاحب البلاغ ويصله تنبيه.</span></div>` : ''}
     <form data-form="item" class="panel" novalidate ${r ? `data-report="${esc(r.id)}"` : ''}>
-      ${photoField(photoKey, 'صورة الغرض')}
+      ${photoField(photoKey, 'صورة الغرض', photoModePicker(mode))}
       <div class="field"><span class="label">التصنيف</span>${catPicker(src?.cat || '')}</div>
       <div class="field" id="subs-field" ${src?.cat && cat(src.cat).subs.length ? '' : 'hidden'}><span class="label">النوع</span><div id="subs">${src?.cat ? subsPicker(src.cat, src.sub) : ''}</div></div>
+      <div class="note">${icon('lock')}<span>يظهر للزوار التصنيف والنوع والمنطقة وتاريخ العثور فقط. بقية الحقول لا يراها إلا موظفو المكتب، وتُقارن بإجابات من يطلب الاستلام.</span></div>
       <div class="field"><span class="label">اللون</span>${colorPicker(src?.color || '')}</div>
-      <div class="field"><label for="f-title">اسم الغرض</label><input id="f-title" name="title" class="input" required maxlength="80" value="${esc(src?.title || '')}" placeholder="مثال: سماعات لاسلكية بيضاء"></div>
-      <div class="field"><label for="f-desc">الوصف الظاهر للزوار</label><textarea id="f-desc" name="desc" class="input" maxlength="600" placeholder="صف الغرض دون كشف كل التفاصيل؛ اترك علامة مميزة يثبت بها صاحبه ملكيته.">${esc(src?.desc || '')}</textarea></div>
+      <div class="field"><label for="f-title">اسم الغرض (للموظفين)</label><input id="f-title" name="title" class="input" required maxlength="80" value="${esc(src?.title || '')}" placeholder="مثال: سماعات لاسلكية بيضاء"></div>
+      <div class="field"><label for="f-brand">الماركة أو الشركة <span class="hint">(للموظفين فقط)</span></label><input id="f-brand" name="brand" class="input" maxlength="40" value="${esc(src?.brand || '')}" placeholder="مثال: سامسونج"></div>
+      <div class="field"><label for="f-desc">الوصف والعلامات المميزة (للموظفين فقط، لا يظهر للزوار)</label><textarea id="f-desc" name="desc" class="input" maxlength="600" placeholder="المحتوى، الخدوش والملصقات، الرقم التسلسلي… يُستخدم للتحقق من ملكية من يطلب الاستلام.">${esc(src?.desc || '')}</textarea></div>
       <div class="two">
         <div class="field"><label for="f-spot">مكان العثور</label><select id="f-spot" name="spot" class="input">${spotOptions(o, src?.spot || '')}</select></div>
         <div class="field"><label for="f-date">تاريخ العثور</label><input id="f-date" name="foundDate" type="date" class="input" value="${esc(i?.foundDate || today())}" max="${today()}"></div>
@@ -147,4 +181,3 @@ export function vItemForm(){
     </form>
   </div>`;
 }
-

@@ -62,7 +62,10 @@ export const roomWord = s => /معمل|معامل/.test(s || '') ? 'المعمل
 // نص المكان كاملاً، مثل: «معامل الحاسب · مبنى 3 · معمل 105» (بدون escape؛ استخدم esc عند العرض)
 export const spotText = x => !x?.spot ? '' : x.spot + (x.bldg ? ' · مبنى ' + x.bldg : '') + (x.room ? ' · ' + roomWord(x.spot).replace(/^ال/, '') + ' ' + x.room : '');
 
-export const itemText = i => [i.title, i.desc, i.sub, catName(i.cat), colorName(i.color), color(i.color)?.alt, i.spot, i.bldg, i.room, i.ref].join(' ');
+// الاسم العام للغرض في الإعلان: اسم النوع إن وُجد، وإلا اسم التصنيف (الاسم التفصيلي سري للموظفين)
+export const publicTitle = (catId, sub) => sub || catName(catId);
+
+export const itemText = i => [i.title, i.desc, i.sub, catName(i.cat), colorName(i.color), color(i.color)?.alt, i.brand, i.spot, i.bldg, i.room, i.ref].join(' ');
 export function textScore(q, i){
   const t = tokens(itemText(i)); let s = 0;
   for (const w of q){
@@ -139,6 +142,14 @@ export async function compress(file, max=900){
   } finally { URL.revokeObjectURL(url); }
 }
 
+// نسخة مموّهة حقيقية للصورة: نصغّرها إلى 24px عرضاً فتضيع تفاصيلها من الملف نفسه (وليس بـ CSS فقط)
+export async function makeBlur(dataUrl){
+  const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = dataUrl; });
+  const w = 24, h = Math.max(1, Math.round(24 * (img.naturalHeight || 1) / (img.naturalWidth || 1)));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').drawImage(img, 0, 0, w, h);
+  return c.toDataURL('image/jpeg', .6);
+}
 
 let toastTimer;
 export function toast(msg){

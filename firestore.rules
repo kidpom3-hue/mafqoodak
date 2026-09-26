@@ -30,6 +30,14 @@ service cloud.firestore {
     // الحدود هنا أكبر من حدود النماذج في التطبيق بهامش واسع، فلا تؤثر على الاستخدام العادي.
     function strMax(d, k, n) { return !(k in d) || (d[k] is string && d[k].size() <= n); }
     function photoDoc() { return request.resource.data.keys().hasOnly(['data']) && smallImage(); }
+    // تفاصيل الغرض السرية: لا تُكتب أبداً في items (المقروءة للجميع)، مكانها itemSecrets
+    function secretKeys() { return ['color', 'brand', 'desc', 'bldg', 'room', 'storage']; }
+    function validSecret(d) {
+      return d.keys().hasOnly(['officeId', 'title', 'color', 'brand', 'desc', 'bldg', 'room', 'storage'])
+        && d.officeId is string
+        && strMax(d, 'title', 400) && strMax(d, 'color', 60) && strMax(d, 'brand', 200) && strMax(d, 'desc', 4000)
+        && strMax(d, 'bldg', 40) && strMax(d, 'room', 60) && strMax(d, 'storage', 200);
+    }
 
     function validUser(d) {
       return d.keys().hasOnly(['name', 'email', 'photo', 'lastSeen'])
@@ -95,9 +103,32 @@ service cloud.firestore {
     // المفقودات: يراها الجميع، ويعدّلها موظفو المكتب نفسه فقط
     match /items/{itemId} {
       allow read: if true;
-      allow create: if isStaffOf(request.resource.data.officeId);
+      allow create: if isStaffOf(request.resource.data.officeId)
+        && !request.resource.data.keys().hasAny(secretKeys());
       allow update: if isStaffOf(resource.data.officeId)
-        && request.resource.data.officeId == resource.data.officeId;
+        && request.resource.data.officeId == resource.data.officeId
+        && !request.resource.data.keys().hasAny(secretKeys());
+      allow delete: if isStaffOf(resource.data.officeId);
+    }
+
+    // التفاصيل السرية للغرض (اللون، الماركة، الوصف، المبنى والقاعة، موضع الحفظ): لموظفي مكتبه فقط
+    match /itemSecrets/{itemId} {
+      allow read: if isStaffOf(resource.data.officeId);
+      allow create: if isStaffOf(request.resource.data.officeId)
+        && validSecret(request.resource.data)
+        && get(/databases/$(database)/documents/items/$(itemId)).data.officeId == request.resource.data.officeId;
+      allow update: if isStaffOf(resource.data.officeId)
+        && request.resource.data.officeId == resource.data.officeId
+        && validSecret(request.resource.data);
+      allow delete: if isStaffOf(resource.data.officeId);
+    }
+
+    // الصورة الأصلية الواضحة: لموظفي المكتب فقط (العامة في itemPhotos: واضحة أو مموّهة أو غير موجودة حسب اختيار الموظف)
+    match /itemPhotosPrivate/{itemId} {
+      allow read: if isStaffOf(resource.data.officeId);
+      allow create, update: if isStaffOf(request.resource.data.officeId)
+        && request.resource.data.keys().hasOnly(['officeId', 'data']) && smallImage()
+        && get(/databases/$(database)/documents/items/$(itemId)).data.officeId == request.resource.data.officeId;
       allow delete: if isStaffOf(resource.data.officeId);
     }
 
@@ -140,24 +171,29 @@ service cloud.firestore {
     match /claims/{claimId} {
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
       allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'lostSpot', 'lostDate', 'status', 'codeHash', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'status', 'codeHash', 'createdAt'])
         && request.resource.data.uid == me()
+        // طلب واحد فقط لكل مستخدم على كل غرض: رقم الطلب = رقم الغرض_رقم المستخدم
+        && claimId == request.resource.data.itemId + '_' + me()
         && request.resource.data.status == 'pending'
         && request.resource.data.codeHash is string && request.resource.data.codeHash.size() <= 128
         && strMax(request.resource.data, 'proof', 5000)
         && strMax(request.resource.data, 'lostSpot', 400)
+        && strMax(request.resource.data, 'color', 60) && strMax(request.resource.data, 'brand', 200)
+        && strMax(request.resource.data, 'bldg', 40) && strMax(request.resource.data, 'room', 60)
         && strMax(request.resource.data, 'lostDate', 20)
         && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.status == 'available'
         && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.officeId == request.resource.data.officeId;
       allow update: if (isStaffOf(resource.data.officeId)
           && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy']))
-        // «حذف حسابي»: الطلب المُسلَّم لا يُحذف، بل تُمسح منه بيانات صاحبه ويبقى سجل التسليم للمكتب
-        || (signedIn() && resource.data.uid == me() && resource.data.status == 'done'
+        // «حذف حسابي»: الطلب المُسلَّم أو المرفوض لا يُحذف، بل تُمسح منه بيانات صاحبه ويبقى السجل للمكتب
+        // (المرفوض يبقى حتى لا يُحذف ويُعاد إرساله لتخمين التفاصيل من جديد)
+        || (signedIn() && resource.data.uid == me() && resource.data.status in ['done', 'rejected']
           && request.resource.data.uid == 'deleted' && request.resource.data.proof == ''
-          && onlyChanges(['uid', 'proof', 'lostSpot', 'lostDate', 'anonymizedAt']));
-      // «حذف حسابي»: يحذف المستخدم طلباته غير المُسلَّمة، إلا المقبول منها (الغرض محجوز له)
+          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'anonymizedAt']));
+      // يحذف المستخدم طلبه ما دام قيد المراجعة فقط
       allow delete: if isAdmin()
-        || (signedIn() && resource.data.uid == me() && resource.data.status in ['pending', 'rejected']);
+        || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending');
     }
 
     // صلاحيات الموظفين: يمنحها ويسحبها المالك فقط

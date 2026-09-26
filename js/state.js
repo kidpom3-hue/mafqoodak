@@ -15,6 +15,7 @@ export const S = {
   config: null, configLoaded: false,
   offices: [], officesLoaded: false,
   items: [], itemsLoaded: false, reports: [], claims: [], allItems: [],
+  secrets: {},   // تفاصيل المفقودات السرية (للموظف فقط): رقم الغرض ← {title, color, brand, desc, bldg, room, storage}
   staffDoc: null, staffLoaded: false, staffList: [], staffReqs: [], myReq: null, priv: {},
   officeId: LS.get('office', null),
   mode: LS.get('mode', 'visitor'),
@@ -36,6 +37,8 @@ const reset = () => resetFn();
 /* ---------- قراءات مساعدة ---------- */
 export const curOffice = () => S.offices.find(o => o.id === S.officeId) || null;
 export const item = id => S.items.find(i => i.id === id) || S.allItems.find(i => i.id === id);
+// الغرض كاملاً للموظف: البيانات العامة + التفاصيل السرية (تُستخدم في كل شاشات الموظف)
+export const full = i => i ? {...i, ...(S.secrets[i.id] || {})} : i;
 export const staffOffices = () => S.isAdmin ? S.offices.map(o => o.id) : (S.staffDoc?.offices || []);
 export const isStaffHere = () => !!S.officeId && staffOffices().includes(S.officeId);
 export function modes(){ const m = ['visitor']; if (isStaffHere()) m.push('staff'); if (S.isAdmin) m.push('admin'); return m; }
@@ -45,9 +48,10 @@ export const myClaims = () => S.claims.filter(c => c.uid && c.uid === S.uid).sor
 export const myCode = id => S.priv?.codes?.[id] || LS.get('codes', {})[id] || null;
 export const MATCH_MIN = SETTINGS.matchThreshold;
 
-export function candidatesFor(r, n = 3){
+// المرشحون لبلاغ: الزائر يقارن بالبيانات العامة فقط، والموظف يمرّر full ليقارن بالتفاصيل السرية أيضاً
+export function candidatesFor(r, n = 3, view = x => x){
   return S.items.filter(i => i.status === 'available' || i.status === 'reserved')
-    .map(i => ({i, s: matchScore(r, i)})).filter(x => x.s >= MATCH_MIN)
+    .map(i => ({i: view(i), s: matchScore(r, view(i))})).filter(x => x.s >= MATCH_MIN)
     .sort((a, b) => b.s - a.s).slice(0, n);
 }
 
@@ -127,12 +131,15 @@ export function ensureOfficeSubs(){
   const staffView = isStaffHere();
   const k = `${S.officeId}|${S.uid}|${staffView}`;
   if (rcKey !== k){
-    rcKey = k; clear('rc'); S.reports = []; S.claims = [];
+    rcKey = k; clear('rc'); S.reports = []; S.claims = []; S.secrets = {};
     if (S.officeId && S.uid){
       // الموظف يرى كل بلاغات وطلبات مكتبه، والزائر يرى ما يخصه فقط (القواعد في firestore.rules تفرض ذلك)
       const f = staffView ? [['officeId', '==', S.officeId]] : [['officeId', '==', S.officeId], ['uid', '==', S.uid]];
       subs.rc.push(dbx.watch('reports', f, l => { S.reports = l; changed(); }, errH('reports')));
       subs.rc.push(dbx.watch('claims', f, l => { S.claims = l; changed(); }, errH('claims')));
+      // التفاصيل السرية للمفقودات: لموظفي المكتب فقط
+      if (staffView) subs.rc.push(dbx.watch('itemSecrets', [['officeId', '==', S.officeId]],
+        l => { S.secrets = Object.fromEntries(l.map(d => [d.id, d])); changed(); }, errH('itemSecrets')));
     }
   }
 }
@@ -155,7 +162,9 @@ export function fixMode(){
 
 /* ---------- الصور وأسماء المستخدمين (مع ذاكرة مؤقتة) ---------- */
 const PHOTO = new Map();
-export const photoPath = key => key.startsWith('r_') ? 'reportPhotos/' + key.slice(2) : 'itemPhotos/' + key;
+// مفاتيح الصور: p_<id> الأصل الواضح (للموظفين)، r_<id> صورة بلاغ، وغير ذلك الصورة العامة للغرض
+export const photoPath = key => key.startsWith('p_') ? 'itemPhotosPrivate/' + key.slice(2)
+  : key.startsWith('r_') ? 'reportPhotos/' + key.slice(2) : 'itemPhotos/' + key;
 export function getPhoto(key){
   if (PHOTO.has(key)) return PHOTO.get(key);
   const p = db ? dbx.get(photoPath(key)).then(d => d?.data || null).catch(() => null) : Promise.resolve(null);

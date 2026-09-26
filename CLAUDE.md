@@ -20,7 +20,15 @@ Lost-and-found PWA. First deployment: Technical College Al-Ahsa (office id `tc-a
 - `firestore.rules` — server-side security. **Any data-model change must be reflected here** and the user must re-publish rules in the Firebase console. Any new field in `reports`, `claims`, `users` or `staffRequests` must be added to that collection's `keys().hasOnly([...])` list in the rules, otherwise the write is rejected.
 
 ## Data model (Firestore)
-`config/app` {ownerUid} · `admins/{uid}` · `staff/{uid}` {offices[]} · `staffRequests/{uid}` · `users/{uid}` {name,email,photo} + `users/{uid}/private/codes` {codes: {claimId: code}} · `offices/{id}` · `items/{id}` · `itemPhotos/{itemId}` {data} · `reports/{id}` · `reportPhotos/{reportId}` · `claims/{id}` {codeHash = sha256(claimId + ':' + code)}.
+`config/app` {ownerUid} · `admins/{uid}` · `staff/{uid}` {offices[]} · `staffRequests/{uid}` · `users/{uid}` {name,email,photo} + `users/{uid}/private/codes` {codes: {claimId: code}} · `offices/{id}` · `reports/{id}` · `reportPhotos/{reportId}`.
+
+Items are split so the public listing never reveals what proves ownership:
+- `items/{id}` — **public**: officeId, ref, cat, sub, title, spot, foundDate, photo, status, createdBy, createdAt, updatedAt, sample (+ optional fromReport, reservedFor, returnedAt). `title` is generic (`publicTitle(cat, sub)` = sub or category name). `photo` is `'clear'` | `'blur'` | `'none'` (hidden publicly, original kept for staff) | `false`. Rules reject any of color/brand/desc/bldg/room/storage here. Legacy value `true` = old clear public photo, converted by `js/migrate.js`.
+- `itemSecrets/{id}` — **staff only**: {officeId, title (detailed), color, brand, desc, bldg, room, storage}. Staff views use `full(item)` from `state.js` (public + secret, `S.secrets` is subscribed only for staff).
+- `itemPhotosPrivate/{id}` — **staff only**: {officeId, data} = clear original (photo key `p_<id>`).
+- `itemPhotos/{id}` — public {data}: the same image for `'clear'`, a real 24px downscale from `makeBlur()` for `'blur'`, no doc for `'none'`/`false`.
+- `claims/{itemId}_{uid}` — fixed id = one claim per user per item; {itemId, officeId, uid, proof, color, brand, lostSpot, bldg, room, lostDate, status, codeHash = sha256(claimId + ':' + code), createdAt}. Staff see a comparison against `itemSecrets`.
+- Write order: create `items` first, then `itemSecrets` / `itemPhotosPrivate` / `itemPhotos`; delete those three first, then `items`. Rules that check `resource.data` reject deleting a doc that does not exist, so delete only the parts that exist (or ignore that error).
 Timestamps are client `Date.now()` numbers; dates are `YYYY-MM-DD` strings. Queries use only equality filters (no composite indexes needed); sort client-side.
 
 ## Conventions

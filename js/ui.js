@@ -1,7 +1,7 @@
 // هيكل الواجهة: التنقل بين الصفحات، الشريط العلوي، الشريط السفلي، النوافذ المنبثقة
 import { icon, LOGO, otype } from './constants.js';
 import { $, $$, esc } from './utils.js';
-import { S, curOffice, modes, homeRoute, unseenCount, markSeen, candidatesFor, getPhoto, getName, SHARE_RE } from './state.js';
+import { S, curOffice, modes, homeRoute, unseenCount, markSeen, candidatesFor, getPhoto, getName, SHARE_RE, full } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice, vJoin } from './views/visitor.js';
 import { vStaff, updateStaff, vItemForm } from './views/staff.js';
 import { vAdmin, vOfficeForm } from './views/admin.js';
@@ -129,7 +129,7 @@ function renderHeader(){
 function navItems(){
   if (S.mode === 'staff'){
     const pend = S.claims.filter(c => c.status === 'pending').length;
-    const open = S.reports.filter(r => r.status === 'open' && !r.staffPick && candidatesFor(r, 1).length).length;
+    const open = S.reports.filter(r => r.status === 'open' && !r.staffPick && candidatesFor(r, 1, full).length).length;
     return [
       {r: 'staff', tab: 'items', l: 'المستودع', i: 'box'},
       {r: 'add', l: 'أضف غرضاً', i: 'plus'},

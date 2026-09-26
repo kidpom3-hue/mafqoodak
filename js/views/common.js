@@ -2,6 +2,7 @@
 import { icon, cat, CATS, COLORS, colorName } from '../constants.js';
 import { esc, relDay, colorDot, isBuilding, roomWord, spotText } from '../utils.js';
 import { aiReady } from '../ai.js';
+import { S, isStaffHere } from '../state.js';
 
 /* حالة نموذج الإدخال الحالي (الصورة المختارة) */
 // copyFrom: مفتاح صورة بلاغ تُنسخ للغرض عند قبول البلاغ (مثل r_abc)
@@ -10,11 +11,26 @@ export function resetForm(hadPhoto = false, copyFrom = null){ Object.assign(FORM
 
 export const backBtn = (label = 'رجوع') => `<button class="back" data-act="back">${icon('back')}${label}</button>`;
 
+/* ---------- صور المفقودات ----------
+   items.photo: 'clear' واضحة للعامة، 'blur' مموّهة للعامة، 'none' مخفية عن العامة (الأصل عند الموظف)، false بلا صورة.
+   true قيمة قديمة (قبل نقل الأغراض إلى الملف السري) وتعني صورة عامة واضحة. */
+export const staffView = () => isStaffHere() && (S.mode === 'staff' || S.mode === 'admin');
+export const pubPhoto = i => i.photo === 'clear' || i.photo === 'blur' || i.photo === true;
+export const isBlur = i => !staffView() && i.photo === 'blur';
+// وسم الصورة: الموظف يرى الأصل الواضح (p_)، والزائر يرى النسخة العامة فقط
+export function photoImg(i, alt = ''){
+  if (!i.photo || cat(i.cat).sensitive) return '';
+  if (staffView()) return `<img data-photo="${esc(i.photo === true ? i.id : 'p_' + i.id)}" alt="${esc(alt)}" hidden>`;
+  return pubPhoto(i) ? `<img data-photo="${esc(i.id)}" alt="${esc(alt)}" hidden>` : '';
+}
+export const blurBadge = i => isBlur(i) ? `<span class="blur-badge">${icon('lock')}مموّهة لحماية صاحبها</span>` : '';
+
 export function thumbHtml(i, cls = 'row-thumb'){
   const c = cat(i.cat);
-  return `<div class="${cls}">${icon(c.icon)}${i.photo && !c.sensitive ? `<img data-photo="${esc(i.id)}" alt="" hidden>` : ''}</div>`;
+  return `<div class="${cls}${isBlur(i) ? ' blurred' : ''}">${icon(c.icon)}${photoImg(i)}</div>`;
 }
-export const miniItem = (i, extra = '') => `<button class="mini" data-act="openItem" data-id="${esc(i.id)}">${thumbHtml(i)}<span class="grow"><b>${esc(i.title)}</b><span class="meta">${colorDot(i.color)}${esc(colorName(i.color))} · ${esc(spotText(i))} · ${relDay(i.foundDate)}</span></span>${extra}</button>`;
+// الموظف يمرّر full(i) فيظهر اللون والمبنى والقاعة، والزائر يرى المنطقة العامة فقط
+export const miniItem = (i, extra = '') => `<button class="mini" data-act="openItem" data-id="${esc(i.id)}">${thumbHtml(i)}<span class="grow"><b>${esc(i.title)}</b><span class="meta">${i.color ? colorDot(i.color) + esc(colorName(i.color)) + ' · ' : ''}${esc(spotText(i))} · ${relDay(i.foundDate)}</span></span>${extra}</button>`;
 export const person = uid => `<span class="person"><img data-avatar="${esc(uid)}" alt="" hidden><span data-uname="${esc(uid)}"></span></span>`;
 
 export function catPicker(sel){
@@ -25,10 +41,18 @@ export function subsPicker(catId, sel){
   if (!subs.length) return '';
   return `<div class="subs" role="radiogroup" aria-label="النوع">${subs.map(s => `<label><input type="radio" name="sub" value="${esc(s)}" ${sel === s ? 'checked' : ''}>${esc(s)}</label>`).join('')}</div>`;
 }
-export function colorPicker(sel){
-  return `<div class="swatches" role="radiogroup" aria-label="اللون">${COLORS.map(c => `<label><input type="radio" name="color" value="${c.id}" ${sel === c.id ? 'checked' : ''}><span class="sw" style="background:${c.hex}"></span>${esc(c.name)}</label>`).join('')}</div>`;
+// unknown: يضيف خيار «لا أتذكر» (في نموذج الاستلام)
+export function colorPicker(sel, unknown = false){
+  return `<div class="swatches" role="radiogroup" aria-label="اللون">${unknown ? `<label><input type="radio" name="color" value="" ${!sel ? 'checked' : ''}><span class="sw sw-unknown">؟</span>لا أتذكر</label>` : ''}${COLORS.map(c => `<label><input type="radio" name="color" value="${c.id}" ${sel === c.id ? 'checked' : ''}><span class="sw" style="background:${c.hex}"></span>${esc(c.name)}</label>`).join('')}</div>`;
 }
-export function photoField(existingKey, label){
+// كيف تظهر صورة الغرض للعامة (يختارها الموظف)
+export function photoModePicker(sel = 'blur'){
+  const opts = [['clear', 'واضحة'], ['blur', 'مموّهة'], ['none', 'مخفية']];
+  return `<div class="field" id="photo-mode"><span class="label">كيف تظهر الصورة للزوار؟</span>
+    <div class="seg wide" role="radiogroup" aria-label="ظهور الصورة">${opts.map(([v, l]) => `<label class="seg-opt"><input type="radio" name="photoMode" value="${v}" ${sel === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
+    <span class="hint">واضحة: لا تكشف ما يثبت الملكية. مموّهة: يظهر فيها لون أو ماركة أو علامة مميزة. مخفية: فيها معلومات شخصية مثل اسم أو رقم أو صورة شخص.</span></div>`;
+}
+export function photoField(existingKey, label, extra = ''){
   return `<div class="field" id="photo-field"><span class="label">${label}</span>
     <div class="photo-drop">
       <div class="pv" id="pv">${existingKey ? `<img data-photo="${esc(existingKey)}" alt="" hidden>` : ''}${icon('camera')}</div>
@@ -41,6 +65,7 @@ export function photoField(existingKey, label){
         <span class="ai-status" id="ai-status"></span>
       </div>
     </div>
+    ${extra}
   </div>
   <div class="note warn" id="sens-note" hidden>${icon('lock')}<span>لا ترفع صور البطاقات والوثائق الشخصية. اكتب في الوصف معلومة جزئية فقط، مثل أول حرف من الاسم أو آخر رقمين.</span></div>`;
 }
