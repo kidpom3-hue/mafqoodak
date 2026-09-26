@@ -1,11 +1,11 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
-import { icon, cat, catName, colorName, ITEM_STATUS } from './constants.js';
+import { icon, cat, catName, colorName, ITEM_STATUS, CATS, COLORS } from './constants.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord } from './utils.js';
 import { S, curOffice, item, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN } from './state.js';
 import { auth, dbx, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut,
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider } from './firebase.js';
-import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav } from './ui.js';
+import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry } from './ui.js';
 import { updateBrowse } from './views/visitor.js';
 import { updateStaff, staffItems } from './views/staff.js';
 import { FORM, subsPicker } from './views/common.js';
@@ -59,8 +59,9 @@ async function aiFill(){
   try {
     const r = await analyzePhoto(FORM.blob);
     const f = btn.closest('form');
-    if (r?.cat && f.querySelector(`input[name=cat][value="${r.cat}"]`)){ f.querySelector(`input[name=cat][value="${r.cat}"]`).checked = true; onCatChange(f, r.cat, r.sub); }
-    if (r?.color){ const cc = f.querySelector(`input[name=color][value="${r.color}"]`); if (cc) cc.checked = true; }
+    // لا نضع ناتج الذكاء الاصطناعي في querySelector إلا إن كان من معرّفات التصنيفات والألوان المعروفة
+    if (CATS.some(c => c.id === r?.cat) && f.querySelector(`input[name=cat][value="${r.cat}"]`)){ f.querySelector(`input[name=cat][value="${r.cat}"]`).checked = true; onCatChange(f, r.cat, r.sub); }
+    if (COLORS.some(c => c.id === r?.color)){ const cc = f.querySelector(`input[name=color][value="${r.color}"]`); if (cc) cc.checked = true; }
     if (r?.title) f.querySelector('[name=title]').value = String(r.title).slice(0, 80);
     if (r?.desc) f.querySelector('[name=desc]').value = String(r.desc).slice(0, 600);
     st.innerHTML = `${icon('check')} تمت التعبئة — راجع الحقول قبل الحفظ.`;
@@ -279,7 +280,11 @@ async function submitForm(form){
       // 3) حذف البيانات: الصورة قبل البلاغ (ترتيب تشترطه القواعد)، ثم الطلبات، ثم الملف الشخصي
       const reports = await dbx.list('reports', [['uid', '==', user.uid]]);
       for (const r of reports){ if (r.photo) await dbx.del('reportPhotos/' + r.id).catch(() => {}); await dbx.del('reports/' + r.id); }
-      for (const c of claims) await dbx.del('claims/' + c.id);
+      // الطلب المُسلَّم يبقى سجلاً للمكتب بلا بيانات شخصية، وغير المُسلَّم يُحذف
+      for (const c of claims){
+        if (c.status === 'done') await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', lostSpot: '', lostDate: '', anonymizedAt: Date.now()});
+        else await dbx.del('claims/' + c.id);
+      }
       await dbx.del('users/' + user.uid + '/private/codes');
       await dbx.del('staffRequests/' + user.uid).catch(() => {});
       await dbx.del('users/' + user.uid);
@@ -321,6 +326,7 @@ const ACT = {
     const fromNav = !!el.closest('#nav, .top-links, .brand');
     if (fromNav) S.hist = [];
     go(r, {}, !fromNav);
+    if (fromNav && r !== homeRoute()) tabEntry();
   },
   back(){ back(); },
   login(){ go('login', {next: S.route.name === 'login' ? null : S.route}); },

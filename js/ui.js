@@ -1,7 +1,7 @@
 // هيكل الواجهة: التنقل بين الصفحات، الشريط العلوي، الشريط السفلي، النوافذ المنبثقة
 import { icon, LOGO, otype } from './constants.js';
 import { $, $$, esc } from './utils.js';
-import { S, curOffice, modes, homeRoute, unseenCount, markSeen, candidatesFor, getPhoto, getName } from './state.js';
+import { S, curOffice, modes, homeRoute, unseenCount, markSeen, candidatesFor, getPhoto, getName, SHARE_RE } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice, vJoin } from './views/visitor.js';
 import { vStaff, updateStaff, vItemForm } from './views/staff.js';
 import { vAdmin, vOfficeForm } from './views/admin.js';
@@ -37,18 +37,55 @@ export function initForm(){
   const n = f.querySelector('#sens-note'), p = f.querySelector('#photo-field');
   if (n) n.hidden = !sens; if (p) p.hidden = sens;
 }
+/* ---------- زر الرجوع في الجوال والمتصفح ----------
+   كل صفحة جديدة أو نافذة سفلية تضيف خطوة في سجل المتصفح (pushState).
+   زر الرجوع يُطلق popstate فنرجع خطوة داخل التطبيق بدل الخروج منه.
+   history.back() غير متزامن، لذلك نؤجّل أي pushState حتى يصل popstate الخاص به. */
+let skipPop = 0; const afterPop = [];
+function histDo(fn){ if (skipPop) afterPop.push(fn); else fn(); }
+// يزيل خطوة النافذة السفلية من السجل دون أن يعدّها رجوعاً لصفحة سابقة
+function dropSheetEntry(){ if (history.state?.sheet && !skipPop){ skipPop = 1; history.back(); } }
+
 export function go(name, params = {}, push = true){
-  if (push && S.route.name !== name) S.hist.push(S.route);
+  const pushed = push && S.route.name !== name;
+  if (pushed) S.hist.push(S.route);
   if (S.hist.length > 30) S.hist.shift();
+  if (S.sheet) dropSheetEntry();
   S.route = {name, params}; S.sheet = null;
   renderAll(); window.scrollTo(0, 0);
+  if (pushed) histDo(() => history.pushState({mf: 1}, ''));
 }
-export function back(){
-  const prev = S.hist.pop();
-  if (prev){ S.route = prev; S.sheet = null; renderAll(); }
+// الانتقال من الشريط السفلي لا يحفظ الصفحة في S.hist، لكن نضيف خطوة واحدة في سجل المتصفح
+// حتى يعود زر الرجوع إلى الرئيسية بدل الخروج من التطبيق
+export function tabEntry(){ histDo(() => { if (!history.state?.mf) history.pushState({mf: 1}, ''); }); }
+// خطوة رجوع داخل التطبيق (بلا pushState)
+function backStep(){
+  const prev = S.hist.pop(); S.sheet = null;
+  if (prev){ S.route = prev; renderAll(); }
   else go(homeRoute(), {}, false);
 }
+// زر «رجوع» في الواجهة: نرجع عبر سجل المتصفح ليبقى متطابقاً مع التطبيق
+export function back(){
+  if (S.sheet){ S.sheet = null; renderSheet(); dropSheetEntry(); }
+  histDo(() => { if (history.state?.mf) history.back(); else backStep(); });
+}
+window.addEventListener('popstate', () => {
+  if (skipPop){ skipPop = 0; afterPop.splice(0).forEach(f => f()); return; }
+  if (SHARE_RE.test(location.hash.slice(1))) return;   // رابط مشاركة: يعالجه مستمع hashchange في main.js
+  if (S.sheet){ S.sheet = null; renderSheet(); return; }   // نافذة مفتوحة: نغلقها فقط
+  backStep();
+});
 export function renderAll(){ renderHeader(); renderMain(); renderNav(); renderSheet(); hydrate(); }
+
+/* ارتفاع الترويسة في متغير CSS ليلتصق شريط البحث تحتها مباشرة، وظل خفيف عند الالتصاق */
+function syncHeader(){ const h = $('#hdr'); if (h) document.documentElement.style.setProperty('--hdr-h', h.offsetHeight + 'px'); }
+function markStuck(){
+  const bar = $('#browse-bar'); if (!bar) return;
+  const top = parseFloat(getComputedStyle(bar).top) || 0;
+  bar.classList.toggle('stuck', bar.getBoundingClientRect().top <= top + 1 && window.scrollY > 0);
+}
+window.addEventListener('resize', syncHeader);
+window.addEventListener('scroll', markStuck, {passive: true});
 export function refresh(){
   renderHeader();
   const r = ROUTES[S.route.name];
@@ -87,6 +124,7 @@ function renderHeader(){
       </div>
     </div>
     ${ms.length > 1 ? `<div class="seg modes" role="tablist" aria-label="طريقة العرض">${ms.map(m => `<button class="${S.mode === m ? 'on' : ''}" data-act="mode" data-v="${m}" role="tab" aria-selected="${S.mode === m}">${({visitor: 'زائر', staff: 'موظف المكتب', admin: 'الإدارة'})[m]}</button>`).join('')}</div>` : ''}`;
+  syncHeader();
 }
 function navItems(){
   if (S.mode === 'staff'){
@@ -132,16 +170,43 @@ export function renderSheet(){
   el.innerHTML = `<div class="sheet-backdrop" data-act="closeSheet"></div><div class="sheet-panel" role="dialog" aria-modal="true">${S.sheet}</div>`;
   const f = el.querySelector('input,textarea'); if (f) setTimeout(() => f.focus(), 60);
 }
-export function openSheet(html){ S.sheet = html; renderSheet(); hydrate(); }
-export function closeSheet(){ S.sheet = null; renderSheet(); }
+export function openSheet(html){
+  const wasOpen = !!S.sheet;
+  S.sheet = html; renderSheet(); hydrate();
+  if (!wasOpen) histDo(() => history.pushState({mf: 1, sheet: 1}, ''));
+}
+export function closeSheet(){
+  if (!S.sheet) return;
+  S.sheet = null; renderSheet(); dropSheetEntry();
+}
 export { renderNav };
+
+/* الأمان: لا نضع في img.src إلا صورة مضمّنة (data:image) أو صورة حساب Google،
+   حتى لا يضع مستخدم رابط صورة من موقعه فيعرف متى فُتح طلبه وعنوان IP من فتحه */
+export const safeData = v => typeof v === 'string' && v.startsWith('data:image/');
+export const safeAvatar = v => typeof v === 'string' && /^https:\/\/[a-z0-9.-]+\.googleusercontent\.com\//.test(v);
+
+async function loadPhoto(img){
+  if (img.dataset.loaded) return; img.dataset.loaded = '1';
+  const d = await getPhoto(img.dataset.photo);
+  if (safeData(d) && img.isConnected){ img.src = d; img.hidden = false; }
+}
+// تحميل الصور عند اقترابها من الشاشة فقط (توفيراً لحصة Firestore).
+// الصورة مخفية حتى تُحمَّل فلا تتقاطع أبداً، لذلك نراقب الحاوية الأب.
+const lazy = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
+  for (const e of entries){
+    if (!e.isIntersecting) continue;
+    lazy.unobserve(e.target);
+    e.target.querySelectorAll('img[data-photo]').forEach(loadPhoto);
+  }
+}, {rootMargin: '300px'}) : null;
 
 /* تحميل الصور وأسماء المستخدمين بعد رسم الصفحة */
 export function hydrate(){
-  $$('img[data-photo]').forEach(async img => {
-    if (img.dataset.loaded) return; img.dataset.loaded = '1';
-    const d = await getPhoto(img.dataset.photo);
-    if (d && img.isConnected){ img.src = d; img.hidden = false; }
+  $$('img[data-photo]').forEach(img => {
+    if (img.dataset.loaded) return;
+    const box = img.closest('.thumb, .detail-photo, .row-thumb, .pv');
+    if (lazy && box) lazy.observe(box); else loadPhoto(img);
   });
   $$('[data-uname]').forEach(async el => {
     if (el.dataset.loaded) return; el.dataset.loaded = '1';
@@ -149,6 +214,6 @@ export function hydrate(){
     if (!el.isConnected) return;
     el.textContent = p.name;
     const img = el.parentElement?.querySelector('img[data-avatar]');
-    if (img && p.photo){ img.referrerPolicy = 'no-referrer'; img.src = p.photo; img.hidden = false; }
+    if (img && safeAvatar(p.photo)){ img.referrerPolicy = 'no-referrer'; img.src = p.photo; img.hidden = false; }
   });
 }

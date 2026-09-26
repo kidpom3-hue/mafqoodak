@@ -421,3 +421,57 @@ form.hero-search{flex-direction:row;align-items:center;gap:8px;background:var(--
 .legal p,.legal li{font-size:14.5px;line-height:1.8}
 .legal ul{margin:0;padding-inline-start:20px;display:flex;flex-direction:column;gap:6px}
 .legal-link{align-self:center;font-size:13px}
+
+/* إصلاح: العناوين والنصوص الطويلة بلا مسافات كانت تمدّ الصفحة أفقياً */
+h1,h2,h3,p,dd,.row-title,.card-body h3,.hero-title{overflow-wrap:anywhere}
+.detail>*,.panel,.card,.card-body,.row-main{min-width:0}
+.detail{grid-template-columns:minmax(0,1fr)}
+@media (min-width:820px){.detail{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}}
+/* إصلاح: تبويبات لوحة الموظف تخرج عن الشاشة في 320px */
+#s-tabs{max-width:100%;overflow-x:auto;scrollbar-width:none}
+#s-tabs::-webkit-scrollbar{display:none}
+
+/* D1: بطاقات الواجهة الثلاث كمربعات مدمجة في الجوال */
+@media (max-width:719px){
+  .cta3{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .cta{flex-direction:column;justify-content:center;text-align:center;gap:6px;padding:12px 6px}
+  .cta b{font-size:13.5px}
+  .cta small{display:none}
+}
+/* D2: خلفية ملوّنة لطيفة للغرض بلا صورة بدل المربع الرمادي */
+.thumb,.detail-photo,.row-thumb{background:linear-gradient(145deg,var(--primary-soft),var(--surface-2) 70%)}
+.thumb>svg{width:58px;height:58px;padding:13px;border-radius:50%;background:var(--surface);color:var(--primary);opacity:1;stroke-width:1.6;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+/* D3: صورة التفاصيل أقصر حين لا توجد صورة */
+.detail-photo:not(:has(img:not([hidden]))){aspect-ratio:16/7}
+.detail-photo>svg{width:74px;height:74px;padding:16px;border-radius:50%;background:var(--surface);color:var(--primary)}
+/* D4: لوحة الموظف في الجوال: شريط أرقام أفقي، وإخفاء التبويبات المكررة مع الشريط السفلي */
+@media (max-width:719px){
+  .stats{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;margin-inline:-16px;padding:2px 16px 6px;scrollbar-width:none}
+  .stats::-webkit-scrollbar{display:none}
+  .stat{flex:0 0 auto;min-width:118px;scroll-snap-align:start;padding:10px 12px}
+  .stat b{font-size:22px}
+  #s-tabs{display:none}
+}
+/* D5: خطوات «كيف يعمل» كخط زمني مدمج */
+.how.how3{grid-template-columns:1fr;gap:0}
+@media (min-width:720px){.how.how3{grid-template-columns:repeat(3,1fr);gap:18px}}
+.how.how3 li{background:none;border:0;border-radius:0;padding:0 0 18px;display:grid;grid-template-columns:32px 1fr;column-gap:12px;row-gap:2px;position:relative}
+.how.how3 li::before{grid-row:1 / span 2;width:32px;height:32px;font-size:13px;z-index:1}
+.how.how3 li:not(:last-child)::after{content:"";position:absolute;inset-inline-start:15.5px;top:34px;bottom:2px;border-inline-start:2px dashed var(--line)}
+@media (min-width:720px){.how.how3 li::after{display:none}}
+
+/* أهداف اللمس: روابط التذييل وزر «رجوع» و«نسيت كلمة المرور» بارتفاع مريح للإصبع دون تغيير شكلها */
+.sf-col .link,.back,[data-act="resetPass"]{min-height:36px;display:inline-flex;align-items:center}
+
+/* هياكل التحميل: بطاقات رمادية بلمعان خفيف بدل الدائرة الدوّارة */
+.card.skel{cursor:default}
+.skel .thumb,.skel-line{background:linear-gradient(90deg,var(--surface-2) 25%,var(--surface) 50%,var(--surface-2) 75%);background-size:200% 100%;animation:skel 1.4s ease-in-out infinite}
+.skel-line{display:block;height:12px;border-radius:6px;width:80%}
+.skel-line.short{width:50%}
+@keyframes skel{from{background-position:100% 0}to{background-position:-100% 0}}
+@media (prefers-reduced-motion:reduce){.skel .thumb,.skel-line{animation:none}}
+
+/* صفحة التصفح: شريط البحث والتصنيفات ثابت أعلى الشاشة تحت الترويسة عند التمرير */
+.browse-bar{position:sticky;top:var(--hdr-h,calc(60px + env(safe-area-inset-top,0px)));z-index:20;background:var(--bg);margin-inline:-16px;padding:8px 16px;display:flex;flex-direction:column;gap:10px;transition:box-shadow .2s ease}
+.browse-bar.stuck{box-shadow:0 6px 12px -8px rgba(0,0,0,.25)}
+@media (min-width:720px){.browse-bar{margin-inline:-24px;padding-inline:24px}}

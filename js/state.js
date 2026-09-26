@@ -4,7 +4,8 @@ import { LS, matchScore, toast } from './utils.js';
 import { SETTINGS } from './config.js';
 
 // رابط مشاركة غرض: ./#item/<رقم المكتب>/<رقم الغرض> يفتح صفحة الغرض مباشرة
-const SHARED = /^item\/([\w-]+)\/([\w-]+)$/.exec(location.hash.slice(1));
+export const SHARE_RE = /^item\/([\w-]+)\/([\w-]+)$/;
+const SHARED = SHARE_RE.exec(location.hash.slice(1));
 if (SHARED) LS.set('office', SHARED[1]);
 
 export const S = {
@@ -167,7 +168,9 @@ const NAMES = new Map();
 export function getName(uid){
   if (uid === S.uid) return Promise.resolve({name: 'أنت', photo: S.me?.photo || ''});
   if (NAMES.has(uid)) return NAMES.get(uid);
-  const p = dbx.get('users/' + uid).then(d => ({name: d?.name || 'مستخدم', photo: d?.photo || ''})).catch(() => ({name: 'مستخدم', photo: ''}));
+  // صورة الحساب تُقبل من صور حسابات Google فقط (لا روابط تتبّع)
+  const okPhoto = v => typeof v === 'string' && /^https:\/\/[a-z0-9.-]+\.googleusercontent\.com\//.test(v);
+  const p = dbx.get('users/' + uid).then(d => ({name: d?.name || 'مستخدم', photo: okPhoto(d?.photo) ? d.photo : ''})).catch(() => ({name: 'مستخدم', photo: ''}));
   NAMES.set(uid, p); return p;
 }
 
