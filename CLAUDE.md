@@ -17,7 +17,7 @@ Lost-and-found PWA. First deployment: Technical College Al-Ahsa (office id `tc-a
 - `js/actions.js` — `ACT` click handlers (`data-act="name"`) and `submitForm` (forms use `data-form="kind"`).
 - `js/constants.js` — categories (`CATS`), colors, office types, statuses, SVG icon paths.
 - `js/utils.js` — dates, Arabic text normalisation/search, `matchScore` heuristic, SHA-256, image compression, `toast`.
-- `firestore.rules` — server-side security. **Any data-model change must be reflected here** and the user must re-publish rules in the Firebase console.
+- `firestore.rules` — server-side security. **Any data-model change must be reflected here** and the user must re-publish rules in the Firebase console. Any new field in `reports`, `claims`, `users` or `staffRequests` must be added to that collection's `keys().hasOnly([...])` list in the rules, otherwise the write is rejected.
 
 ## Data model (Firestore)
 `config/app` {ownerUid} · `admins/{uid}` · `staff/{uid}` {offices[]} · `staffRequests/{uid}` · `users/{uid}` {name,email,photo} + `users/{uid}/private/codes` {codes: {claimId: code}} · `offices/{id}` · `items/{id}` · `itemPhotos/{itemId}` {data} · `reports/{id}` · `reportPhotos/{reportId}` · `claims/{id}` {codeHash = sha256(claimId + ':' + code)}.
@@ -25,6 +25,8 @@ Timestamps are client `Date.now()` numbers; dates are `YYYY-MM-DD` strings. Quer
 
 ## Conventions
 - UI is Arabic, RTL. Use logical CSS properties (`inset-inline-start`, `padding-inline`). Colors only via CSS tokens in `:root` (light) and the two dark-mode blocks.
+- Back button: `go()` and `openSheet()` call `history.pushState({mf: 1[, sheet: 1]})`; a `popstate` listener in `ui.js` closes an open sheet or steps back through `S.hist`. `back()` and `closeSheet()` go through `history.back()` so browser history and `S.hist` stay in sync. Never call `pushState` from inside the `popstate` listener.
+- Images: only `data:image/...` values (item/report photos) and `https://*.googleusercontent.com/` avatars may be put into `img.src` (see `safeData`/`safeAvatar` in `ui.js`). Item photos load lazily via `IntersectionObserver` in `hydrate()`.
 - Routes with `live: true` re-render on data changes; forms are `live: false` so typing is never lost. Views with inputs that must keep focus use an `update()` partial renderer (see `updateBrowse`, `updateStaff`).
 - Write order matters for rules: create the parent doc (item/report) before its photo doc; delete the photo before the parent.
 - Sensitive category (`ids`) never stores photos.

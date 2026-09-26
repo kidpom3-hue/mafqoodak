@@ -2,7 +2,7 @@
 import { icon, LOGO, otype } from '../constants.js';
 import { $, esc, daysWord } from '../utils.js';
 import { S, curOffice } from '../state.js';
-import { card } from './visitor.js';
+import { card, skelCards } from './visitor.js';
 import { hydrate } from '../ui.js';
 
 const TAG_ART = `<svg class="tag-art" viewBox="0 0 220 240" aria-hidden="true">
@@ -69,7 +69,7 @@ export function updateHome(){
   const cc = $('#cta-count'); if (cc && S.itemsLoaded) cc.textContent = avail.length ? `${avail.length} متاح الآن` : 'كل ما سُلّم للمكتب';
   const latest = $('#home-latest');
   if (latest){
-    if (!S.itemsLoaded) latest.innerHTML = `<div class="loading" style="padding:30px"><span class="spin"></span></div>`;
+    if (!S.itemsLoaded) latest.innerHTML = `<div class="hscroll" aria-busy="true" aria-label="جارٍ التحميل">${skelCards()}</div>`;
     else {
       const arr = avail.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 8);
       latest.innerHTML = arr.length ? `<div class="hscroll">${arr.map(card).join('')}</div>`

@@ -36,8 +36,10 @@ export function vBrowse(){
       <p class="hero-sub" id="hero-count"></p>
     </section>
     <div id="match-banner"></div>
-    <label class="searchbar">${icon('search')}<input id="q" type="search" placeholder="ابحث: محفظة سوداء، مفتاح تويوتا، سماعات…" value="${esc(S.filter.q)}" autocomplete="off" aria-label="بحث"></label>
-    <div class="chips-scroll" id="cat-chips">${[{id:'all', name:'الكل', icon:'grid'}, ...CATS].map(c => `<button class="chip" data-act="fcat" data-id="${c.id}">${icon(c.icon)}<span>${esc(c.name)}</span></button>`).join('')}</div>
+    <div class="browse-bar" id="browse-bar">
+      <label class="searchbar">${icon('search')}<input id="q" type="search" placeholder="ابحث: محفظة سوداء، مفتاح تويوتا، سماعات…" value="${esc(S.filter.q)}" autocomplete="off" aria-label="بحث"></label>
+      <div class="chips-scroll" id="cat-chips">${[{id:'all', name:'الكل', icon:'grid'}, ...CATS].map(c => `<button class="chip" data-act="fcat" data-id="${c.id}">${icon(c.icon)}<span>${esc(c.name)}</span></button>`).join('')}</div>
+    </div>
     <div class="filters">
       <div class="seg" id="st-seg">${[['available','المتاحة'],['all','الكل مع المُسلّمة']].map(([v,l]) => `<button data-act="fstatus" data-v="${v}">${l}</button>`).join('')}</div>
       <select class="select-sm" id="frange" aria-label="تاريخ العثور">
@@ -60,6 +62,9 @@ export function visibleItems(){
   if (q.length) return arr.map(i => ({i, s: textScore(q, i)})).filter(x => x.s > 0).sort((a,b) => b.s - a.s || (b.i.createdAt||0) - (a.i.createdAt||0)).map(x => x.i);
   return arr.sort((a,b) => (dayNum(b.foundDate) - dayNum(a.foundDate)) || ((b.createdAt||0) - (a.createdAt||0)));
 }
+// بطاقات هيكلية تظهر أثناء تحميل المفقودات
+export const skelCards = (n = 4) => Array.from({length: n}, () => `<div class="card skel" aria-hidden="true"><div class="thumb"></div><div class="card-body"><span class="skel-line"></span><span class="skel-line short"></span></div></div>`).join('');
+
 export function card(i){
   const c = cat(i.cat);
   return `<article class="card" role="button" tabindex="0" data-act="openItem" data-id="${esc(i.id)}">
@@ -84,7 +89,7 @@ export function updateBrowse(){
   $$('#st-seg button').forEach(b => b.classList.toggle('on', b.dataset.v === S.filter.status));
   const fr = $('#frange'); if (fr) fr.value = S.filter.range;
   const res = $('#results'); if (!res) return;
-  if (!S.itemsLoaded){ res.innerHTML = `<div class="loading"><span class="spin"></span></div>`; return; }
+  if (!S.itemsLoaded){ res.innerHTML = `<div class="grid" aria-busy="true" aria-label="جارٍ التحميل">${skelCards()}</div>`; return; }
   const arr = visibleItems();
   res.innerHTML = arr.length ? `<div class="grid">${arr.map(card).join('')}</div>`
     : `<div class="empty">${icon('search')}<b>${S.items.length ? 'لا توجد نتائج مطابقة' : 'لا توجد مفقودات مسجّلة بعد'}</b><span>${S.items.length ? 'جرّب كلمة أخرى أو تصنيفاً مختلفاً، أو سجّل بلاغاً.' : 'عندما يسجّل مكتب المفقودات غرضاً سيظهر هنا.'}</span></div>`;

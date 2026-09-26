@@ -26,6 +26,29 @@ service cloud.firestore {
     function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
     function smallImage() { return request.resource.data.data is string && request.resource.data.data.size() < 350000; }
 
+    // ── حدود البيانات: تمنع كتابة حقول غريبة أو نصوص ضخمة تستهلك حصة الخطة المجانية ──
+    // الحدود هنا أكبر من حدود النماذج في التطبيق بهامش واسع، فلا تؤثر على الاستخدام العادي.
+    function strMax(d, k, n) { return !(k in d) || (d[k] is string && d[k].size() <= n); }
+    function photoDoc() { return request.resource.data.keys().hasOnly(['data']) && smallImage(); }
+
+    function validUser(d) {
+      return d.keys().hasOnly(['name', 'email', 'photo', 'lastSeen'])
+        && strMax(d, 'name', 200) && strMax(d, 'email', 320)
+        // صورة الملف الشخصي: فارغة أو من صور حسابات Google فقط (تمنع روابط التتبّع)
+        && (!('photo' in d) || d.photo == ''
+            || (d.photo is string && d.photo.size() <= 2000
+                && d.photo.matches('https://[a-z0-9.-]+[.]googleusercontent[.]com/.*')));
+    }
+
+    function validReport(d) {
+      return d.keys().hasOnly(['officeId', 'uid', 'cat', 'sub', 'color', 'title', 'desc', 'spot', 'bldg', 'room',
+                               'lostDate', 'photo', 'status', 'createdAt', 'closedAt', 'ai', 'staffPick', 'pickedAt'])
+        && d.officeId is string && d.status in ['open', 'closed']
+        && strMax(d, 'title', 400) && strMax(d, 'desc', 4000) && strMax(d, 'sub', 200) && strMax(d, 'color', 60)
+        && strMax(d, 'spot', 400) && strMax(d, 'bldg', 40) && strMax(d, 'room', 60) && strMax(d, 'lostDate', 20)
+        && (!('ai' in d) || d.ai is map);
+    }
+
     // إعداد التطبيق: أول مستخدم يُكمل الإعداد يصبح المالك
     match /config/app {
       allow read: if true;
@@ -48,10 +71,13 @@ service cloud.firestore {
         && userId != get(/databases/$(database)/documents/config/app).data.ownerUid;
     }
 
-    // الملف العام للمستخدم (الاسم والصورة) يراه صاحبه والموظفون فقط
+
+    // الملف العام للمستخدم (الاسم والصورة): يقرؤه صاحبه، والموظفون لعرض اسم صاحب الطلب
     match /users/{userId} {
-      allow read: if signedIn() && (userId == me() || isStaffAny());
-      allow create, update: if signedIn() && userId == me();
+      allow get: if signedIn() && (userId == me() || isStaffAny());
+      // عرض قائمة كل المستخدمين (وفيها البريد) للإدارة فقط
+      allow list: if isAdmin();
+      allow create, update: if signedIn() && userId == me() && validUser(request.resource.data);
       // «حذف حسابي»: يحذف المستخدم ملفه بنفسه
       allow delete: if signedIn() && userId == me();
 
@@ -76,10 +102,11 @@ service cloud.firestore {
     }
 
     match /itemPhotos/{itemId} {
+      function itemOffice() { return get(/databases/$(database)/documents/items/$(itemId)).data.officeId; }
       allow read: if true;
-      allow create, update: if smallImage()
-        && isStaffOf(get(/databases/$(database)/documents/items/$(itemId)).data.officeId);
-      allow delete: if isStaffAny();
+      allow create, update: if photoDoc() && isStaffOf(itemOffice());
+      // موظف المكتب يحذف صور مفقودات مكتبه فقط
+      allow delete: if isAdmin() || isStaffOf(itemOffice());
     }
 
     // بلاغات المفقودات: يراها صاحبها وموظفو المكتب
@@ -87,11 +114,16 @@ service cloud.firestore {
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
       allow create: if signedIn()
         && request.resource.data.uid == me()
-        && request.resource.data.status == 'open';
+        && request.resource.data.status == 'open'
+        && validReport(request.resource.data)
+        && !('staffPick' in request.resource.data) && !('pickedAt' in request.resource.data);
       allow update: if signedIn() && (
+        // صاحب البلاغ: لا يغيّر صاحبه ولا مكتبه ولا ترشيح الموظف
         (resource.data.uid == me()
           && request.resource.data.uid == me()
-          && request.resource.data.officeId == resource.data.officeId)
+          && request.resource.data.officeId == resource.data.officeId
+          && request.resource.data.get('staffPick', '') == resource.data.get('staffPick', '')
+          && validReport(request.resource.data))
         || (isStaffOf(resource.data.officeId) && onlyChanges(['staffPick', 'pickedAt']))
       );
       allow delete: if signedIn() && (resource.data.uid == me() || isAdmin());
@@ -100,7 +132,7 @@ service cloud.firestore {
     match /reportPhotos/{reportId} {
       function report() { return get(/databases/$(database)/documents/reports/$(reportId)).data; }
       allow read: if signedIn() && (report().uid == me() || isStaffOf(report().officeId));
-      allow create, update: if signedIn() && smallImage() && report().uid == me();
+      allow create, update: if signedIn() && photoDoc() && report().uid == me();
       allow delete: if signedIn() && (report().uid == me() || isAdmin());
     }
 
@@ -108,16 +140,24 @@ service cloud.firestore {
     match /claims/{claimId} {
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
       allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'lostSpot', 'lostDate', 'status', 'codeHash', 'createdAt'])
         && request.resource.data.uid == me()
         && request.resource.data.status == 'pending'
-        && request.resource.data.codeHash is string
+        && request.resource.data.codeHash is string && request.resource.data.codeHash.size() <= 128
+        && strMax(request.resource.data, 'proof', 5000)
+        && strMax(request.resource.data, 'lostSpot', 400)
+        && strMax(request.resource.data, 'lostDate', 20)
         && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.status == 'available'
         && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.officeId == request.resource.data.officeId;
-      allow update: if isStaffOf(resource.data.officeId)
-        && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy']);
-      // «حذف حسابي»: يحذف المستخدم طلباته، إلا المقبول منها بانتظار الاستلام (الغرض محجوز له)
+      allow update: if (isStaffOf(resource.data.officeId)
+          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy']))
+        // «حذف حسابي»: الطلب المُسلَّم لا يُحذف، بل تُمسح منه بيانات صاحبه ويبقى سجل التسليم للمكتب
+        || (signedIn() && resource.data.uid == me() && resource.data.status == 'done'
+          && request.resource.data.uid == 'deleted' && request.resource.data.proof == ''
+          && onlyChanges(['uid', 'proof', 'lostSpot', 'lostDate', 'anonymizedAt']));
+      // «حذف حسابي»: يحذف المستخدم طلباته غير المُسلَّمة، إلا المقبول منها (الغرض محجوز له)
       allow delete: if isAdmin()
-        || (signedIn() && resource.data.uid == me() && resource.data.status != 'approved');
+        || (signedIn() && resource.data.uid == me() && resource.data.status in ['pending', 'rejected']);
     }
 
     // صلاحيات الموظفين: يمنحها ويسحبها المالك فقط
@@ -128,9 +168,11 @@ service cloud.firestore {
 
     match /staffRequests/{userId} {
       allow read: if signedIn() && (userId == me() || isAdmin());
-      allow create, update: if signedIn() && (
-        (userId == me() && request.resource.data.status == 'pending') || isAdmin()
-      );
+      allow create, update: if isAdmin() || (signedIn() && userId == me()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly(['offices', 'note', 'status', 'createdAt'])
+        && request.resource.data.offices is list && request.resource.data.offices.size() <= 50
+        && strMax(request.resource.data, 'note', 600));
       allow delete: if signedIn() && (userId == me() || isAdmin());
     }
   }
