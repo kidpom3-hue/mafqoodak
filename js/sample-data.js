@@ -1,5 +1,6 @@
 // بيانات توضيحية تُضاف عند الإعداد الأول (اختياري). كل عنصر مُعلّم بـ sample: true
-import { today, dayNum } from './utils.js';
+// data: المستند العام في items، و secret: التفاصيل السرية في itemSecrets (للموظفين فقط)
+import { today, dayNum, publicTitle } from './utils.js';
 
 const daysBack = n => { const d = new Date((dayNum(today()) - n) * 864e5); return d.toISOString().slice(0, 10); };
 
@@ -19,9 +20,10 @@ export function sampleItems(officeId, code = 'TCA'){
   return rows.map(([ref, cat, sub, color, title, desc, spot, ago, storage, status], k) => ({
     id: 'demo-' + String(k + 1).padStart(2, '0'),
     data: {
-      officeId, ref: ref.replace('TCA', code), cat, sub, color, title, desc, spot, foundDate: daysBack(ago), storage,
+      officeId, ref: ref.replace('TCA', code), cat, sub, title: publicTitle(cat, sub), spot, foundDate: daysBack(ago),
       photo: false, status: status || 'available', createdBy: 'sample', createdAt: now - k * 1000, updatedAt: now - k * 1000, sample: true,
       ...(status === 'returned' ? {returnedAt: now} : {}),
     },
+    secret: {officeId, title, color, brand: '', desc, bldg: '', room: '', storage},
   }));
 }

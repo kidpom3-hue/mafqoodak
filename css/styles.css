@@ -475,3 +475,38 @@ h1,h2,h3,p,dd,.row-title,.card-body h3,.hero-title{overflow-wrap:anywhere}
 .browse-bar{position:sticky;top:var(--hdr-h,calc(60px + env(safe-area-inset-top,0px)));z-index:20;background:var(--bg);margin-inline:-16px;padding:8px 16px;display:flex;flex-direction:column;gap:10px;transition:box-shadow .2s ease}
 .browse-bar.stuck{box-shadow:0 6px 12px -8px rgba(0,0,0,.25)}
 @media (min-width:720px){.browse-bar{margin-inline:-24px;padding-inline:24px}}
+
+/* إصلاح خانة التاريخ في Safari على iOS: كانت تخرج عن حدود النموذج وتظهر فارغة */
+input[type=date].input{-webkit-appearance:none;appearance:none;display:block;width:100%;min-width:0;max-width:100%;min-height:48px;text-align:start}
+input[type=date].input::-webkit-date-and-time-value{text-align:start}
+
+/* الصورة المموّهة للعامة: النسخة المحفوظة صغيرة جداً (24px)، ونكبّرها مع تمويه إضافي */
+.blurred{overflow:hidden}
+.blurred img{filter:blur(12px);transform:scale(1.15)}
+.blur-badge{position:absolute;bottom:8px;inset-inline-start:8px;display:inline-flex;align-items:center;gap:4px;background:var(--surface);color:var(--muted);border:1px solid var(--line);font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;z-index:1}
+.blur-badge svg{width:12px;height:12px}
+.detail-media{display:flex;flex-direction:column;gap:8px;min-width:0}
+.detail-media>.hint{display:flex;align-items:center;gap:6px}
+.detail-media>.hint svg{width:14px;height:14px;flex:none}
+
+/* اختيار ظهور الصورة (واضحة / مموّهة / مخفية) */
+.seg-opt{position:relative;flex:1;display:inline-flex;justify-content:center;align-items:center;padding:6px 10px;border-radius:9px;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap}
+.seg-opt input{position:absolute;opacity:0;pointer-events:none}
+.seg-opt:has(input:checked){background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+.seg-opt:has(input:focus-visible){outline:2px solid var(--primary);outline-offset:2px}
+.swatches .sw-unknown{display:grid;place-items:center;background:var(--surface-2);color:var(--muted);font-weight:700;font-size:14px}
+
+/* مقارنة إجابات صاحب الطلب بالحقيقة (للموظف) */
+.cmp{border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:13px}
+.cmp-row{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr) minmax(0,1.2fr) auto;gap:8px;padding:8px 10px;border-top:1px solid var(--line);align-items:start}
+.cmp-row:first-child{border-top:0}
+.cmp-row>*{min-width:0;overflow-wrap:anywhere}
+.cmp-head{background:var(--surface-2);color:var(--muted);font-size:12px;font-weight:600}
+.cmp .v{min-width:44px;text-align:center;font-weight:800}
+.cmp .v.ok{color:var(--ok)}
+.cmp .v.bad{color:var(--bad)}
+.cmp .v.mute{color:var(--muted);font-weight:500;font-size:11.5px}
+.cmp-sum{padding:8px 10px;background:var(--surface-2);font-weight:700}
+/* رأس بطاقة الطلب: تحذير «أرسل N طلبات» في سطر مستقل حتى لا يدفع حالة الطلب خارج الشاشة */
+.claim-who{min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.claim-who .pill{white-space:normal}

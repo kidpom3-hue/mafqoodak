@@ -1,8 +1,8 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
 import { icon, LOGO, CATS, cat, catName, colorName, otype, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText } from '../utils.js';
-import { S, curOffice, item, isStaffHere, myReports, myClaims, myCode, candidatesFor, unseenCount } from '../state.js';
-import { backBtn, thumbHtml, miniItem, catPicker, colorPicker, photoField, spotOptions, spotExtra, resetForm, loginPrompt } from './common.js';
+import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myCode, candidatesFor, unseenCount } from '../state.js';
+import { backBtn, thumbHtml, miniItem, catPicker, colorPicker, photoField, spotOptions, spotExtra, resetForm, loginPrompt, photoImg, blurBadge, isBlur, staffView } from './common.js';
 import { claimCardStaff } from './staff.js';
 import { aiReady } from '../ai.js';
 import { hydrate } from '../ui.js';
@@ -68,11 +68,11 @@ export const skelCards = (n = 4) => Array.from({length: n}, () => `<div class="c
 export function card(i){
   const c = cat(i.cat);
   return `<article class="card" role="button" tabindex="0" data-act="openItem" data-id="${esc(i.id)}">
-    <div class="thumb">${icon(c.icon)}${i.photo && !c.sensitive ? `<img data-photo="${esc(i.id)}" alt="" hidden>` : ''}${i.sample ? '<span class="badge-sample">مثال</span>' : ''}</div>
+    <div class="thumb${isBlur(i) ? ' blurred' : ''}">${icon(c.icon)}${photoImg(i)}${blurBadge(i)}${i.sample ? '<span class="badge-sample">مثال</span>' : ''}</div>
     <div class="card-body">
       <span class="ref">${esc(i.ref)}</span>
       <h3>${esc(i.title)}</h3>
-      <div class="meta">${colorDot(i.color)}${esc(colorName(i.color))}${i.spot ? ' · ' + esc(spotText(i)) : ''}</div>
+      ${i.spot ? `<div class="meta">${icon('pin')}<span>${esc(i.spot)}</span></div>` : ''}
       <div class="meta">${icon('clock')}<span>${relDay(i.foundDate)}</span></div>
       ${i.status !== 'available' ? pill(ITEM_STATUS, i.status) : ''}
     </div>
@@ -102,9 +102,10 @@ export function vItem(){
   if (!i && !S.itemsLoaded) return `<div class="loading"><span class="spin"></span></div>`;   // رابط مشاركة: ننتظر تحميل المفقودات
   if (!i) return `<div class="wrap">${backBtn()}<div class="empty">${icon('box')}<b>لم يعد هذا الغرض موجوداً.</b></div></div>`;
   const c = cat(i.cat); const o = S.offices.find(x => x.id === i.officeId) || curOffice();
-  const staffMode = S.mode === 'staff' || S.mode === 'admin';
+  // الموظف يرى التفاصيل السرية (full)، والزائر يرى الإعلان العام فقط
+  const staffMode = staffView(); const f = staffMode ? full(i) : i;
   const keepDays = (o?.retentionDays || 90) - daysAgo(i.foundDate);
-  const mine = S.claims.filter(cl => cl.itemId === i.id && cl.uid === S.uid && cl.status !== 'rejected')[0];
+  const mine = S.claims.find(cl => cl.itemId === i.id && cl.uid === S.uid);   // طلب سابق (بأي حالة)
   let actions = '';
   if (staffMode){
     const cls = S.claims.filter(cl => cl.itemId === i.id).sort((a,b) => b.createdAt - a.createdAt);
@@ -114,6 +115,8 @@ export function vItem(){
         <button class="btn danger" data-act="delItem" data-id="${esc(i.id)}">${icon('trash')}حذف</button>
       </div>
       ${cls.length ? `<div class="section-title">طلبات الاستلام على هذا الغرض</div><div class="list">${cls.map(claimCardStaff).join('')}</div>` : ''}`;
+  } else if (mine?.status === 'rejected'){
+    actions = `<div class="note warn">${icon('info')}<span>رُفض طلبك على هذا الغرض. إن كان لديك إثبات فراجع المكتب.</span></div>`;
   } else if (mine){
     actions = `<div class="note ok">${icon('check')}<span>لديك طلب استلام على هذا الغرض: <b>${CLAIM_STATUS[mine.status].l}</b></span></div>
       <button class="btn soft" data-act="nav" data-r="mine">تابع طلبك</button>`;
@@ -128,20 +131,25 @@ export function vItem(){
   }
   return `<div class="wrap" data-view="item">${backBtn()}
     <div class="detail">
-      <div class="detail-photo">${icon(c.icon)}${i.photo && !c.sensitive ? `<img data-photo="${esc(i.id)}" alt="${esc(i.title)}" hidden>` : ''}
-        ${c.sensitive ? `<div class="veil">${icon('lock')}<span>لا تُعرض صور الوثائق الشخصية حفاظاً على خصوصية أصحابها.</span></div>` : ''}
-        ${i.sample ? '<span class="badge-sample">مثال توضيحي</span>' : ''}
+      <div class="detail-media">
+        <div class="detail-photo${isBlur(i) ? ' blurred' : ''}">${icon(c.icon)}${photoImg(i, i.title)}
+          ${c.sensitive ? `<div class="veil">${icon('lock')}<span>لا تُعرض صور الوثائق الشخصية حفاظاً على خصوصية أصحابها.</span></div>` : ''}
+          ${i.sample ? '<span class="badge-sample">مثال توضيحي</span>' : ''}
+        </div>
+        ${isBlur(i) ? `<p class="hint">${icon('lock')}الصورة مموّهة حتى لا تُستخدم تفاصيلها في ادّعاء الملكية.</p>` : ''}
       </div>
       <div class="panel">
         <div class="panel-head"><span class="ref">${esc(i.ref)}</span>${pill(ITEM_STATUS, i.status)}</div>
-        <h1 style="font-size:24px;font-weight:800">${esc(i.title)}</h1>
-        ${i.desc ? `<p>${esc(i.desc)}</p>` : ''}
+        <h1 style="font-size:24px;font-weight:800">${esc(f.title)}</h1>
+        ${staffMode && f.title !== i.title ? `<span class="meta">يظهر للزوار باسم: ${esc(i.title)}</span>` : ''}
+        ${staffMode && f.desc ? `<p>${esc(f.desc)}</p>` : ''}
         <dl class="facts">
           <dt>التصنيف</dt><dd>${icon(c.icon)}${esc(c.name)}${i.sub ? ' — ' + esc(i.sub) : ''}</dd>
-          ${i.color ? `<dt>اللون</dt><dd>${colorDot(i.color)}${esc(colorName(i.color))}</dd>` : ''}
-          <dt>مكان العثور</dt><dd>${esc(spotText(i) || 'غير محدد')}</dd>
+          ${staffMode && f.color ? `<dt>اللون</dt><dd>${colorDot(f.color)}${esc(colorName(f.color))}</dd>` : ''}
+          ${staffMode && f.brand ? `<dt>الماركة</dt><dd>${esc(f.brand)}</dd>` : ''}
+          <dt>مكان العثور</dt><dd>${esc((staffMode ? spotText(f) : i.spot) || 'غير محدد')}</dd>
           <dt>تاريخ العثور</dt><dd>${fmtDate(i.foundDate)} <span class="muted">(${relDay(i.foundDate)})</span></dd>
-          ${staffMode && i.storage ? `<dt>موضع الحفظ</dt><dd>${esc(i.storage)}</dd>` : ''}
+          ${staffMode && f.storage ? `<dt>موضع الحفظ</dt><dd>${esc(f.storage)}</dd>` : ''}
           ${i.status === 'available' || i.status === 'reserved' ? `<dt>مدة الحفظ</dt><dd>${keepDays > 0 ? `متبقٍّ ${daysWord(keepDays)}` : '<span class="flag">انتهت مدة الحفظ</span>'}</dd>` : ''}
         </dl>
         ${actions}
@@ -154,20 +162,26 @@ export function vItem(){
 }
 
 /* ---------- visitor: claim ---------- */
+// نموذج الاستلام: يسأل عن التفاصيل المخفية دون أي تلميح من الإعلان، ويقارنها الموظف بالحقيقة
 export function vClaimForm(){
   const i = item(S.route.params.id); const o = curOffice();
   if (!i) return `<div class="wrap">${backBtn()}<div class="empty">لم يعد هذا الغرض موجوداً.</div></div>`;
+  const prev = S.claims.find(cl => cl.itemId === i.id && cl.uid === S.uid);
+  if (prev) return `<div class="wrap" data-view="claim">${backBtn()}<div class="note warn">${icon('info')}<span>أرسلت طلباً على هذا الغرض من قبل.</span></div>
+    <button class="btn soft" data-act="nav" data-r="mine">تابع طلبك</button></div>`;
   return `<div class="wrap" data-view="claim">${backBtn()}
     <section class="hero"><div class="hero-kicker">${icon('shield')}طلب استلام</div><h1 class="hero-title">أثبت أن الغرض لك</h1></section>
     ${miniItem(i)}
     <form data-form="claim" data-id="${esc(i.id)}" class="panel" novalidate>
-      <div class="field"><label for="proof">صف تفاصيل لا تظهر في الإعلان</label>
-        <textarea id="proof" name="proof" class="input" required placeholder="مثال: داخل المحفظة بطاقة صراف من بنك معين وصورة عائلية، وفيها خدش عند الزاوية اليمنى."></textarea>
+      <div class="field"><span class="label">ما لونه؟</span>${colorPicker('', true)}</div>
+      <div class="field"><label for="c-brand">الماركة أو الشركة <span class="hint">(اختياري)</span></label><input id="c-brand" name="brand" class="input" maxlength="40" autocomplete="off"></div>
+      <div class="field"><label for="proof">ماذا بداخله، أو ما العلامة المميزة فيه؟</label>
+        <textarea id="proof" name="proof" class="input" required></textarea>
         <span class="hint">محتوى الغرض، علامة مميزة، خلفية الشاشة، رقم تسلسلي… كلما كانت التفاصيل أدق كان القبول أسرع.</span></div>
-      <div class="two">
-        <div class="field"><label for="c-spot">أين فقدته تقريباً؟</label><select id="c-spot" name="spot" class="input"><option value="">لا أعرف</option>${(o?.spots || []).map(s => `<option>${esc(s)}</option>`).join('')}</select></div>
-        <div class="field"><label for="c-date">متى فقدته؟</label><input id="c-date" name="lostDate" type="date" class="input" max="${today()}"></div>
-      </div>
+      <div class="field"><label for="c-spot">أين فقدته؟</label><select id="c-spot" name="spot" class="input">${spotOptions(o, '')}</select></div>
+      ${spotExtra(null)}
+      <div class="field"><label for="c-date">متى فقدته؟ <span class="hint">(اختياري)</span></label><input id="c-date" name="lostDate" type="date" class="input" max="${today()}">
+        <span class="hint date-hint">اضغط لاختيار التاريخ</span></div>
       <label class="check"><input type="checkbox" name="pledge" id="pledge"><span>أقرّ بأن هذا الغرض ملكي، وأن المعلومات التي كتبتها صحيحة.</span></label>
       <div class="form-err" hidden></div>
       <button class="btn block" type="submit">${icon('check')}أرسل الطلب</button>
@@ -261,7 +275,7 @@ export function reportCardMine(r, focus){
 /* ---------- visitor: office info ---------- */
 /* أسئلة شائعة — عدّلها كما تريد */
 const FAQ = [
-  ['كيف أعرف أن غرضي وصل إلى مكتب المفقودات؟', 'كل ما يُسلَّم للمكتب يُسجَّل هنا مع تصنيفه ولونه ومكان العثور عليه. ابحث عنه بكلمة أو تصفّح حسب التصنيف. إن لم تجده، سجّل بلاغاً وسننبّهك عند تسجيل غرض مشابه.'],
+  ['كيف أعرف أن غرضي وصل إلى مكتب المفقودات؟', 'كل ما يُسلَّم للمكتب يُسجَّل هنا مع تصنيفه ونوعه والمنطقة التي وُجد فيها. ابحث عنه بكلمة أو تصفّح حسب التصنيف. إن لم تجده، سجّل بلاغاً وسننبّهك عند تسجيل غرض مشابه.'],
   ['كيف أستلم غرضي؟', 'اضغط «هذا غرضي» واكتب تفاصيل لا تظهر في الإعلان. بعد أن يراجعها موظف المكتب ويقبل طلبك، يظهر لك رمز من 6 أرقام في «طلباتي» تقدّمه عند الاستلام.'],
   ['لماذا لا تظهر كل تفاصيل الغرض؟', 'نُخفي بعض التفاصيل عمداً حتى لا يدّعي أحد ملكية غرض ليس له. هذه التفاصيل هي ما تثبت به أنك صاحبه.'],
   ['وجدت غرضاً، ماذا أفعل؟', 'سلّمه لمكتب المفقودات مباشرة، ولا تحتفظ به أو تنشر صوره. الموظف يسجّله ليظهر لصاحبه هنا.'],
