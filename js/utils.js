@@ -54,7 +54,15 @@ export function tokens(s){
     return t;
   }).filter(t => t.length > 1 && !STOP.has(t));
 }
-export const itemText = i => [i.title, i.desc, i.sub, catName(i.cat), colorName(i.color), color(i.color)?.alt, i.spot, i.ref].join(' ');
+/* ---------- الأماكن داخل المباني ---------- */
+// الأماكن التي تقع داخل مبنى (قاعات، معامل، ورش، المبنى الإداري) نطلب لها رقم المبنى ورقم القاعة
+export const isBuilding = s => /قاع|معمل|معامل|ورش|مبنى|مباني/.test(s || '');
+// الكلمة المناسبة لرقم الغرفة حسب نوع المكان
+export const roomWord = s => /معمل|معامل/.test(s || '') ? 'المعمل' : /ورش/.test(s || '') ? 'الورشة' : /قاع/.test(s || '') ? 'القاعة' : /إدار/.test(s || '') ? 'المكتب' : 'الغرفة';
+// نص المكان كاملاً، مثل: «معامل الحاسب · مبنى 3 · معمل 105» (بدون escape؛ استخدم esc عند العرض)
+export const spotText = x => !x?.spot ? '' : x.spot + (x.bldg ? ' · مبنى ' + x.bldg : '') + (x.room ? ' · ' + roomWord(x.spot).replace(/^ال/, '') + ' ' + x.room : '');
+
+export const itemText = i => [i.title, i.desc, i.sub, catName(i.cat), colorName(i.color), color(i.color)?.alt, i.spot, i.bldg, i.room, i.ref].join(' ');
 export function textScore(q, i){
   const t = tokens(itemText(i)); let s = 0;
   for (const w of q){
@@ -73,7 +81,10 @@ export function matchScore(r, it){
   let inter = 0; a.forEach(t => { if (b.has(t)) inter++; });
   if (a.size && b.size) s += Math.round(28 * inter / Math.min(a.size, b.size));
   if (r.lostDate && it.foundDate){ const d = dayNum(it.foundDate) - dayNum(r.lostDate); if (d < -1) s -= 30; else if (d <= 7) s += 6; }
-  if (r.spot && it.spot && r.spot === it.spot) s += 6;
+  if (r.spot && it.spot && r.spot === it.spot){
+    s += 6;
+    if (r.bldg && r.bldg === it.bldg) s += 4;   // نفس المبنى يرفع احتمال التطابق
+  }
   return Math.max(0, Math.min(100, s));
 }
 export async function sha(s){

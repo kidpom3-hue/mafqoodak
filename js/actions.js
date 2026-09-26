@@ -1,6 +1,6 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
 import { icon, cat, catName, colorName, ITEM_STATUS } from './constants.js';
-import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS } from './utils.js';
+import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord } from './utils.js';
 import { S, curOffice, item, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN } from './state.js';
 import { auth, dbx, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut } from './firebase.js';
@@ -24,6 +24,13 @@ export function onCatChange(form, catId, sub){
   if (note) note.hidden = !sens;
   if (pf) pf.hidden = !!sens;
   if (sens && (FORM.photo || FORM.hadPhoto)){ clearPhoto(form); toast('أُزيلت الصورة لأن الوثائق الشخصية لا تُصوَّر.'); }
+}
+// عند تغيير المكان: نُظهر خانتي المبنى والقاعة إن كان المكان داخل مبنى، ونفرّغهما إن لم يكن
+function onSpotChange(form, spot){
+  const box = form.querySelector('#spot-extra'); if (!box) return;
+  const on = isBuilding(spot); box.hidden = !on;
+  const lbl = form.querySelector('#room-label'); if (lbl) lbl.textContent = 'رقم ' + roomWord(spot);
+  if (!on) box.querySelectorAll('input').forEach(i => i.value = '');
 }
 function clearPhoto(form){
   FORM.photo = null; FORM.blob = null; FORM.copyFrom = null; if (FORM.hadPhoto) FORM.removed = true;
@@ -88,6 +95,9 @@ async function aiMatch(reportId){
 async function submitForm(form){
   const kind = form.dataset.form; const fd = new FormData(form); formErr(form, '');
   const val = k => String(fd.get(k) || '').trim();
+  // رقم المبنى ورقم القاعة يُحفظان فقط إذا كان المكان داخل مبنى
+  const inBldg = isBuilding(val('spot'));
+  const bldg = inBldg ? val('bldg').slice(0, 6) : '', room = inBldg ? val('room').slice(0, 10) : '';
 
   if (kind === 'homeSearch'){
     S.filter.q = val('q'); S.filter.cat = 'all'; S.filter.status = 'available';
@@ -167,7 +177,7 @@ async function submitForm(form){
       const id = dbx.newId('reports');
       const withPhoto = !!FORM.photo && !sens;
       const ok = await write(() => dbx.set('reports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), color: val('color'),
-        title: val('title'), desc: val('desc'), spot: val('spot'), lostDate: val('lostDate') || today(), photo: false, status: 'open', createdAt: Date.now()}), 'سُجّل بلاغك');
+        title: val('title'), desc: val('desc'), spot: val('spot'), bldg, room, lostDate: val('lostDate') || today(), photo: false, status: 'open', createdAt: Date.now()}), 'سُجّل بلاغك');
       if (ok && withPhoto){
         cachePhoto('r_' + id, FORM.photo);
         if (await write(() => dbx.set('reportPhotos/' + id, {data: FORM.photo}))) await write(() => dbx.update('reports/' + id, {photo: true}));
@@ -184,7 +194,7 @@ async function submitForm(form){
     let photo = existing?.photo || false;
     const data = {
       officeId: existing?.officeId || S.officeId, ref: existing?.ref || makeRef(curOffice()),
-      cat: catId, sub: val('sub'), color: val('color'), title: val('title'), desc: val('desc'), spot: val('spot'),
+      cat: catId, sub: val('sub'), color: val('color'), title: val('title'), desc: val('desc'), spot: val('spot'), bldg, room,
       foundDate: val('foundDate') || today(), storage: val('storage'), photo,
       status: existing?.status || 'available', createdBy: existing?.createdBy || S.uid, createdAt: existing?.createdAt || Date.now(), updatedAt: Date.now(),
       sample: !!existing?.sample,
@@ -425,6 +435,7 @@ export function bindEvents(){
     if (t.id === 'frange'){ S.filter.range = t.value; updateBrowse(); }
     if (t.id === 'sstatus'){ S.staffStatus = t.value; $('#s-body').innerHTML = staffItems(); hydrate(); }
     if (t.id === 'photo-in') onPhoto(t);
+    if (t.name === 'spot' && t.closest('form')) onSpotChange(t.closest('form'), t.value);
     if (t.name === 'cat' && t.closest('form')) onCatChange(t.closest('form'), t.value, '');
   });
 }

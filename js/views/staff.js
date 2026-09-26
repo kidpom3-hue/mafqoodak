@@ -1,8 +1,8 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
 import { icon, CATS, cat, catName, colorName, ITEM_STATUS, CLAIM_STATUS } from '../constants.js';
-import { $, $$, esc, today, daysAgo, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm } from '../utils.js';
+import { $, $$, esc, today, daysAgo, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText } from '../utils.js';
 import { S, curOffice, item, candidatesFor } from '../state.js';
-import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, colorPicker, photoField, spotOptions, resetForm } from './common.js';
+import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, colorPicker, photoField, spotOptions, spotExtra, resetForm } from './common.js';
 import { hydrate } from '../ui.js';
 
 /* ---------- staff dashboard ---------- */
@@ -64,7 +64,7 @@ export function staffItems(){
       <div class="row-main">
         <div class="row-top"><span class="ref">${esc(i.ref)}</span>${pill(ITEM_STATUS, i.status)}${i.sample ? '<span class="pill mute">مثال</span>' : ''}</div>
         <div class="row-title">${esc(i.title)}</div>
-        <div class="meta">${esc(i.spot || '')} · ${relDay(i.foundDate)}${i.storage ? ' · ' + esc(i.storage) : ''}${i.status === 'available' && daysAgo(i.foundDate) > keep ? ' · <span class="flag">تجاوز مدة الحفظ</span>' : ''}</div>
+        <div class="meta">${esc(spotText(i))} · ${relDay(i.foundDate)}${i.storage ? ' · ' + esc(i.storage) : ''}${i.status === 'available' && daysAgo(i.foundDate) > keep ? ' · <span class="flag">تجاوز مدة الحفظ</span>' : ''}</div>
       </div>
     </article>`).join('')}</div>`;
 }
@@ -103,7 +103,7 @@ export function staffReports(){
       <div class="box-head"><div><h3>${esc(r.title)}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(r.sub) : ''}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''}</span></div><span class="meta">${relTime(r.createdAt)}</span></div>
       ${r.photo ? `<div class="row-thumb" style="width:84px;height:84px">${icon('camera')}<img data-photo="r_${esc(r.id)}" alt="" hidden></div>` : ''}
       ${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}
-      <div class="meta">${person(r.uid)} · فُقد ${r.spot ? 'في ' + esc(r.spot) + ' ' : ''}${fmtDate(r.lostDate)}</div>
+      <div class="meta">${person(r.uid)} · فُقد ${r.spot ? 'في ' + esc(spotText(r)) + ' ' : ''}${fmtDate(r.lostDate)}</div>
       ${acceptBtn(r)}
       ${cands.length ? `<span class="label">مرشحون من المستودع</span><div class="list">${cands.map(({i, s}) => `<div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
         ${r.staffPick === i.id ? `<span class="pill ok">${icon('check')}مُرشّح</span>` : `<button class="btn sm soft" data-act="pickFor" data-r="${esc(r.id)}" data-i="${esc(i.id)}">رشّح</button>`}</div>`).join('')}</div>`
@@ -123,7 +123,7 @@ export function vItemForm(){
   const o = curOffice(); const i = S.route.params.id ? item(S.route.params.id) : null;
   // عند قبول بلاغ: نعبّئ النموذج من بيانات البلاغ (التصنيف، النوع، اللون، الصورة...)
   const r = !i && S.route.params.fromReport ? S.reports.find(x => x.id === S.route.params.fromReport) : null;
-  const src = i || (r ? {cat: r.cat, sub: r.sub, color: r.color, title: r.title, desc: r.desc, spot: r.spot} : null);
+  const src = i || (r ? {cat: r.cat, sub: r.sub, color: r.color, title: r.title, desc: r.desc, spot: r.spot, bldg: r.bldg, room: r.room} : null);
   const photoKey = i?.photo ? i.id : r?.photo && !cat(r.cat).sensitive ? 'r_' + r.id : null;
   resetForm(!!i?.photo, i ? null : photoKey);
   return `<div class="wrap" data-view="add">${i || r ? backBtn() : ''}
@@ -140,6 +140,7 @@ export function vItemForm(){
         <div class="field"><label for="f-spot">مكان العثور</label><select id="f-spot" name="spot" class="input">${spotOptions(o, src?.spot || '')}</select></div>
         <div class="field"><label for="f-date">تاريخ العثور</label><input id="f-date" name="foundDate" type="date" class="input" value="${esc(i?.foundDate || today())}" max="${today()}"></div>
       </div>
+      ${spotExtra(src)}
       <div class="field"><label for="f-storage">موضع الحفظ في المكتب <span class="hint">(للموظفين فقط)</span></label><input id="f-storage" name="storage" class="input" maxlength="40" value="${esc(i?.storage || '')}" placeholder="مثال: الخزانة 2 — الرف ب"></div>
       <div class="form-err" hidden></div>
       <button class="btn block" type="submit">${icon('check')}${i ? 'حفظ التعديلات' : 'سجّل الغرض'}</button>
