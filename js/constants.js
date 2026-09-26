@@ -85,7 +85,8 @@ export const COLORS = [
   {id:'multi',name:'متعدد',hex:'conic-gradient(#c0392b,#f1c40f,#2e8b57,#2f74c0,#7d4fa8,#c0392b)',alt:'ملون متعدد'},
 ];
 export const OFFICE_TYPES = [
-  {id:'college',name:'كلية / جامعة',icon:'college'},
+  {id:'college',name:'كلية',icon:'college'},
+  {id:'university',name:'جامعة',icon:'college'},
   {id:'school',name:'مدرسة / معهد',icon:'school'},
   {id:'airport',name:'مطار',icon:'airport'},
   {id:'mall',name:'مجمع تجاري',icon:'mall'},
