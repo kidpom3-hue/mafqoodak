@@ -1,7 +1,7 @@
 // صفحات الإدارة: نظرة عامة، المواقع، الصلاحيات، نموذج الموقع
 import { icon, OFFICE_TYPES, otype } from '../constants.js';
-import { esc, relTime } from '../utils.js';
-import { S } from '../state.js';
+import { esc, relTime, plural, W } from '../utils.js';
+import { S, loadAdminCounts } from '../state.js';
 import { backBtn, person } from './common.js';
 
 /* ---------- admin ---------- */
@@ -14,34 +14,39 @@ export function vAdmin(){
     ${body}
   </div>`;
 }
+// الأرقام تُجلب بـ getCountFromServer عند فتح الصفحة (لا اشتراك في كل أغراض كل المكاتب)
 export function adminOverview(){
-  const all = S.allItems; const samples = all.filter(i => i.sample).length;
+  loadAdminCounts();
+  const C = S.counts.admin, samples = S.counts.samples || 0;
+  const sum = k => C ? Object.values(C).reduce((a, x) => a + (x[k] || 0), 0) : '…';
   const pendReq = S.staffReqs.filter(r => r.status === 'pending').length;
   return `
-    ${samples ? `<div class="note warn">${icon('sample')}<span>في التطبيق ${samples} عناصر توضيحية مُعلّمة بـ«مثال». احذفها قبل الإطلاق الفعلي.</span></div>
+    ${samples ? `<div class="note warn">${icon('sample')}<span>عدد العناصر التوضيحية المعلّمة بـ«مثال»: ${samples}. احذفها قبل الإطلاق الفعلي.</span></div>
       <button class="btn sm danger" data-act="delSamples" style="align-self:flex-start">${icon('trash')}حذف البيانات التوضيحية</button>` : ''}
     <div class="stats">
       <div class="stat"><b>${S.offices.filter(o => o.active !== false).length}</b><span>مواقع مفعّلة</span></div>
-      <div class="stat"><b>${all.filter(i => i.status === 'available' || i.status === 'reserved').length}</b><span>مفقودات محفوظة</span></div>
-      <div class="stat"><b>${all.filter(i => i.status === 'returned').length}</b><span>أُعيدت لأصحابها</span></div>
+      <div class="stat"><b>${C ? sum('available') + sum('reserved') : '…'}</b><span>مفقودات محفوظة</span></div>
+      <div class="stat"><b>${sum('returned')}</b><span>أُعيدت لأصحابها</span></div>
       <div class="stat"><b>${S.staffList.length}</b><span>موظفون</span></div>
       <div class="stat ${pendReq ? 'hot' : ''}"><b>${pendReq}</b><span>طلبات صلاحية</span></div>
     </div>
     <div class="panel"><div class="section-title">حسب الموقع</div>
-      <div class="table-wrap"><table class="t"><thead><tr><th>الموقع</th><th>متاح</th><th>محجوز</th><th>مُسلّم</th><th>نسبة الإعادة</th></tr></thead><tbody>
-      ${S.offices.map(o => { const its = all.filter(i => i.officeId === o.id); const a = its.filter(i => i.status === 'available').length, r = its.filter(i => i.status === 'reserved').length, d = its.filter(i => i.status === 'returned').length; const tot = its.filter(i => i.status !== 'archived').length;
-        return `<tr><td>${esc(o.name)}${o.active === false ? ' <span class="pill mute">موقوف</span>' : ''}</td><td class="n">${a}</td><td class="n">${r}</td><td class="n">${d}</td><td class="n">${tot ? Math.round(100 * d / tot) + '%' : '—'}</td></tr>`; }).join('')}
+      <div class="table-wrap"><table class="t"><thead><tr><th scope="col">الموقع</th><th scope="col">متاح</th><th scope="col">محجوز</th><th scope="col">مُسلّم</th><th scope="col">نسبة الإعادة</th></tr></thead><tbody>
+      ${S.offices.map(o => { const x = C?.[o.id]; const a = x?.available ?? '…', r = x?.reserved ?? '…', d = x?.returned ?? '…'; const tot = x ? x.available + x.reserved + x.returned + x.disposed : 0;
+        return `<tr><td>${esc(o.name)}${o.active === false ? ' <span class="pill mute">موقوف</span>' : ''}</td><td class="n">${a}</td><td class="n">${r}</td><td class="n">${d}</td><td class="n">${tot ? Math.round(100 * x.returned / tot) + '%' : '—'}</td></tr>`; }).join('')}
       </tbody></table></div>
+      <button class="btn sm ghost" data-act="adminRefresh" style="align-self:flex-start">${icon('swap')}حدّث الأرقام</button>
     </div>`;
 }
 export function adminOffices(){
+  loadAdminCounts();
   return `<div class="btn-row"><button class="btn" data-act="newOffice">${icon('plus')}أضف موقعاً</button></div>
     <div class="office-list">${S.offices.map(o => {
-      const n = S.allItems.filter(i => i.officeId === o.id && (i.status === 'available' || i.status === 'reserved')).length;
+      const x = S.counts.admin?.[o.id]; const n = x ? x.available + x.reserved : null;
       const staffN = S.staffList.filter(s => (s.offices || []).includes(o.id)).length;
       return `<div class="office-card">
         <span class="oi">${icon(otype(o.type).icon)}</span>
-        <span class="grow"><b>${esc(o.name)}</b><span class="meta">${esc(otype(o.type).name)} · ${esc(o.city || '')} · رمز القيد ${esc(o.code || '')}</span><span class="meta">${n} محفوظ · ${staffN} موظف</span></span>
+        <span class="grow"><b>${esc(o.name)}</b><span class="meta">${esc(otype(o.type).name)} · ${esc(o.city || '')} · رمز القيد ${esc(o.code || '')}</span><span class="meta">${n === null ? '' : esc(plural(n, W.stored)) + ' · '}${esc(plural(staffN, W.staff))}</span></span>
         <span class="btn-row" style="flex-direction:column;align-items:flex-end">
           <button class="switch ${o.active !== false ? 'on' : ''}" data-act="toggleOffice" data-id="${esc(o.id)}" role="switch" aria-checked="${o.active !== false}" aria-label="تفعيل الموقع"></button>
           <button class="link" data-act="editOffice" data-id="${esc(o.id)}">${icon('edit')}تعديل</button>
@@ -82,6 +87,7 @@ export function vOfficeForm(){
         <div class="field"><label for="o-hours">أوقات العمل</label><input id="o-hours" name="hours" class="input" maxlength="80" value="${esc(o?.hours || '')}"></div>
         <div class="field"><label for="o-phone">رقم التواصل</label><input id="o-phone" name="phone" class="input" maxlength="30" dir="ltr" value="${esc(o?.phone || '')}"></div>
         <div class="field"><label for="o-ret">مدة الحفظ (أيام)</label><input id="o-ret" name="retentionDays" type="number" min="7" max="365" class="input" value="${esc(o?.retentionDays || 90)}"></div>
+        <div class="field"><label for="o-pick">مهلة الاستلام بعد قبول الطلب (أيام)</label><input id="o-pick" name="pickupDays" type="number" min="1" max="60" class="input" value="${esc(o?.pickupDays || 7)}"><span class="hint">إن لم يحضر صاحب الطلب خلالها يستطيع الموظف إعادة إتاحة الغرض.</span></div>
       </div>
       <div class="field"><label for="o-spots">أماكن العثور داخل المنشأة</label><textarea id="o-spots" name="spots" class="input" placeholder="مكان في كل سطر">${esc((o?.spots || []).join('\n'))}</textarea><span class="hint">تظهر كقائمة اختيار عند تسجيل المفقودات والبلاغات.</span></div>
       <div class="form-err" hidden></div>

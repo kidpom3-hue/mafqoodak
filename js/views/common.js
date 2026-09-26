@@ -1,5 +1,5 @@
 // عناصر واجهة مشتركة بين الصفحات
-import { icon, cat, CATS, COLORS, colorName } from '../constants.js';
+import { icon, cat, CATS, COLORS, colorName, subName } from '../constants.js';
 import { esc, relDay, colorDot, isBuilding, roomWord, spotText } from '../utils.js';
 import { aiReady } from '../ai.js';
 import { S, isStaffHere } from '../state.js';
@@ -30,14 +30,14 @@ export function thumbHtml(i, cls = 'row-thumb'){
   return `<div class="${cls}${isBlur(i) ? ' blurred' : ''}">${icon(c.icon)}${photoImg(i)}</div>`;
 }
 // الموظف يمرّر full(i) فيظهر اللون والمبنى والقاعة، والزائر يرى المنطقة العامة فقط
-export const miniItem = (i, extra = '') => `<button class="mini" data-act="openItem" data-id="${esc(i.id)}">${thumbHtml(i)}<span class="grow"><b>${esc(i.title)}</b><span class="meta">${i.color ? colorDot(i.color) + esc(colorName(i.color)) + ' · ' : ''}${esc(spotText(i))} · ${relDay(i.foundDate)}</span></span>${extra}</button>`;
+export const miniItem = (i, extra = '') => `<button class="mini" data-act="openItem" data-id="${esc(i.id)}">${thumbHtml(i)}<span class="grow"><b>${esc(subName(i.title))}</b><span class="meta">${i.color ? colorDot(i.color) + esc(colorName(i.color)) + ' · ' : ''}${esc(spotText(i))} · ${relDay(i.foundDate)}</span></span>${extra}</button>`;
 export const person = uid => `<span class="person"><img data-avatar="${esc(uid)}" alt="" hidden><span data-uname="${esc(uid)}"></span></span>`;
 
 export function catPicker(sel){
   return `<div class="catpick" role="radiogroup" aria-label="التصنيف">${CATS.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${sel === c.id ? 'checked' : ''}>${icon(c.icon)}<span>${esc(c.name)}</span></label>`).join('')}</div>`;
 }
 export function subsPicker(catId, sel){
-  const subs = catId ? cat(catId).subs : [];
+  const subs = catId ? cat(catId).subs : []; sel = subName(sel);   // الاسم القديم يُختار باسمه الحالي
   if (!subs.length) return '';
   return `<div class="subs" role="radiogroup" aria-label="النوع">${subs.map(s => `<label><input type="radio" name="sub" value="${esc(s)}" ${sel === s ? 'checked' : ''}>${esc(s)}</label>`).join('')}</div>`;
 }
@@ -82,4 +82,7 @@ export function spotExtra(x){
     <div class="field"><label for="f-room" id="room-label">رقم ${roomWord(s)}</label><input id="f-room" name="room" class="input" maxlength="10" value="${esc(x?.room || '')}" placeholder="مثال: 105"></div>
   </div>`;
 }
+// البلاغات وطلبات الاستلام تشترط بريداً موثّقاً (القواعد تفرض ذلك أيضاً)
+export const verifyPrompt = what => `<div class="empty">${icon('lock')}<b>وثّق بريدك الإلكتروني أولاً</b><span>أرسلنا رابط التحقق إلى بريدك. بعد الضغط عليه تستطيع ${what}.</span>
+  <div class="btn-row" style="justify-content:center"><button class="btn" data-act="checkVerified">${icon('check')}وثّقته</button><button class="btn ghost" data-act="resendVerify">أعد إرسال الرابط</button></div></div>`;
 export const loginPrompt = (msg) => `<div class="empty">${icon('lock')}<b>${msg}</b><button class="btn" data-act="login">${icon('users')}تسجيل الدخول</button></div>`;

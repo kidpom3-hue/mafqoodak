@@ -510,3 +510,27 @@ input[type=date].input::-webkit-date-and-time-value{text-align:start}
 /* رأس بطاقة الطلب: تحذير «أرسل N طلبات» في سطر مستقل حتى لا يدفع حالة الطلب خارج الشاشة */
 .claim-who{min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
 .claim-who .pill{white-space:normal}
+
+/* شريط توثيق البريد (ضمن الترويسة الثابتة) */
+.verify-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--warn-soft);color:var(--warn);border-radius:12px;padding:8px 10px;font-size:13px;font-weight:600}
+.verify-bar>span{flex:1;min-width:160px}
+.verify-bar>svg{width:18px;height:18px;flex:none}
+@media (min-width:720px){.verify-bar{order:3;flex-basis:100%}}
+/* تنبيه مدة الحفظ في المستودع */
+.note.retention{align-items:center;flex-wrap:wrap}
+.note.retention>span{flex:1;min-width:180px}
+/* هيكل تحميل صفوف المستودع */
+.skel .row-thumb{background:linear-gradient(90deg,var(--surface-2) 25%,var(--surface) 50%,var(--surface-2) 75%);background-size:200% 100%;animation:skel 1.4s ease-in-out infinite}
+.row.skel .row-main{display:flex;flex-direction:column;gap:8px;justify-content:center}
+@media (prefers-reduced-motion:reduce){.skel .row-thumb{animation:none}}
+.opt[disabled]{opacity:.6;cursor:default}
+@media (min-width:720px){header.top{flex-wrap:wrap}}
+/* إصلاح: عنوان طويل بلا مسافات داخل بطاقة مصغّرة (.mini) كان يمدّ صفحة «طلباتي» أفقياً */
+.mini,.mini .grow{min-width:0}
+.mini b,.mini .meta{overflow-wrap:anywhere}
+/* أهداف لمس لا تقل عن 36px: «عرض الكل» وروابط المكتب وزر «تعديل» في المواقع، ومنطقة لمس أوسع لمفتاح التفعيل دون تغيير شكله */
+.sec-head .link,.office-card .link,[data-view=office]>.link{min-height:36px}
+.switch::before{content:"";position:absolute;inset:-8px -4px}
+/* جدول المقارنة: عنوان الصف لا يُكسر وسط الكلمة */
+.cmp-row{grid-template-columns:minmax(64px,.8fr) minmax(0,1.2fr) minmax(0,1.2fr) auto}
+.cmp-row>b{overflow-wrap:normal}

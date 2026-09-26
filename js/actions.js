@@ -1,13 +1,14 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
 import { icon, cat, catName, colorName, ITEM_STATUS, CATS, COLORS } from './constants.js';
-import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle } from './utils.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN } from './state.js';
+import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, plural, W } from './utils.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts } from './state.js';
+import * as wf from './workflow.js';
 import { auth, dbx, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut,
-  deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider } from './firebase.js';
+  deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification } from './firebase.js';
 import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry } from './ui.js';
 import { updateBrowse } from './views/visitor.js';
-import { updateStaff, staffItems } from './views/staff.js';
+import { updateStaff, staffItems, claimChecks, keepLeft } from './views/staff.js';
 import { FORM, subsPicker, pubPhoto, person } from './views/common.js';
 import { analyzePhoto, rankMatches, aiErrMsg, aiReady } from './ai.js';
 import { SETTINGS } from './config.js';
@@ -69,7 +70,7 @@ async function aiFill(){
   finally { btn.disabled = !FORM.blob; }
 }
 async function aiMatch(reportId){
-  const r = S.reports.find(x => x.id === reportId); const st = $('#ai-' + reportId); if (!r) return;
+  const r = S.myReports.find(x => x.id === reportId); const st = $('#ai-' + reportId); if (!r) return;
   const pool = S.items.filter(i => i.status === 'available' || i.status === 'reserved')
     .map(i => ({i, s: matchScore(r, i)})).sort((a, b) => b.s - a.s).slice(0, 40).map(x => x.i);
   if (!pool.length){ if (st) st.textContent = 'لا توجد مفقودات في المستودع للمقارنة حالياً.'; return; }
@@ -119,7 +120,9 @@ async function submitForm(form){
         await updateProfile(cred.user, {displayName: name});
         S.me = {...(S.me || {}), name};
         await dbx.set('users/' + cred.user.uid, {name, email, photo: '', lastSeen: Date.now()}, {merge: true}).catch(() => {});
-        toast('أهلاً ' + name);
+        // توثيق البريد: البلاغات وطلبات الاستلام تشترطه
+        await sendEmailVerification(cred.user).catch(e => console.warn(e));
+        toast('أهلاً ' + name + '. أرسلنا رابط توثيق إلى بريدك.');
       } else {
         await signInWithEmailAndPassword(auth, email, pass);
       }
@@ -148,20 +151,22 @@ async function submitForm(form){
       setOffice(id, true);
     } catch (e){
       console.warn(e);
-      formErr(form, String(e?.code || '').includes('permission-denied') ? 'تعذّر الإعداد: قد يكون التطبيق مُعدّاً مسبقاً بحساب آخر، أو أن قواعد Firestore لم تُنشر بعد.' : 'تعذّر الإعداد. تأكد من إنشاء قاعدة Firestore ونشر القواعد ثم حاول مجدداً.');
+      formErr(form, String(e?.code || '').includes('permission-denied') ? 'تعذّر الإعداد: قد يكون التطبيق أُعدّ من قبل بحساب آخر، أو أن قواعد Firestore لم تُنشر بعد.' : 'تعذّر الإعداد. تأكد من إنشاء قاعدة Firestore ونشر القواعد ثم حاول مجدداً.');
     } finally { busy(form, false); }
     return;
   }
 
   if (kind === 'claim'){
     const i = item(form.dataset.id);
-    if (!i || i.status !== 'available') return formErr(form, 'لم يعد هذا الغرض متاحاً للطلب.');
+    // المتاح والمحجوز يقبلان الطلب (المحجوز: طلب منافس يراجعه المكتب قبل التسليم)
+    if (!i || !ACTIVE.includes(i.status)) return formErr(form, 'لم يعد هذا الغرض متاحاً للطلب.');
+    if (!S.verified) return formErr(form, 'وثّق بريدك الإلكتروني أولاً من الرابط الذي أرسلناه إليك.');
     if (val('proof').length < 15) return formErr(form, 'اكتب تفاصيل أكثر (15 حرفاً على الأقل) تثبت أن الغرض لك.');
     if (!fd.get('pledge')) return formErr(form, 'أكّد الإقرار بصحة المعلومات.');
     // طلب واحد فقط لكل مستخدم على كل غرض: رقم الطلب ثابت = رقم الغرض_رقم المستخدم
     const id = `${i.id}_${S.uid}`;
     const dup = 'أرسلت طلباً على هذا الغرض من قبل.';
-    if (S.claims.some(c => c.id === id)) return formErr(form, dup);
+    if (S.myClaims.some(c => c.id === id)) return formErr(form, dup);
     busy(form, true);
     if (await dbx.get('claims/' + id).catch(() => null)){ busy(form, false); return formErr(form, dup); }
     const code = genCode(); const codeHash = await sha(id + ':' + code);
@@ -170,6 +175,7 @@ async function submitForm(form){
     try {
       await dbx.set('claims/' + id, {itemId: i.id, officeId: i.officeId, uid: S.uid, proof: val('proof').slice(0, 1200),
         color: val('color'), brand: val('brand').slice(0, 40), lostSpot: val('spot'), bldg, room, lostDate: val('lostDate'),
+        ...(val('reportId') ? {reportId: val('reportId').slice(0, 100)} : {}),
         status: 'pending', codeHash, createdAt: Date.now()});
     } catch (e){
       console.warn(e); busy(form, false);
@@ -189,6 +195,7 @@ async function submitForm(form){
     busy(form, true);
 
     if (kind === 'report'){
+      if (!S.verified){ busy(form, false); return formErr(form, 'وثّق بريدك الإلكتروني أولاً من الرابط الذي أرسلناه إليك.'); }
       const id = dbx.newId('reports');
       const withPhoto = !!FORM.photo && !sens;
       const ok = await write(() => dbx.set('reports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), color: val('color'),
@@ -260,7 +267,7 @@ async function submitForm(form){
     // المطابقة على جهة الموظف تشمل التفاصيل السرية
     const matches = S.reports.filter(r => r.status === 'open' && r.id !== fromReport && matchScore(r, {...data, ...secret, id}) >= MATCH_MIN);
     S.hist = []; S.staffTab = fromReport ? 'reports' : 'items'; go('staff', {}, false);
-    if (matches.length) openSheet(`<h2>${icon('bell')} ${matches.length === 1 ? 'بلاغ قد يطابق' : matches.length + ' بلاغات قد تطابق'} هذا الغرض</h2>
+    if (matches.length) openSheet(`<h2>${icon('bell')} ${matches.length === 1 ? 'بلاغ قد يطابق' : plural(matches.length, {two: 'بلاغان قد يطابقان', few: '{n} بلاغات قد تطابق', many: '{n} بلاغاً قد يطابق', other: '{n} بلاغ قد يطابق'})} هذا الغرض</h2>
       <div class="list">${matches.map(r => `<div class="box"><b>${esc(r.title)}</b><span class="meta">${esc(catName(r.cat))} · ${esc(colorName(r.color))} · فُقد ${relDay(r.lostDate)}</span>${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}</div>`).join('')}</div>
       <p class="muted">رشّح الغرض لأصحاب هذه البلاغات ليصلهم تنبيه في «طلباتي».</p>
       <div class="btn-row"><button class="btn" data-act="pickAll" data-i="${esc(id)}" data-rs="${esc(matches.map(r => r.id).join(','))}">${icon('check')}رشّح للجميع</button><button class="btn ghost" data-act="closeSheet">لاحقاً</button></div>`);
@@ -284,6 +291,7 @@ async function submitForm(form){
     const id = form.dataset.id || dbx.newId('offices'); const old = S.offices.find(o => o.id === form.dataset.id);
     const data = {name: val('name'), short: val('short'), type: val('type'), city: val('city'), code, place: val('place'), hours: val('hours'), phone: val('phone'),
       retentionDays: Math.max(7, Math.min(365, parseInt(val('retentionDays'), 10) || 90)),
+      pickupDays: Math.max(1, Math.min(60, parseInt(val('pickupDays'), 10) || 7)),
       spots: val('spots').split('\n').map(s => s.trim()).filter(Boolean).slice(0, 40),
       active: old ? old.active !== false : true, createdAt: old?.createdAt || Date.now()};
     busy(form, true);
@@ -298,9 +306,11 @@ async function submitForm(form){
     if (code.length !== 6) return formErr(form, 'الرمز من 6 أرقام.');
     if (await sha(c.id + ':' + code) !== c.codeHash) return formErr(form, 'الرمز غير صحيح. تأكد منه مع صاحب الطلب.');
     busy(form, true);
-    const ok = await write(() => dbx.update('claims/' + c.id, {status: 'done', doneAt: Date.now(), doneBy: S.uid}));
-    if (ok) await write(() => dbx.update('items/' + c.itemId, {status: 'returned', returnedAt: Date.now(), updatedAt: Date.now()}), 'تم التحقق وتسليم الغرض لصاحبه');
-    closeSheet(); return;
+    // التسليم فقط للطلب الذي حُجز له الغرض، وتُغلق بقية طلباته في العملية نفسها
+    let res = null;
+    const ok = await write(async () => { res = await wf.verifyHandover(c); }, 'تم التحقق وتسليم الغرض لصاحبه');
+    busy(form, false); if (!ok) return;
+    closeSheet(); refreshCounts(); ownNotice(res); return;
   }
 
   if (kind === 'delAccount'){
@@ -321,9 +331,9 @@ async function submitForm(form){
       // 3) حذف البيانات: الصورة قبل البلاغ (ترتيب تشترطه القواعد)، ثم الطلبات، ثم الملف الشخصي
       const reports = await dbx.list('reports', [['uid', '==', user.uid]]);
       for (const r of reports){ if (r.photo) await dbx.del('reportPhotos/' + r.id).catch(() => {}); await dbx.del('reports/' + r.id); }
-      // المُسلَّم والمرفوض يبقيان سجلاً للمكتب بلا بيانات شخصية، وقيد المراجعة يُحذف
+      // الطلبات المنتهية تبقى سجلاً للمكتب بلا بيانات شخصية، وقيد المراجعة يُحذف
       for (const c of claims){
-        if (c.status === 'done' || c.status === 'rejected') await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', anonymizedAt: Date.now()});
+        if (['done', 'rejected', 'expired', 'cancelled'].includes(c.status)) await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', anonymizedAt: Date.now()});
         else if (c.status === 'pending') await dbx.del('claims/' + c.id);
       }
       await dbx.del('users/' + user.uid + '/private/codes');
@@ -344,19 +354,46 @@ async function submitForm(form){
   if (kind === 'reject'){
     const c = S.claims.find(x => x.id === form.dataset.id); if (!c) return;
     busy(form, true);
-    const ok = await write(() => dbx.update('claims/' + c.id, {status: 'rejected', note: val('note').slice(0, 200), decidedAt: Date.now(), decidedBy: S.uid}), 'رُفض الطلب');
-    const i = item(c.itemId);
-    if (ok && i?.reservedFor === c.id) await write(() => dbx.update('items/' + i.id, {status: 'available', reservedFor: '', updatedAt: Date.now()}));
-    closeSheet(); return;
+    // إن كان مقبولاً والغرض محجوزاً له، يعود الغرض متاحاً في العملية نفسها
+    const ok = await write(() => wf.rejectClaim(c, val('note')), 'رُفض الطلب');
+    busy(form, false); if (ok) closeSheet(); return;
+  }
+
+  // تسليم مباشر في المكتب دون طلب: ملاحظة التسليم تُحفظ في التفاصيل السرية
+  if (kind === 'handover'){
+    const i = item(form.dataset.id); if (!i) return;
+    const note = `${val('name')} — آخر 4 أرقام: ${val('last4')}`;
+    if (!val('name') || !/^\d{4}$/.test(val('last4'))) return formErr(form, 'اكتب اسم المستلم وآخر 4 أرقام من بطاقته.');
+    busy(form, true);
+    let res = null;
+    const ok = await write(async () => { res = await wf.setItemStatus(i, 'returned', note); }, 'سُجّل تسليم الغرض لصاحبه');
+    busy(form, false); if (ok){ closeSheet(); refreshCounts(); ownNotice(res); }
+    return;
+  }
+
+  // التصرّف في الأغراض التي تجاوزت مدة الحفظ
+  if (kind === 'dispose'){
+    const method = val('method');
+    if (!wf.DISPOSAL[method]) return formErr(form, 'اختر طريقة التصرّف.');
+    const ids = fd.getAll('ids').map(String);
+    if (!ids.length) return formErr(form, 'اختر غرضاً واحداً على الأقل.');
+    busy(form, true);
+    let n = 0;
+    const ok = await write(async () => { n = await wf.disposeItems(ids.map(item).filter(Boolean), method, val('note')); });
+    busy(form, false); if (ok){ closeSheet(); toast(`سُجّل التصرّف في ${plural(n, W.itemGen)}`); }
+    return;
   }
 }
 
 /* ---------- الأزرار ---------- */
 let PENDING_CONFIRM = null;
-function confirmSheet(title, text, yes, fn){
+// نافذة تأكيد. danger=false لزر عادي غير أحمر
+function confirmSheet(title, text, yes, fn, danger = true){
   PENDING_CONFIRM = fn;
-  openSheet(`<h2>${title}</h2><p class="muted">${esc(text)}</p><div class="btn-row"><button class="btn danger" data-act="confirmYes">${icon('trash')}${esc(yes)}</button><button class="btn ghost" data-act="closeSheet">إلغاء</button></div>`);
+  openSheet(`<h2>${title}</h2><p class="muted">${esc(text)}</p><div class="btn-row"><button class="btn ${danger ? 'danger' : ''}" data-act="confirmYes">${icon(danger ? 'trash' : 'check')}${esc(yes)}</button><button class="btn ghost" data-act="closeSheet">إلغاء</button></div>`);
 }
+// طلب الموظف نفسه على الغرض لا يعدّله هو (فصل المهام)، فننبّهه
+function ownNotice(res){ if (res?.skippedOwn) setTimeout(() => toast('لديك طلب شخصي على هذا الغرض لم يُغلق؛ يراجعه موظف آخر.'), 2900); }
 // حذف صور الغرض وتفاصيله السرية (قبل حذف الغرض نفسه). القواعد ترفض حذف مستند غير موجود، لذلك نحذف الموجود فقط.
 async function delItemParts(i){
   const quiet = e => console.warn(e);
@@ -449,31 +486,94 @@ const ACT = {
     });
   },
   editItem(el){ go('add', {id: el.dataset.id}); },
+  // تغيير الحالة يدوياً: متاح، أو سُلّم مباشرة (بملاحظة تسليم)، أو مؤرشف. «محجوز» يأتي من قبول طلب فقط
   itemStatus(el){
     const i = item(el.dataset.id); if (!i) return;
-    openSheet(`<h2>تغيير حالة ${esc(i.ref)}</h2><div class="list">${Object.keys(ITEM_STATUS).map(k => `<button class="opt" data-act="setStatus" data-id="${esc(i.id)}" data-v="${k}">${pill(ITEM_STATUS, k)}${k === i.status ? '<span class="muted">(الحالية)</span>' : ''}</button>`).join('')}</div>
-      <p class="hint">استخدم «سُلّم لصاحبه» عند التسليم المباشر في المكتب دون طلب عبر التطبيق.</p><button class="btn ghost" data-act="closeSheet">إلغاء</button>`);
+    const opts = ['available', 'returned', 'archived'];
+    openSheet(`<h2>تغيير حالة ${esc(i.ref)}</h2><div class="list">${opts.map(k => `<button class="opt" data-act="setStatus" data-id="${esc(i.id)}" data-v="${k}" ${k === i.status ? 'disabled aria-disabled="true"' : ''}>${pill(ITEM_STATUS, k)}${k === i.status ? '<span class="muted">(الحالية)</span>' : ''}</button>`).join('')}</div>
+      <p class="hint">«سُلّم لصاحبه» للتسليم المباشر في المكتب دون طلب عبر التطبيق، ويلزمه اسم المستلم وآخر 4 أرقام من بطاقته.</p><button class="btn ghost" data-act="closeSheet">إلغاء</button>`);
   },
-  async setStatus(el){
-    const patch = {status: el.dataset.v, updatedAt: Date.now()};
-    if (el.dataset.v === 'returned') patch.returnedAt = Date.now();
-    if (el.dataset.v === 'available') patch.reservedFor = '';
-    closeSheet(); await write(() => dbx.update('items/' + el.dataset.id, patch), 'تم تحديث الحالة');
+  setStatus(el){
+    const i = item(el.dataset.id), to = el.dataset.v; if (!i) return;
+    const open = wf.openClaimsOf(i.id).length;
+    if (to === 'returned') return openSheet(`<h2>${icon('idcard')} تسليم مباشر لـ ${esc(i.ref)}</h2>
+      <form data-form="handover" data-id="${esc(i.id)}" novalidate>
+        <div class="field"><label for="ho-name">اسم المستلم</label><input id="ho-name" name="name" class="input" maxlength="80" autocomplete="off"></div>
+        <div class="field"><label for="ho-4">آخر 4 أرقام من بطاقته (الجامعية أو الهوية)</label><input id="ho-4" name="last4" class="input" inputmode="numeric" maxlength="4" dir="ltr"></div>
+        ${open ? `<div class="note warn">${icon('info')}<span>على الغرض ${plural(open, W.openClaims)}. الطلبات المفتوحة تُلغى عند التسليم.</span></div>` : ''}
+        <p class="hint">تُحفظ هذه الملاحظة في التفاصيل السرية للغرض، ولا يراها إلا موظفو المكتب.</p>
+        <div class="form-err" hidden></div>
+        <div class="btn-row"><button class="btn" type="submit">${icon('check')}سجّل التسليم</button><button type="button" class="btn ghost" data-act="closeSheet">إلغاء</button></div>
+      </form>`);
+    const run = async () => { let res = null; if (await write(async () => { res = await wf.setItemStatus(i, to); }, 'تم تحديث الحالة')){ refreshCounts(); ownNotice(res); } };
+    if (to === 'available' && i.status === 'reserved' && S.claims.some(c => c.id === i.reservedFor && c.status === 'approved'))
+      return confirmSheet('إعادة إتاحة الغرض؟', 'الغرض محجوز لطلب مقبول. ستنتهي صلاحية ذلك الطلب ورمزه، ويعود الغرض متاحاً للجميع.', 'أعد إتاحته', run, false);
+    if (to === 'archived' && open) return confirmSheet('أرشفة الغرض؟', `على الغرض ${plural(open, W.openClaims)}. الطلبات المفتوحة تُلغى عند الأرشفة.`, 'أرشفه', run, false);
+    closeSheet(); run();
   },
   delItem(el){
     const i = item(el.dataset.id); if (!i) return;
-    confirmSheet(`حذف ${esc(i.ref)}؟`, 'يُحذف الغرض وصوره وتفاصيله نهائياً. للاحتفاظ بالسجل استخدم «مؤرشف» بدلاً من الحذف.', 'احذف نهائياً', async () => {
-      // الترتيب: الصور والتفاصيل السرية أولاً، ثم الغرض نفسه
-      await delItemParts(i);
-      if (await write(() => dbx.del('items/' + i.id), 'حُذف الغرض')) back();
+    const open = wf.openClaimsOf(i.id).length;
+    confirmSheet(`حذف ${esc(i.ref)}؟`, (open ? `على الغرض ${plural(open, W.openClaims)}. الطلبات المفتوحة تُلغى عند الحذف، ويرى أصحابها السبب في «طلباتي». ` : '') + 'يُحذف الغرض وصوره وتفاصيله نهائياً. للاحتفاظ بالسجل استخدم «مؤرشف» بدلاً من الحذف.', 'احذف نهائياً', async () => {
+      // إلغاء الطلبات، ثم الصور والتفاصيل السرية، ثم الغرض نفسه: كلها في batch واحد
+      let res = null;
+      if (await write(async () => { res = await wf.deleteItem(i); }, 'حُذف الغرض')){ ownNotice(res); back(); }
     });
   },
   async approve(el){
     const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return;
     const i = item(c.itemId);
-    if (i && i.status !== 'available'){ toast('هذا الغرض ليس متاحاً الآن؛ قد يكون محجوزاً لطلب آخر.'); return; }
-    const ok = await write(() => dbx.update('claims/' + c.id, {status: 'approved', decidedAt: Date.now(), decidedBy: S.uid}));
-    if (ok && i) await write(() => dbx.update('items/' + i.id, {status: 'reserved', reservedFor: c.id, updatedAt: Date.now()}), 'قُبل الطلب — سيظهر رمز الاستلام لصاحبه');
+    if (!i){ toast('لم يعد هذا الغرض موجوداً.'); return; }
+    const go2 = () => write(() => wf.approveClaim(c), 'قُبل الطلب، وسيظهر رمز الاستلام لصاحبه');
+    // تطابق ضعيف: أقل من 2 من 3 في جدول المقارنة
+    const {hits} = claimChecks(c, full(i));
+    if (hits < 2) return confirmSheet('تطابق ضعيف', `تطابق ${hits} من 3 فقط بين إجابات صاحب الطلب والحقيقة. هل تريد القبول رغم ذلك؟`, 'اقبل الطلب', go2, false);
+    go2();
+  },
+  release(el){
+    const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return;
+    confirmSheet('إعادة إتاحة الغرض؟', 'انتهت مهلة الاستلام. سينتهي الطلب ورمزه، ويعود الغرض متاحاً ليطلبه صاحبه الحقيقي.', 'أعد إتاحته',
+      () => write(() => wf.releaseReservation(c), 'أُعيدت إتاحة الغرض'), false);
+  },
+  // التصرّف في الأغراض التي تجاوزت مدة الحفظ (إجراء جماعي)
+  dispose(){
+    const over = S.items.filter(i => i.status === 'available' && keepLeft(i) < 0).map(full);
+    if (!over.length) return toast('لا توجد أغراض تجاوزت مدة الحفظ.');
+    openSheet(`<h2>${icon('clock')} التصرّف في ${plural(over.length, W.itemGen)}</h2>
+      <form data-form="dispose" novalidate>
+        <div class="list">${over.map(i => `<label class="check"><input type="checkbox" name="ids" value="${esc(i.id)}" checked><span><b>${esc(i.ref)}</b> ${esc(i.title)} <span class="muted">· ${relDay(i.foundDate)}</span></span></label>`).join('')}</div>
+        <div class="field"><span class="label">طريقة التصرّف</span>
+          ${Object.entries(wf.DISPOSAL).map(([k, l]) => `<label class="check"><input type="radio" name="method" value="${k}"><span>${l}</span></label>`).join('')}</div>
+        <div class="field"><label for="dp-note">ملاحظة (للموظفين فقط)</label><input id="dp-note" name="note" class="input" maxlength="300" placeholder="مثال: سُلّمت لجمعية البر بموجب محضر رقم 12"></div>
+        <div class="form-err" hidden></div>
+        <div class="btn-row"><button class="btn" type="submit">${icon('check')}سجّل التصرّف</button><button type="button" class="btn ghost" data-act="closeSheet">إلغاء</button></div>
+      </form>`);
+  },
+  claimHist(){ loadClaimHistory(); },
+  adminRefresh(){ loadAdminCounts(true); },
+  // تعبئة طلب الاستلام من بلاغ المستخدم المفتوح
+  useReport(el){
+    const r = S.myReports.find(x => x.id === el.dataset.id); const f = el.closest('form'); if (!r || !f) return;
+    const cc = f.querySelector(`input[name=color][value="${COLORS.some(c => c.id === r.color) ? r.color : ''}"]`); if (cc) cc.checked = true;
+    const sp = f.querySelector('[name=spot]'); if (sp && [...sp.options].some(o => o.value === r.spot)){ sp.value = r.spot; onSpotChange(f, r.spot); }
+    if (r.bldg) f.querySelector('[name=bldg]').value = r.bldg;
+    if (r.room) f.querySelector('[name=room]').value = r.room;
+    if (r.lostDate){ const d = f.querySelector('[name=lostDate]'); d.value = r.lostDate; const h = d.parentElement.querySelector('.date-hint'); if (h) h.hidden = true; }
+    if (r.desc) f.querySelector('[name=proof]').value = r.desc;
+    f.querySelector('[name=reportId]').value = r.id;
+    toast('عُبّئ الطلب من بلاغك. راجعه وأكمل التفاصيل.');
+  },
+  async resendVerify(){
+    try { await sendEmailVerification(auth.currentUser); toast('أعدنا إرسال رابط التوثيق إلى بريدك.'); }
+    catch (e){ toast(authErr(e)); }
+  },
+  // بعد الضغط على رابط التوثيق: نحدّث بيانات الحساب ثم رمز الدخول (حتى تراه القواعد موثّقاً)
+  async checkVerified(){
+    const u = auth.currentUser; if (!u) return;
+    try { await u.reload(); if (auth.currentUser.emailVerified) await auth.currentUser.getIdToken(true); } catch (e){ console.warn(e); }
+    S.verified = !!auth.currentUser?.emailVerified;
+    toast(S.verified ? 'وُثّق بريدك. شكراً لك.' : 'لم يُوثَّق بعد. افتح الرابط في بريدك ثم اضغط «وثّقته».');
+    renderAll();
   },
   reject(el){
     openSheet(`<h2>رفض طلب الاستلام</h2><form data-form="reject" data-id="${esc(el.dataset.id)}" novalidate>
@@ -511,11 +611,13 @@ const ACT = {
   },
   async rejectReq(el){ await write(() => dbx.update('staffRequests/' + el.dataset.id, {status: 'rejected', decidedAt: Date.now()}), 'رُفض الطلب'); },
   revoke(el){ confirmSheet('سحب صلاحية الموظف؟', 'لن يتمكن من إضافة المفقودات أو مراجعة طلبات الاستلام.', 'اسحب الصلاحية', () => write(() => dbx.del('staff/' + el.dataset.id), 'سُحبت الصلاحية')); },
-  delSamples(){
-    const s = S.allItems.filter(i => i.sample);
-    confirmSheet(`حذف ${s.length} عناصر توضيحية؟`, 'تُحذف العناصر المعلّمة بـ«مثال» فقط، ولا تتأثر المفقودات الحقيقية.', 'احذف الأمثلة', async () => {
+  async delSamples(){
+    // تُجلب الأمثلة عند الطلب فقط (لا اشتراك دائم في كل الأغراض)
+    const s = await dbx.list('items', [['sample', '==', true]]).catch(() => []);
+    if (!s.length) return toast('لا توجد بيانات توضيحية.');
+    confirmSheet(`حذف ${plural(s.length, W.sampleGen)}؟`, 'تُحذف العناصر المعلّمة بـ«مثال» فقط، ولا تتأثر المفقودات الحقيقية.', 'احذف الأمثلة', async () => {
       for (const i of s){ await delItemParts(i); await dbx.del('items/' + i.id).catch(e => console.warn(e)); }
-      toast('حُذفت البيانات التوضيحية');
+      S.counts.samples = 0; toast('حُذفت البيانات التوضيحية'); renderAll();
     });
   },
   confirmYes(){ const fn = PENDING_CONFIRM; PENDING_CONFIRM = null; closeSheet(); if (fn) fn(); },
@@ -548,7 +650,11 @@ export function bindEvents(){
   app.addEventListener('change', e => {
     const t = e.target;
     if (t.id === 'frange'){ S.filter.range = t.value; updateBrowse(); }
-    if (t.id === 'sstatus'){ S.staffStatus = t.value; $('#s-body').innerHTML = staffItems(); hydrate(); }
+    if (t.id === 'sstatus'){
+      S.staffStatus = t.value; $('#s-body').innerHTML = staffItems(); hydrate();
+      // المُسلَّم والمؤرشف والمُتصرَّف فيه تُجلب عند اختيار الفلتر فقط
+      if (t.value !== 'active') loadExtraItems(t.value);
+    }
     if (t.id === 'photo-in') onPhoto(t);
     // تلميح خانة التاريخ الاختيارية يظهر فقط وهي فارغة
     if (t.type === 'date'){ const h = t.parentElement.querySelector('.date-hint'); if (h) h.hidden = !!t.value; }

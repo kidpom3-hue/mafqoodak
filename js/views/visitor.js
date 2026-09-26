@@ -1,9 +1,9 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
 import { icon, LOGO, CATS, cat, catName, colorName, otype, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS } from '../constants.js';
-import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText } from '../utils.js';
-import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myCode, candidatesFor, unseenCount } from '../state.js';
-import { backBtn, thumbHtml, miniItem, catPicker, colorPicker, photoField, spotOptions, spotExtra, resetForm, loginPrompt, photoImg, blurBadge, isBlur, staffView } from './common.js';
-import { claimCardStaff } from './staff.js';
+import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, plural, W, showTitle } from '../utils.js';
+import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myCode, maybeFor, unseenCount, ensureItem, itemLoading, officeName, ACTIVE } from '../state.js';
+import { backBtn, thumbHtml, miniItem, catPicker, colorPicker, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView } from './common.js';
+import { claimCardStaff, rivals, dateOf } from './staff.js';
 import { aiReady } from '../ai.js';
 import { hydrate } from '../ui.js';
 
@@ -37,11 +37,10 @@ export function vBrowse(){
     </section>
     <div id="match-banner"></div>
     <div class="browse-bar" id="browse-bar">
-      <label class="searchbar">${icon('search')}<input id="q" type="search" placeholder="ابحث: محفظة سوداء، مفتاح تويوتا، سماعات…" value="${esc(S.filter.q)}" autocomplete="off" aria-label="بحث"></label>
+      <label class="searchbar">${icon('search')}<input id="q" type="search" placeholder="ابحث: محفظة، مفتاح سيارة، سماعات…" value="${esc(S.filter.q)}" autocomplete="off" aria-label="بحث"></label>
       <div class="chips-scroll" id="cat-chips">${[{id:'all', name:'الكل', icon:'grid'}, ...CATS].map(c => `<button class="chip" data-act="fcat" data-id="${c.id}">${icon(c.icon)}<span>${esc(c.name)}</span></button>`).join('')}</div>
     </div>
     <div class="filters">
-      <div class="seg" id="st-seg">${[['available','المتاحة'],['all','الكل مع المُسلّمة']].map(([v,l]) => `<button data-act="fstatus" data-v="${v}">${l}</button>`).join('')}</div>
       <select class="select-sm" id="frange" aria-label="تاريخ العثور">
         <option value="all">أي وقت</option><option value="7">آخر 7 أيام</option><option value="30">آخر 30 يوماً</option>
       </select>
@@ -53,9 +52,9 @@ export function vBrowse(){
     </aside>
   </div>`;
 }
+// التصفح العام: الأغراض النشطة فقط (المتاح والمحجوز)، والمُسلَّم يظهر كعدد في العنوان
 export function visibleItems(){
-  let arr = S.items.filter(i => i.status !== 'archived');
-  if (S.filter.status === 'available') arr = arr.filter(i => i.status === 'available' || i.status === 'reserved');
+  let arr = S.items.filter(i => ACTIVE.includes(i.status));
   if (S.filter.cat !== 'all') arr = arr.filter(i => i.cat === S.filter.cat);
   if (S.filter.range !== 'all'){ const lim = +S.filter.range; arr = arr.filter(i => daysAgo(i.foundDate) <= lim); }
   const q = tokens(S.filter.q);
@@ -71,7 +70,7 @@ export function card(i){
     <div class="thumb${isBlur(i) ? ' blurred' : ''}">${icon(c.icon)}${photoImg(i)}${blurBadge(i)}${i.sample ? '<span class="badge-sample">مثال</span>' : ''}</div>
     <div class="card-body">
       <span class="ref">${esc(i.ref)}</span>
-      <h3>${esc(i.title)}</h3>
+      <h3>${esc(showTitle(i))}</h3>
       ${i.spot ? `<div class="meta">${icon('pin')}<span>${esc(i.spot)}</span></div>` : ''}
       <div class="meta">${icon('clock')}<span>${relDay(i.foundDate)}</span></div>
       ${i.status !== 'available' ? pill(ITEM_STATUS, i.status) : ''}
@@ -80,13 +79,12 @@ export function card(i){
 }
 export function updateBrowse(){
   const avail = S.items.filter(i => i.status === 'available').length;
-  const ret = S.items.filter(i => i.status === 'returned').length;
+  const ret = S.counts.returned || 0;
   const hc = $('#hero-count');
-  if (hc) hc.innerHTML = !S.itemsLoaded ? 'جارٍ التحميل…' : `<b>${avail}</b> ${avail === 1 ? 'غرض ينتظر' : 'غرضاً تنتظر'} أصحابها${ret ? ` · أعدنا <b>${ret}</b> لأصحابها` : ''}`;
+  if (hc) hc.innerHTML = !S.itemsLoaded ? 'جارٍ التحميل…' : `${avail ? `المتاح الآن: <b>${esc(plural(avail, W.item))}</b>` : 'لا توجد أغراض متاحة الآن'}${ret ? ` · أعدنا <b>${esc(plural(ret, W.itemAcc))}</b> إلى أصحابها` : ''}`;
   const n = unseenCount(); const mb = $('#match-banner');
-  if (mb) mb.innerHTML = n ? `<button class="banner" data-act="nav" data-r="mine">${icon('bell')}<span class="grow">لديك ${n === 1 ? 'تنبيه جديد' : n + ' تنبيهات جديدة'} على بلاغاتك وطلباتك</span>${icon('fwd')}</button>` : '';
-  $$('#cat-chips .chip').forEach(b => b.classList.toggle('on', b.dataset.id === S.filter.cat));
-  $$('#st-seg button').forEach(b => b.classList.toggle('on', b.dataset.v === S.filter.status));
+  if (mb) mb.innerHTML = n ? `<button class="banner" data-act="nav" data-r="mine">${icon('bell')}<span class="grow">لديك ${plural(n, W.alert)} على بلاغاتك وطلباتك</span>${icon('fwd')}</button>` : '';
+  $$('#cat-chips .chip').forEach(b => { const on = b.dataset.id === S.filter.cat; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
   const fr = $('#frange'); if (fr) fr.value = S.filter.range;
   const res = $('#results'); if (!res) return;
   if (!S.itemsLoaded){ res.innerHTML = `<div class="grid" aria-busy="true" aria-label="جارٍ التحميل">${skelCards()}</div>`; return; }
@@ -98,14 +96,18 @@ export function updateBrowse(){
 
 /* ---------- item detail ---------- */
 export function vItem(){
-  const i = item(S.route.params.id);
-  if (!i && !S.itemsLoaded) return `<div class="loading"><span class="spin"></span></div>`;   // رابط مشاركة: ننتظر تحميل المفقودات
+  const id = S.route.params.id; const i = item(id);
+  // الغرض غير محمّل (مُسلَّم أو من رابط مشاركة): نجلبه مرة واحدة
+  if (!i){ ensureItem(id); if (itemLoading(id)) return `<div class="loading"><span class="spin"></span></div>`; }
   if (!i) return `<div class="wrap">${backBtn()}<div class="empty">${icon('box')}<b>لم يعد هذا الغرض موجوداً.</b></div></div>`;
   const c = cat(i.cat); const o = S.offices.find(x => x.id === i.officeId) || curOffice();
   // الموظف يرى التفاصيل السرية (full)، والزائر يرى الإعلان العام فقط
   const staffMode = staffView(); const f = staffMode ? full(i) : i;
   const keepDays = (o?.retentionDays || 90) - daysAgo(i.foundDate);
-  const mine = S.claims.find(cl => cl.itemId === i.id && cl.uid === S.uid);   // طلب سابق (بأي حالة)
+  const mine = S.myClaims.find(cl => cl.itemId === i.id);   // طلب سابق (بأي حالة)
+  const claimBtn = S.uid ? `<button class="btn block" data-act="goClaim" data-id="${esc(i.id)}">${icon('shield')}هذا غرضي — اطلب استلامه</button>
+      <p class="hint">ستُسأل عن تفاصيل لا تظهر في الإعلان لتثبت ملكيتك، ثم يصلك رمز تحقق تقدّمه عند الاستلام.</p>`
+    : `<button class="btn block" data-act="login">${icon('shield')}سجّل الدخول لتطلب الاستلام</button>`;
   let actions = '';
   if (staffMode){
     const cls = S.claims.filter(cl => cl.itemId === i.id).sort((a,b) => b.createdAt - a.createdAt);
@@ -114,20 +116,24 @@ export function vItem(){
         <button class="btn ghost" data-act="itemStatus" data-id="${esc(i.id)}">${icon('swap')}تغيير الحالة</button>
         <button class="btn danger" data-act="delItem" data-id="${esc(i.id)}">${icon('trash')}حذف</button>
       </div>
+      ${rivals(i).length ? `<div class="note warn">${icon('info')}<span><b>طلب منافس:</b> وصل طلب آخر على هذا الغرض المحجوز. راجِعه قبل التسليم.</span></div>` : ''}
       ${cls.length ? `<div class="section-title">طلبات الاستلام على هذا الغرض</div><div class="list">${cls.map(claimCardStaff).join('')}</div>` : ''}`;
+  } else if (i.status === 'disposed'){
+    actions = `<div class="note">${icon('clock')}<span>انتهت مدة حفظ هذا الغرض، وتصرّف فيه المكتب وفق أنظمة المنشأة.</span></div>`;
   } else if (mine?.status === 'rejected'){
     actions = `<div class="note warn">${icon('info')}<span>رُفض طلبك على هذا الغرض. إن كان لديك إثبات فراجع المكتب.</span></div>`;
   } else if (mine){
     actions = `<div class="note ok">${icon('check')}<span>لديك طلب استلام على هذا الغرض: <b>${CLAIM_STATUS[mine.status].l}</b></span></div>
       <button class="btn soft" data-act="nav" data-r="mine">تابع طلبك</button>`;
   } else if (i.status === 'available'){
-    actions = S.uid ? `<button class="btn block" data-act="goClaim" data-id="${esc(i.id)}">${icon('shield')}هذا غرضي — اطلب استلامه</button>
-      <p class="hint">ستُسأل عن تفاصيل لا تظهر في الإعلان لتثبت ملكيتك، ثم يصلك رمز تحقق تقدّمه عند الاستلام.</p>`
-      : `<button class="btn block" data-act="login">${icon('shield')}سجّل الدخول لتطلب الاستلام</button>`;
+    actions = claimBtn;
   } else if (i.status === 'reserved'){
-    actions = `<div class="note warn">${icon('clock')}<span>هذا الغرض محجوز لصاحب طلب تمت الموافقة عليه وبانتظار حضوره.</span></div>`;
+    // المحجوز يقبل طلباً منافساً: صاحبه الحقيقي يستطيع الاعتراض قبل التسليم
+    actions = `<div class="note warn">${icon('clock')}<span>محجوز لطلب آخر. إن كان لك فأرسل طلبك ليراجعه المكتب قبل التسليم.</span></div>${claimBtn}`;
   } else if (i.status === 'returned'){
     actions = `<div class="note info">${icon('check')}<span>سُلّم هذا الغرض لصاحبه.</span></div>`;
+  } else if (i.status === 'archived'){
+    actions = `<div class="note">${icon('info')}<span>لم يعد هذا الغرض معروضاً في المكتب.</span></div>`;
   }
   return `<div class="wrap" data-view="item">${backBtn()}
     <div class="detail">
@@ -140,8 +146,8 @@ export function vItem(){
       </div>
       <div class="panel">
         <div class="panel-head"><span class="ref">${esc(i.ref)}</span>${pill(ITEM_STATUS, i.status)}</div>
-        <h1 style="font-size:24px;font-weight:800">${esc(f.title)}</h1>
-        ${staffMode && f.title !== i.title ? `<span class="meta">يظهر للزوار باسم: ${esc(i.title)}</span>` : ''}
+        <h1 style="font-size:24px;font-weight:800">${esc(staffMode ? f.title : showTitle(i))}</h1>
+        ${staffMode && f.title !== i.title ? `<span class="meta">يظهر للزوار باسم: ${esc(showTitle(i))}</span>` : ''}
         ${staffMode && f.desc ? `<p>${esc(f.desc)}</p>` : ''}
         <dl class="facts">
           <dt>التصنيف</dt><dd>${icon(c.icon)}${esc(c.name)}${i.sub ? ' — ' + esc(i.sub) : ''}</dd>
@@ -150,7 +156,7 @@ export function vItem(){
           <dt>مكان العثور</dt><dd>${esc((staffMode ? spotText(f) : i.spot) || 'غير محدد')}</dd>
           <dt>تاريخ العثور</dt><dd>${fmtDate(i.foundDate)} <span class="muted">(${relDay(i.foundDate)})</span></dd>
           ${staffMode && f.storage ? `<dt>موضع الحفظ</dt><dd>${esc(f.storage)}</dd>` : ''}
-          ${i.status === 'available' || i.status === 'reserved' ? `<dt>مدة الحفظ</dt><dd>${keepDays > 0 ? `متبقٍّ ${daysWord(keepDays)}` : '<span class="flag">انتهت مدة الحفظ</span>'}</dd>` : ''}
+          ${i.status === 'available' || i.status === 'reserved' ? `<dt>مدة الحفظ</dt><dd>${keepDays > 0 ? `متبقٍّ ${daysWord(keepDays, true)}` : '<span class="flag">انتهت مدة الحفظ</span>'}</dd>` : ''}
         </dl>
         ${actions}
         <button class="btn ghost" data-act="share" data-id="${esc(i.id)}">${icon('share')}مشاركة</button>
@@ -165,14 +171,19 @@ export function vItem(){
 // نموذج الاستلام: يسأل عن التفاصيل المخفية دون أي تلميح من الإعلان، ويقارنها الموظف بالحقيقة
 export function vClaimForm(){
   const i = item(S.route.params.id); const o = curOffice();
-  if (!i) return `<div class="wrap">${backBtn()}<div class="empty">لم يعد هذا الغرض موجوداً.</div></div>`;
-  const prev = S.claims.find(cl => cl.itemId === i.id && cl.uid === S.uid);
+  if (!i || !ACTIVE.includes(i.status)) return `<div class="wrap">${backBtn()}<div class="empty">${icon('box')}<b>لم يعد هذا الغرض متاحاً للطلب.</b></div></div>`;
+  if (!S.verified) return `<div class="wrap">${backBtn()}${verifyPrompt('إرسال طلب الاستلام')}</div>`;
+  const prev = S.myClaims.find(cl => cl.itemId === i.id);
   if (prev) return `<div class="wrap" data-view="claim">${backBtn()}<div class="note warn">${icon('info')}<span>أرسلت طلباً على هذا الغرض من قبل.</span></div>
     <button class="btn soft" data-act="nav" data-r="mine">تابع طلبك</button></div>`;
+  // بلاغ مفتوح من التصنيف نفسه: نعرض تعبئة الطلب منه
+  const rep = myReports().find(r => r.status === 'open' && r.cat === i.cat && r.officeId === i.officeId);
   return `<div class="wrap" data-view="claim">${backBtn()}
     <section class="hero"><div class="hero-kicker">${icon('shield')}طلب استلام</div><h1 class="hero-title">أثبت أن الغرض لك</h1></section>
     ${miniItem(i)}
     <form data-form="claim" data-id="${esc(i.id)}" class="panel" novalidate>
+      ${rep ? `<div class="note info">${icon('bell')}<span>لديك بلاغ مفتوح «${esc(rep.title)}» من التصنيف نفسه.</span><button type="button" class="btn sm soft" data-act="useReport" data-id="${esc(rep.id)}">استخدم بيانات بلاغي</button></div>` : ''}
+      <input type="hidden" name="reportId" value="">
       <div class="field"><span class="label">ما لونه؟</span>${colorPicker('', true)}</div>
       <div class="field"><label for="c-brand">الماركة أو الشركة <span class="hint">(اختياري)</span></label><input id="c-brand" name="brand" class="input" maxlength="40" autocomplete="off"></div>
       <div class="field"><label for="proof">ماذا بداخله، أو ما العلامة المميزة فيه؟</label>
@@ -195,6 +206,7 @@ export function vReportForm(){
   resetForm();
   const o = curOffice();
   if (!S.uid) return `<div class="wrap">${loginPrompt('سجّل الدخول لتسجيل بلاغ عن غرض مفقود.')}</div>`;
+  if (!S.verified) return `<div class="wrap">${verifyPrompt('تسجيل البلاغات')}</div>`;
   return `<div class="wrap" data-view="report">
     <section class="hero"><div class="hero-kicker">${icon('bell')}بلاغ مفقود · ${esc(o.name)}</div><h1 class="hero-title">ماذا فقدت؟</h1>
       <p class="hero-sub">صف غرضك مرة واحدة، ويقارنه مفقودك بكل ما يُسجَّل في المكتب وينبّهك عند وجود تطابق.</p></section>
@@ -219,10 +231,10 @@ export function vReportForm(){
 /* ---------- visitor: my requests ---------- */
 export function vMine(){
   if (!S.uid) return `<div class="wrap">${loginPrompt('سجّل الدخول لمتابعة بلاغاتك وطلبات الاستلام.')}</div>`;
-  const reps = myReports(), cls = myClaims(), o = curOffice();
+  const reps = myReports(), cls = myClaims();
   const focus = S.route.params.focus;
   return `<div class="wrap" data-view="mine">
-    <section class="hero"><div class="hero-kicker">${icon('inbox')}${esc(o.name)}</div><h1 class="hero-title">طلباتي</h1></section>
+    <section class="hero"><div class="hero-kicker">${icon('inbox')}في كل المكاتب</div><h1 class="hero-title">طلباتي</h1></section>
     <div class="section-title">طلبات الاستلام ${cls.length ? `<span class="count">${cls.length}</span>` : ''}</div>
     ${cls.length ? `<div class="list">${cls.map(claimCardMine).join('')}</div>` : `<div class="note">${icon('info')}<span>عندما تجد غرضك في القائمة اضغط «هذا غرضي» وسيظهر طلبك هنا.</span></div>`}
     <div class="section-title">بلاغاتي عن المفقودات ${reps.length ? `<span class="count">${reps.length}</span>` : ''}</div>
@@ -235,32 +247,44 @@ export function claimSteps(st){
   return `<div class="steps"><span class="${s1 ? 'done' : ''}"><i></i>أُرسل</span><span class="sep"></span><span class="${s2 ? 'done' : ''}"><i></i>قُبل</span><span class="sep"></span><span class="${s3 ? 'done' : ''}"><i></i>استُلم</span></div>`;
 }
 export function claimCardMine(c){
-  const i = item(c.itemId); const o = curOffice(); const code = myCode(c.id);
+  const i = item(c.itemId); if (!i) ensureItem(c.itemId);
+  const gone = !i && !itemLoading(c.itemId);   // الغرض حُذف من المستودع
+  const o = S.offices.find(x => x.id === c.officeId); const code = myCode(c.id);
   let body = '';
-  if (c.status === 'pending') body = `<p class="muted">يراجع موظف المكتب التفاصيل التي أرسلتها.</p>`;
+  if (gone && ['pending', 'approved'].includes(c.status)) body = `<div class="note warn">${icon('info')}<span>حُذف هذا الغرض من المستودع، فلم يعد طلبك قائماً. راجع المكتب إن كان لديك استفسار.</span></div>`;
+  else if (c.status === 'pending') body = `<p class="muted">يراجع موظف المكتب التفاصيل التي أرسلتها.</p>`;
   else if (c.status === 'approved') body = code
     ? `<div class="code-tag"><small>رمز الاستلام</small><span class="digits">${esc(code)}</span><small>اعرضه لموظف المكتب عند الاستلام</small></div>
        <dl class="facts"><dt>المكان</dt><dd>${esc(o?.place || o?.name || '')}</dd>${o?.hours ? `<dt>الأوقات</dt><dd>${esc(o.hours)}</dd>` : ''}</dl>`
-    : `<div class="note warn">${icon('info')}<span>قُبل طلبك، لكن الرمز غير محفوظ على هذا الجهاز. افتح التطبيق من الجهاز الذي أرسلت منه الطلب، أو راجع المكتب مع إثبات الهوية.</span></div>`;
+    : `<div class="note warn">${icon('info')}<span>قُبل طلبك، لكن الرمز غير محفوظ على هذا الجهاز. افتح التطبيق من الجهاز الذي أرسلت منه الطلب، أو راجع المكتب ومعك إثبات الهوية.</span></div>`;
+  // مهلة الاستلام للطلب المقبول
+  if (c.status === 'approved' && c.pickupBy && !gone) body = `<div class="note ${Date.now() > c.pickupBy ? 'warn' : 'info'}">${icon('clock')}<span>${Date.now() > c.pickupBy ? 'انتهت مهلة الاستلام في' : 'استلمه قبل'} <b>${esc(dateOf(c.pickupBy))}</b></span></div>` + body;
   else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>استلمت غرضك ${relTime(c.doneAt)}. سعداء بعودته إليك.</span></div>`;
   else if (c.status === 'rejected') body = `<div class="note warn">${icon('info')}<span>لم يُقبل الطلب${c.note ? ': ' + esc(c.note) : '.'}</span></div>`;
+  else if (c.status === 'expired') body = `<div class="note warn">${icon('clock')}<span>انتهت مهلة الاستلام دون حضورك، فأُعيدت إتاحة الغرض. راجع المكتب إن كان لا يزال لك.</span></div>`;
+  else if (c.status === 'cancelled') body = `<div class="note">${icon('info')}<span>أُلغي الطلب${c.note ? ': ' + esc(c.note) : '.'}</span></div>`;
   return `<div class="box">
-    <div class="box-head"><div>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<h3>${esc(i?.title || 'غرض محذوف')}</h3><span class="meta">أُرسل ${relTime(c.createdAt)}</span></div>${pill(CLAIM_STATUS, c.status)}</div>
-    ${c.status !== 'rejected' ? claimSteps(c.status) : ''}
+    <div class="box-head"><div>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<h3>${esc(i ? showTitle(i) : gone ? 'غرض حُذف من المستودع' : 'جارٍ التحميل…')}</h3><span class="meta">${icon('building')}${esc(officeName(c.officeId))} · أُرسل ${relTime(c.createdAt)}</span></div>${pill(CLAIM_STATUS, c.status)}</div>
+    ${['pending', 'approved', 'done'].includes(c.status) && !gone ? claimSteps(c.status) : ''}
     ${body}
   </div>`;
 }
 export function reportCardMine(r, focus){
-  const pick = r.staffPick ? item(r.staffPick) : null;
-  const cands = r.status === 'open' ? candidatesFor(r, 4).filter(x => x.i.id !== r.staffPick) : [];
+  // ترشيح الموظف يظهر فقط ما دام الغرض متاحاً أو محجوزاً (لا بعد تسليمه لغيرك)
+  if (r.staffPick && !item(r.staffPick)) ensureItem(r.staffPick);
+  const pickItem = r.staffPick ? item(r.staffPick) : null;
+  const pick = pickItem && ACTIVE.includes(pickItem.status) ? pickItem : null;
+  // «قد يكون لك»: مطابقة صارمة بالبيانات العامة، بلا نسب مئوية
+  const cands = r.status === 'open' ? maybeFor(r, 4).filter(i => i.id !== r.staffPick) : [];
   const ai = r.ai?.matches || [];
   return `<div class="box" ${focus ? 'style="border-color:var(--primary)"' : ''}>
-    <div class="box-head"><div><h3>${esc(r.title)}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''} · فُقد ${relDay(r.lostDate)}</span></div>${pill(REPORT_STATUS, r.status)}</div>
+    <div class="box-head"><div><h3>${esc(r.title)}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''} · فُقد ${relDay(r.lostDate)}</span><span class="meta">${icon('building')}${esc(officeName(r.officeId))}</span></div>${pill(REPORT_STATUS, r.status)}</div>
     ${r.status === 'open' ? `
       ${pick ? `<div class="pick-box"><span class="t">${icon('shield')}رشّح موظف المكتب هذا الغرض لبلاغك</span>${miniItem(pick)}</div>` : ''}
-      ${cands.length ? `<span class="label">تطابقات محتملة</span><div class="list">${cands.map(({i, s}) => miniItem(i, `<span class="score">${s}%</span>`)).join('')}</div>`
-        : !pick ? `<div class="note">${icon('clock')}<span>لا يوجد تطابق حتى الآن. سنعرض هنا أي غرض مشابه فور تسجيله في المكتب.</span></div>` : ''}
-      ${ai.length ? `<span class="label">${icon('spark')} ترتيب الذكاء الاصطناعي</span><div class="list">${ai.map(m => { const it = item(m.id); return it ? `<div>${miniItem(it, `<span class="score">${Math.round(m.score)}%</span>`)}<div class="reason">${esc(m.reason || '')}</div></div>` : ''; }).join('')}</div>`
+      ${cands.length ? `<span class="label">قد يكون لك</span><div class="list">${cands.map(i => miniItem(i)).join('')}</div>
+        <p class="hint">من التصنيف نفسه ووُجد قريباً من تاريخ فقدك. افتحه واطلب استلامه إن كان لك.</p>`
+        : !pick ? `<div class="note">${icon('clock')}<span>لا يوجد غرض مشابه حتى الآن. سنعرض هنا أي غرض مشابه فور تسجيله في المكتب.</span></div>` : ''}
+      ${ai.length ? `<span class="label">${icon('spark')} اقتراحات الذكاء الاصطناعي</span><div class="list">${ai.map(m => { const it = item(m.id); return it && ACTIVE.includes(it.status) ? `<div>${miniItem(it)}<div class="reason">${esc(m.reason || '')}</div></div>` : ''; }).join('')}</div>`
         : r.ai ? `<div class="note">${icon('spark')}<span>لم يجد الذكاء الاصطناعي غرضاً مطابقاً ${relTime(r.ai.at)}.</span></div>` : ''}
       <div class="btn-row">
         ${aiReady() ? `<button class="btn sm soft" data-act="aiMatch" data-id="${esc(r.id)}">${icon('spark')}مطابقة ذكية</button>` : ''}
@@ -302,7 +326,7 @@ export function vOffice(){
     <div class="panel">
       <div class="section-title">${icon('users')}هل تعمل في مكتب المفقودات؟</div>
       ${isStaff ? `<div class="note ok">${icon('check')}<span>لديك صلاحية موظف في هذا المكتب. بدّل إلى «موظف المكتب» من أعلى الشاشة.</span></div>`
-      : req?.status === 'pending' ? `<div class="note warn">${icon('clock')}<span>طلب الصلاحية قيد المراجعة من إدارة التطبيق.</span></div>`
+      : req?.status === 'pending' ? `<div class="note warn">${icon('clock')}<span>طلب الصلاحية قيد المراجعة لدى إدارة التطبيق.</span></div>`
       : `<p class="muted">يمنح مالك التطبيق صلاحية إدخال المفقودات لموظفي كل مكتب.</p><button class="btn soft" data-act="nav" data-r="join">${icon('shield')}اطلب صلاحية موظف</button>`}
     </div>
     <section class="home-sec">
@@ -328,7 +352,7 @@ export function vJoin(){
   return `<div class="wrap" data-view="join">${backBtn()}
     <section class="hero"><div class="hero-kicker">${icon('shield')}صلاحية موظف</div><h1 class="hero-title">اطلب صلاحية إدخال المفقودات</h1>
       <p class="hero-sub">يصل طلبك إلى مالك التطبيق، وعند الموافقة يظهر لك وضع «موظف المكتب».</p></section>
-    ${req ? `<div class="note ${req.status === 'pending' ? 'warn' : req.status === 'approved' ? 'ok' : ''}">${icon('info')}<span>${req.status === 'pending' ? 'طلبك السابق قيد المراجعة. يمكنك تعديله وإعادة إرساله.' : req.status === 'approved' ? 'تمت الموافقة على طلبك.' : 'لم تتم الموافقة على طلبك السابق. يمكنك إرسال طلب جديد.'}</span></div>` : ''}
+    ${req ? `<div class="note ${req.status === 'pending' ? 'warn' : req.status === 'approved' ? 'ok' : ''}">${icon('info')}<span>${req.status === 'pending' ? 'طلبك السابق قيد المراجعة. يمكنك تعديله وإعادة إرساله.' : req.status === 'approved' ? 'قُبل طلبك.' : 'لم يُقبل طلبك السابق. يمكنك إرسال طلب جديد.'}</span></div>` : ''}
     <form data-form="join" class="panel" novalidate>
       <div class="field"><span class="label">المكتب الذي تعمل فيه</span>
         ${act.map(o => `<label class="check"><input type="checkbox" name="offices" value="${esc(o.id)}" ${(req?.offices || [S.officeId]).includes(o.id) ? 'checked' : ''}><span>${esc(o.name)}</span></label>`).join('')}</div>

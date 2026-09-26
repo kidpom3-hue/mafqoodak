@@ -24,6 +24,8 @@ service cloud.firestore {
       );
     }
     function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+    // بريد موثّق: حساب Google موثّق تلقائياً، وحساب البريد وكلمة المرور بعد الضغط على رابط التحقق
+    function verified() { return signedIn() && request.auth.token.email_verified == true; }
     function smallImage() { return request.resource.data.data is string && request.resource.data.data.size() < 350000; }
 
     // ── حدود البيانات: تمنع كتابة حقول غريبة أو نصوص ضخمة تستهلك حصة الخطة المجانية ──
@@ -33,15 +35,17 @@ service cloud.firestore {
     // تفاصيل الغرض السرية: لا تُكتب أبداً في items (المقروءة للجميع)، مكانها itemSecrets
     function secretKeys() { return ['color', 'brand', 'desc', 'bldg', 'room', 'storage']; }
     function validSecret(d) {
-      return d.keys().hasOnly(['officeId', 'title', 'color', 'brand', 'desc', 'bldg', 'room', 'storage'])
+      return d.keys().hasOnly(['officeId', 'title', 'color', 'brand', 'desc', 'bldg', 'room', 'storage', 'handoverNote', 'disposalNote'])
         && d.officeId is string
         && strMax(d, 'title', 400) && strMax(d, 'color', 60) && strMax(d, 'brand', 200) && strMax(d, 'desc', 4000)
-        && strMax(d, 'bldg', 40) && strMax(d, 'room', 60) && strMax(d, 'storage', 200);
+        && strMax(d, 'bldg', 40) && strMax(d, 'room', 60) && strMax(d, 'storage', 200)
+        && strMax(d, 'handoverNote', 600) && strMax(d, 'disposalNote', 600);
     }
 
     function validUser(d) {
-      return d.keys().hasOnly(['name', 'email', 'photo', 'lastSeen'])
+      return d.keys().hasOnly(['name', 'email', 'photo', 'lastSeen', 'lang'])
         && strMax(d, 'name', 200) && strMax(d, 'email', 320)
+        && (!('lang' in d) || d.lang in ['ar', 'en'])
         // صورة الملف الشخصي: فارغة أو من صور حسابات Google فقط (تمنع روابط التتبّع)
         && (!('photo' in d) || d.photo == ''
             || (d.photo is string && d.photo.size() <= 2000
@@ -50,7 +54,7 @@ service cloud.firestore {
 
     function validReport(d) {
       return d.keys().hasOnly(['officeId', 'uid', 'cat', 'sub', 'color', 'title', 'desc', 'spot', 'bldg', 'room',
-                               'lostDate', 'photo', 'status', 'createdAt', 'closedAt', 'ai', 'staffPick', 'pickedAt'])
+                               'lostDate', 'photo', 'status', 'createdAt', 'closedAt', 'renewedAt', 'ai', 'staffPick', 'pickedAt'])
         && d.officeId is string && d.status in ['open', 'closed']
         && strMax(d, 'title', 400) && strMax(d, 'desc', 4000) && strMax(d, 'sub', 200) && strMax(d, 'color', 60)
         && strMax(d, 'spot', 400) && strMax(d, 'bldg', 40) && strMax(d, 'room', 60) && strMax(d, 'lostDate', 20)
@@ -143,7 +147,7 @@ service cloud.firestore {
     // بلاغات المفقودات: يراها صاحبها وموظفو المكتب
     match /reports/{reportId} {
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
-      allow create: if signedIn()
+      allow create: if verified()
         && request.resource.data.uid == me()
         && request.resource.data.status == 'open'
         && validReport(request.resource.data)
@@ -170,8 +174,8 @@ service cloud.firestore {
     // طلبات الاستلام: يراها صاحبها وموظفو المكتب، ويغيّر حالتها الموظف فقط
     match /claims/{claimId} {
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'status', 'codeHash', 'createdAt'])
+      allow create: if verified()
+        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'status', 'codeHash', 'createdAt'])
         && request.resource.data.uid == me()
         // طلب واحد فقط لكل مستخدم على كل غرض: رقم الطلب = رقم الغرض_رقم المستخدم
         && claimId == request.resource.data.itemId + '_' + me()
@@ -181,19 +185,69 @@ service cloud.firestore {
         && strMax(request.resource.data, 'lostSpot', 400)
         && strMax(request.resource.data, 'color', 60) && strMax(request.resource.data, 'brand', 200)
         && strMax(request.resource.data, 'bldg', 40) && strMax(request.resource.data, 'room', 60)
-        && strMax(request.resource.data, 'lostDate', 20)
-        && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.status == 'available'
+        && strMax(request.resource.data, 'lostDate', 20) && strMax(request.resource.data, 'reportId', 100)
+        // المحجوز يقبل طلباً منافساً: صاحبه الحقيقي يستطيع الاعتراض قبل التسليم
+        && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.status in ['available', 'reserved']
         && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.officeId == request.resource.data.officeId;
       allow update: if (isStaffOf(resource.data.officeId)
-          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy']))
-        // «حذف حسابي»: الطلب المُسلَّم أو المرفوض لا يُحذف، بل تُمسح منه بيانات صاحبه ويبقى السجل للمكتب
+          // فصل المهام: الموظف لا يقرر في طلب أرسله هو
+          && resource.data.uid != me()
+          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote'])
+          && request.resource.data.status in ['pending', 'approved', 'done', 'rejected', 'expired', 'cancelled']
+          && strMax(request.resource.data, 'note', 600) && strMax(request.resource.data, 'question', 600)
+          && strMax(request.resource.data, 'handoverNote', 600))
+        // صاحب الطلب يجيب عن سؤال الموظف ما دام طلبه قيد المراجعة
+        || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending' && ('question' in resource.data)
+          && onlyChanges(['answer', 'answeredAt'])
+          && request.resource.data.answer is string && request.resource.data.answer.size() <= 2000)
+        // «حذف حسابي»: الطلب المنتهي لا يُحذف، بل تُمسح منه بيانات صاحبه ويبقى السجل للمكتب
         // (المرفوض يبقى حتى لا يُحذف ويُعاد إرساله لتخمين التفاصيل من جديد)
-        || (signedIn() && resource.data.uid == me() && resource.data.status in ['done', 'rejected']
+        || (signedIn() && resource.data.uid == me() && resource.data.status in ['done', 'rejected', 'expired', 'cancelled']
           && request.resource.data.uid == 'deleted' && request.resource.data.proof == ''
-          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'anonymizedAt']));
+          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'anonymizedAt']));
       // يحذف المستخدم طلبه ما دام قيد المراجعة فقط
       allow delete: if isAdmin()
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending');
+    }
+
+    // إشعار تسليم: من وجد غرضاً يسجّله قبل أن يسلّمه، ويؤكد الموظف استلامه ويحوّله إلى غرض في المستودع
+    match /foundReports/{reportId} {
+      allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
+      allow create: if verified()
+        && request.resource.data.uid == me()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly(['officeId', 'uid', 'cat', 'sub', 'spot', 'bldg', 'room', 'foundDate', 'note', 'status', 'createdAt'])
+        && request.resource.data.officeId is string
+        && strMax(request.resource.data, 'cat', 40) && strMax(request.resource.data, 'sub', 200)
+        && strMax(request.resource.data, 'spot', 400) && strMax(request.resource.data, 'bldg', 40)
+        && strMax(request.resource.data, 'room', 60) && strMax(request.resource.data, 'foundDate', 20)
+        && strMax(request.resource.data, 'note', 2000);
+      allow update: if
+        // صاحب الإشعار يلغيه ما دام لم يُسلَّم
+        (signedIn() && resource.data.uid == me() && resource.data.status == 'pending'
+          && request.resource.data.status == 'cancelled' && onlyChanges(['status', 'cancelledAt']))
+        // «حذف حسابي»: الإشعار المستلَم يبقى للمكتب دون بيانات صاحبه
+        || (signedIn() && resource.data.uid == me() && resource.data.status == 'received'
+          && request.resource.data.uid == 'deleted' && request.resource.data.note == '' && onlyChanges(['uid', 'note']))
+        // الموظف يؤكد الاستلام ويربطه بالغرض
+        || (isStaffOf(resource.data.officeId) && onlyChanges(['status', 'receivedAt', 'receivedBy', 'itemId'])
+          && request.resource.data.status in ['pending', 'received', 'cancelled']
+          && strMax(request.resource.data, 'itemId', 100));
+      allow delete: if isAdmin() || (signedIn() && resource.data.uid == me() && resource.data.status != 'received');
+    }
+
+    // سجل العمليات (سلسلة الحيازة): يُضاف إليه فقط، ولا يُعدَّل
+    match /logs/{logId} {
+      allow read: if isStaffOf(resource.data.officeId);
+      allow create: if isStaffOf(request.resource.data.officeId)
+        && request.resource.data.by == me()
+        && request.resource.data.keys().hasOnly(['officeId', 'itemId', 'claimId', 'reportId', 'action', 'by', 'at', 'note'])
+        && request.resource.data.action is string && request.resource.data.action.size() <= 40
+        && request.resource.data.at is number
+        && strMax(request.resource.data, 'itemId', 100) && strMax(request.resource.data, 'claimId', 200)
+        && strMax(request.resource.data, 'reportId', 100) && strMax(request.resource.data, 'note', 600);
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     // صلاحيات الموظفين: يمنحها ويسحبها المالك فقط
