@@ -3,6 +3,7 @@
 import { SETTINGS } from './config.js';
 import { app } from './firebase.js';
 import { CATS, COLORS, catName, colorName } from './constants.js';
+import { spotText } from './utils.js';
 
 export const aiReady = () => !!(SETTINGS.enableAI && app);
 
@@ -57,10 +58,10 @@ Never transcribe personal names, ID numbers, card numbers or phone numbers even 
 
 /* يرتّب المفقودات المرشحة حسب احتمال تطابقها مع البلاغ */
 export async function rankMatches(r, pool, images = [], imgIds = []){
-  const lines = pool.map(i => `${i.id} | ${catName(i.cat)}${i.sub ? ' / ' + i.sub : ''} | ${colorName(i.color)} | ${i.title} | ${i.desc || ''} | found at: ${i.spot || '?'} on ${i.foundDate}`).join('\n');
+  const lines = pool.map(i => `${i.id} | ${catName(i.cat)}${i.sub ? ' / ' + i.sub : ''} | ${colorName(i.color)} | ${i.title} | ${i.desc || ''} | found at: ${spotText(i) || '?'} on ${i.foundDate}`).join('\n');
   const prompt = `You match a lost-item report against items held by a lost-and-found office.
 LOST REPORT (written by the owner):
-category: ${catName(r.cat)}${r.sub ? ' / ' + r.sub : ''}; color: ${colorName(r.color) || '?'}; title: ${r.title}; description: ${r.desc || '-'}; lost at: ${r.spot || '?'} on ${r.lostDate || '?'}
+category: ${catName(r.cat)}${r.sub ? ' / ' + r.sub : ''}; color: ${colorName(r.color) || '?'}; title: ${r.title}; description: ${r.desc || '-'}; lost at: ${spotText(r) || '?'} on ${r.lostDate || '?'}
 FOUND ITEMS (id | category | color | title | description | where/when found):
 ${lines}
 ${images.length ? `IMAGES: image 1 is the owner's photo of the lost item.${imgIds.length ? ' Images 2..' + (imgIds.length + 1) + ' are photos of found items with ids, in order: ' + imgIds.join(', ') + '.' : ''} Compare colour, shape, type and marks.` : ''}

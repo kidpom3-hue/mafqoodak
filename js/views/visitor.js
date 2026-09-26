@@ -1,8 +1,8 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
 import { icon, LOGO, CATS, cat, catName, colorName, otype, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS } from '../constants.js';
-import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore } from '../utils.js';
+import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText } from '../utils.js';
 import { S, curOffice, item, isStaffHere, myReports, myClaims, myCode, candidatesFor, unseenCount } from '../state.js';
-import { backBtn, thumbHtml, miniItem, catPicker, colorPicker, photoField, spotOptions, resetForm, loginPrompt } from './common.js';
+import { backBtn, thumbHtml, miniItem, catPicker, colorPicker, photoField, spotOptions, spotExtra, resetForm, loginPrompt } from './common.js';
 import { claimCardStaff } from './staff.js';
 import { aiReady } from '../ai.js';
 import { hydrate } from '../ui.js';
@@ -67,7 +67,7 @@ export function card(i){
     <div class="card-body">
       <span class="ref">${esc(i.ref)}</span>
       <h3>${esc(i.title)}</h3>
-      <div class="meta">${colorDot(i.color)}${esc(colorName(i.color))}${i.spot ? ' · ' + esc(i.spot) : ''}</div>
+      <div class="meta">${colorDot(i.color)}${esc(colorName(i.color))}${i.spot ? ' · ' + esc(spotText(i)) : ''}</div>
       <div class="meta">${icon('clock')}<span>${relDay(i.foundDate)}</span></div>
       ${i.status !== 'available' ? pill(ITEM_STATUS, i.status) : ''}
     </div>
@@ -133,7 +133,7 @@ export function vItem(){
         <dl class="facts">
           <dt>التصنيف</dt><dd>${icon(c.icon)}${esc(c.name)}${i.sub ? ' — ' + esc(i.sub) : ''}</dd>
           ${i.color ? `<dt>اللون</dt><dd>${colorDot(i.color)}${esc(colorName(i.color))}</dd>` : ''}
-          <dt>مكان العثور</dt><dd>${esc(i.spot || 'غير محدد')}</dd>
+          <dt>مكان العثور</dt><dd>${esc(spotText(i) || 'غير محدد')}</dd>
           <dt>تاريخ العثور</dt><dd>${fmtDate(i.foundDate)} <span class="muted">(${relDay(i.foundDate)})</span></dd>
           ${staffMode && i.storage ? `<dt>موضع الحفظ</dt><dd>${esc(i.storage)}</dd>` : ''}
           ${i.status === 'available' || i.status === 'reserved' ? `<dt>مدة الحفظ</dt><dd>${keepDays > 0 ? `متبقٍّ ${daysWord(keepDays)}` : '<span class="flag">انتهت مدة الحفظ</span>'}</dd>` : ''}
@@ -188,6 +188,7 @@ export function vReportForm(){
         <div class="field"><label for="r-spot">أين فقدته؟</label><select id="r-spot" name="spot" class="input">${spotOptions(o, '')}</select></div>
         <div class="field"><label for="r-date">متى؟</label><input id="r-date" name="lostDate" type="date" class="input" value="${today()}" max="${today()}"></div>
       </div>
+      ${spotExtra(null)}
       <div class="form-err" hidden></div>
       <button class="btn block" type="submit">${icon('search')}سجّل البلاغ وابحث عن تطابق</button>
     </form>

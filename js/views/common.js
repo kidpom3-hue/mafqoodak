@@ -1,6 +1,6 @@
 // عناصر واجهة مشتركة بين الصفحات
 import { icon, cat, CATS, COLORS, colorName } from '../constants.js';
-import { esc, relDay, colorDot } from '../utils.js';
+import { esc, relDay, colorDot, isBuilding, roomWord, spotText } from '../utils.js';
 import { aiReady } from '../ai.js';
 
 /* حالة نموذج الإدخال الحالي (الصورة المختارة) */
@@ -14,7 +14,7 @@ export function thumbHtml(i, cls = 'row-thumb'){
   const c = cat(i.cat);
   return `<div class="${cls}">${icon(c.icon)}${i.photo && !c.sensitive ? `<img data-photo="${esc(i.id)}" alt="" hidden>` : ''}</div>`;
 }
-export const miniItem = (i, extra = '') => `<button class="mini" data-act="openItem" data-id="${esc(i.id)}">${thumbHtml(i)}<span class="grow"><b>${esc(i.title)}</b><span class="meta">${colorDot(i.color)}${esc(colorName(i.color))} · ${esc(i.spot || '')} · ${relDay(i.foundDate)}</span></span>${extra}</button>`;
+export const miniItem = (i, extra = '') => `<button class="mini" data-act="openItem" data-id="${esc(i.id)}">${thumbHtml(i)}<span class="grow"><b>${esc(i.title)}</b><span class="meta">${colorDot(i.color)}${esc(colorName(i.color))} · ${esc(spotText(i))} · ${relDay(i.foundDate)}</span></span>${extra}</button>`;
 export const person = uid => `<span class="person"><img data-avatar="${esc(uid)}" alt="" hidden><span data-uname="${esc(uid)}"></span></span>`;
 
 export function catPicker(sel){
@@ -48,5 +48,13 @@ export function spotOptions(o, sel){
   const spots = o?.spots || [];
   const extra = sel && !spots.includes(sel) ? [sel] : [];
   return `<option value="">لا أعرف / غير محدد</option>${[...spots, ...extra].map(s => `<option ${s === sel ? 'selected' : ''}>${esc(s)}</option>`).join('')}`;
+}
+// خانتا رقم المبنى ورقم القاعة/المعمل: تظهران فقط إذا كان المكان المختار داخل مبنى
+export function spotExtra(x){
+  const s = x?.spot || '';
+  return `<div class="two" id="spot-extra" ${isBuilding(s) ? '' : 'hidden'}>
+    <div class="field"><label for="f-bldg">رقم المبنى</label><input id="f-bldg" name="bldg" class="input" inputmode="numeric" maxlength="6" value="${esc(x?.bldg || '')}" placeholder="مثال: 3"></div>
+    <div class="field"><label for="f-room" id="room-label">رقم ${roomWord(s)}</label><input id="f-room" name="room" class="input" maxlength="10" value="${esc(x?.room || '')}" placeholder="مثال: 105"></div>
+  </div>`;
 }
 export const loginPrompt = (msg) => `<div class="empty">${icon('lock')}<b>${msg}</b><button class="btn" data-act="login">${icon('users')}تسجيل الدخول</button></div>`;
