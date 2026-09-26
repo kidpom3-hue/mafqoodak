@@ -4,8 +4,9 @@ import { esc, relDay, colorDot } from '../utils.js';
 import { aiReady } from '../ai.js';
 
 /* حالة نموذج الإدخال الحالي (الصورة المختارة) */
-export const FORM = {photo: null, blob: null, removed: false, hadPhoto: false};
-export function resetForm(hadPhoto = false){ Object.assign(FORM, {photo: null, blob: null, removed: false, hadPhoto}); }
+// copyFrom: مفتاح صورة بلاغ تُنسخ للغرض عند قبول البلاغ (مثل r_abc)
+export const FORM = {photo: null, blob: null, removed: false, hadPhoto: false, copyFrom: null};
+export function resetForm(hadPhoto = false, copyFrom = null){ Object.assign(FORM, {photo: null, blob: null, removed: false, hadPhoto, copyFrom}); }
 
 export const backBtn = (label = 'رجوع') => `<button class="back" data-act="back">${icon('back')}${label}</button>`;
 

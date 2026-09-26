@@ -26,7 +26,7 @@ export function onCatChange(form, catId, sub){
   if (sens && (FORM.photo || FORM.hadPhoto)){ clearPhoto(form); toast('أُزيلت الصورة لأن الوثائق الشخصية لا تُصوَّر.'); }
 }
 function clearPhoto(form){
-  FORM.photo = null; FORM.blob = null; if (FORM.hadPhoto) FORM.removed = true;
+  FORM.photo = null; FORM.blob = null; FORM.copyFrom = null; if (FORM.hadPhoto) FORM.removed = true;
   const pv = form.querySelector('#pv'); if (pv) pv.innerHTML = icon('camera');
   const rm = form.querySelector('#rm-photo'); if (rm) rm.hidden = true;
   const ai = form.querySelector('#ai-btn'); if (ai) ai.disabled = true;
@@ -178,6 +178,9 @@ async function submitForm(form){
 
     const existing = S.route.params.id ? item(S.route.params.id) : null;
     const id = existing ? existing.id : dbx.newId('items');
+    const fromReport = existing ? '' : (form.dataset.report || '');
+    // صورة البلاغ (إن وُجدت ولم يغيّرها الموظف) تُنسخ لتصبح صورة الغرض
+    if (!FORM.photo && FORM.copyFrom && !sens) FORM.photo = await getPhoto(FORM.copyFrom);
     let photo = existing?.photo || false;
     const data = {
       officeId: existing?.officeId || S.officeId, ref: existing?.ref || makeRef(curOffice()),
@@ -186,6 +189,8 @@ async function submitForm(form){
       status: existing?.status || 'available', createdBy: existing?.createdBy || S.uid, createdAt: existing?.createdAt || Date.now(), updatedAt: Date.now(),
       sample: !!existing?.sample,
     };
+    if (fromReport) data.fromReport = fromReport;   // ربط الغرض بالبلاغ الذي قُبل
+    else if (existing?.fromReport) data.fromReport = existing.fromReport;
     if (existing?.reservedFor) data.reservedFor = existing.reservedFor;
     if (existing?.returnedAt) data.returnedAt = existing.returnedAt;
     // حذف الصورة عند الحاجة يسبق حفظ الغرض
@@ -198,8 +203,10 @@ async function submitForm(form){
     busy(form, false);
     if (!ok) return;
     if (existing){ back(); return; }
-    const matches = S.reports.filter(r => r.status === 'open' && matchScore(r, {...data, id}) >= MATCH_MIN);
-    S.hist = []; S.staffTab = 'items'; go('staff', {}, false);
+    // قبول بلاغ: نرشّح الغرض الجديد لصاحب البلاغ فيصله تنبيه في «طلباتي»
+    if (fromReport) await write(() => dbx.update('reports/' + fromReport, {staffPick: id, pickedAt: Date.now()}), 'أُضيف الغرض للمستودع ووصل التنبيه لصاحب البلاغ');
+    const matches = S.reports.filter(r => r.status === 'open' && r.id !== fromReport && matchScore(r, {...data, id}) >= MATCH_MIN);
+    S.hist = []; S.staffTab = fromReport ? 'reports' : 'items'; go('staff', {}, false);
     if (matches.length) openSheet(`<h2>${icon('bell')} ${matches.length === 1 ? 'بلاغ قد يطابق' : matches.length + ' بلاغات قد تطابق'} هذا الغرض</h2>
       <div class="list">${matches.map(r => `<div class="box"><b>${esc(r.title)}</b><span class="meta">${esc(catName(r.cat))} · ${esc(colorName(r.color))} · فُقد ${relDay(r.lostDate)}</span>${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}</div>`).join('')}</div>
       <p class="muted">رشّح الغرض لأصحاب هذه البلاغات ليصلهم تنبيه في «طلباتي».</p>
@@ -359,6 +366,7 @@ const ACT = {
         <div class="btn-row"><button class="btn" type="submit">${icon('check')}تحقق وسلّم</button><button type="button" class="btn ghost" data-act="closeSheet">إلغاء</button></div>
       </form>`);
   },
+  acceptReport(el){ go('add', {fromReport: el.dataset.id}); },
   async pickFor(el){ await write(() => dbx.update('reports/' + el.dataset.r, {staffPick: el.dataset.i, pickedAt: Date.now()}), 'رُشّح الغرض وسيصل التنبيه لصاحب البلاغ'); },
   async pickAll(el){
     const rs = el.dataset.rs.split(',').filter(Boolean); closeSheet();

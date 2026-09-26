@@ -104,27 +104,40 @@ export function staffReports(){
       ${r.photo ? `<div class="row-thumb" style="width:84px;height:84px">${icon('camera')}<img data-photo="r_${esc(r.id)}" alt="" hidden></div>` : ''}
       ${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}
       <div class="meta">${person(r.uid)} · فُقد ${r.spot ? 'في ' + esc(r.spot) + ' ' : ''}${fmtDate(r.lostDate)}</div>
+      ${acceptBtn(r)}
       ${cands.length ? `<span class="label">مرشحون من المستودع</span><div class="list">${cands.map(({i, s}) => `<div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
         ${r.staffPick === i.id ? `<span class="pill ok">${icon('check')}مُرشّح</span>` : `<button class="btn sm soft" data-act="pickFor" data-r="${esc(r.id)}" data-i="${esc(i.id)}">رشّح</button>`}</div>`).join('')}</div>`
         : `<p class="muted">لا يوجد غرض مشابه في المستودع حالياً.</p>`}
     </div>`; }).join('')}</div>`;
 }
 
+// زر قبول البلاغ: يحوّله إلى غرض في المستودع، أو يُظهر الغرض إن سبق قبوله
+function acceptBtn(r){
+  const done = S.items.find(i => i.fromReport === r.id);
+  if (done) return `<div class="btn-row" style="align-items:center"><span class="pill ok">${icon('check')}أُضيف للمستودع</span><button class="btn sm ghost" data-act="openItem" data-id="${esc(done.id)}">${esc(done.ref)}</button></div>`;
+  return `<div class="btn-row"><button class="btn sm" data-act="acceptReport" data-id="${esc(r.id)}">${icon('check')}قبول وإضافة للمستودع</button></div>`;
+}
+
 /* ---------- staff: add / edit item ---------- */
 export function vItemForm(){
   const o = curOffice(); const i = S.route.params.id ? item(S.route.params.id) : null;
-  resetForm(!!i?.photo);
-  return `<div class="wrap" data-view="add">${i ? backBtn() : ''}
-    <section class="hero"><div class="hero-kicker">${icon('tag')}${i ? 'تعديل ' + esc(i.ref) : 'قيد جديد · ' + esc(o.name)}</div><h1 class="hero-title">${i ? 'تعديل بيانات الغرض' : 'تسجيل غرض معثور عليه'}</h1></section>
-    <form data-form="item" class="panel" novalidate>
-      ${photoField(i?.photo ? i.id : null, 'صورة الغرض')}
-      <div class="field"><span class="label">التصنيف</span>${catPicker(i?.cat || '')}</div>
-      <div class="field" id="subs-field" ${i?.cat && cat(i.cat).subs.length ? '' : 'hidden'}><span class="label">النوع</span><div id="subs">${i?.cat ? subsPicker(i.cat, i.sub) : ''}</div></div>
-      <div class="field"><span class="label">اللون</span>${colorPicker(i?.color || '')}</div>
-      <div class="field"><label for="f-title">اسم الغرض</label><input id="f-title" name="title" class="input" required maxlength="80" value="${esc(i?.title || '')}" placeholder="مثال: سماعات لاسلكية بيضاء"></div>
-      <div class="field"><label for="f-desc">الوصف الظاهر للزوار</label><textarea id="f-desc" name="desc" class="input" maxlength="600" placeholder="صف الغرض دون كشف كل التفاصيل؛ اترك علامة مميزة يثبت بها صاحبه ملكيته.">${esc(i?.desc || '')}</textarea></div>
+  // عند قبول بلاغ: نعبّئ النموذج من بيانات البلاغ (التصنيف، النوع، اللون، الصورة...)
+  const r = !i && S.route.params.fromReport ? S.reports.find(x => x.id === S.route.params.fromReport) : null;
+  const src = i || (r ? {cat: r.cat, sub: r.sub, color: r.color, title: r.title, desc: r.desc, spot: r.spot} : null);
+  const photoKey = i?.photo ? i.id : r?.photo && !cat(r.cat).sensitive ? 'r_' + r.id : null;
+  resetForm(!!i?.photo, i ? null : photoKey);
+  return `<div class="wrap" data-view="add">${i || r ? backBtn() : ''}
+    <section class="hero"><div class="hero-kicker">${icon('tag')}${i ? 'تعديل ' + esc(i.ref) : r ? 'قبول بلاغ · ' + esc(o.name) : 'قيد جديد · ' + esc(o.name)}</div><h1 class="hero-title">${i ? 'تعديل بيانات الغرض' : r ? 'إضافة الغرض المُبلَّغ عنه للمستودع' : 'تسجيل غرض معثور عليه'}</h1></section>
+    ${r ? `<div class="note info">${icon('bell')}<span>عبّأنا الحقول من البلاغ. راجعها، واحذف من الوصف أي تفصيل يثبت به صاحبه ملكيته لأن الوصف يظهر للجميع. بعد الحفظ يُرشَّح الغرض لصاحب البلاغ ويصله تنبيه.</span></div>` : ''}
+    <form data-form="item" class="panel" novalidate ${r ? `data-report="${esc(r.id)}"` : ''}>
+      ${photoField(photoKey, 'صورة الغرض')}
+      <div class="field"><span class="label">التصنيف</span>${catPicker(src?.cat || '')}</div>
+      <div class="field" id="subs-field" ${src?.cat && cat(src.cat).subs.length ? '' : 'hidden'}><span class="label">النوع</span><div id="subs">${src?.cat ? subsPicker(src.cat, src.sub) : ''}</div></div>
+      <div class="field"><span class="label">اللون</span>${colorPicker(src?.color || '')}</div>
+      <div class="field"><label for="f-title">اسم الغرض</label><input id="f-title" name="title" class="input" required maxlength="80" value="${esc(src?.title || '')}" placeholder="مثال: سماعات لاسلكية بيضاء"></div>
+      <div class="field"><label for="f-desc">الوصف الظاهر للزوار</label><textarea id="f-desc" name="desc" class="input" maxlength="600" placeholder="صف الغرض دون كشف كل التفاصيل؛ اترك علامة مميزة يثبت بها صاحبه ملكيته.">${esc(src?.desc || '')}</textarea></div>
       <div class="two">
-        <div class="field"><label for="f-spot">مكان العثور</label><select id="f-spot" name="spot" class="input">${spotOptions(o, i?.spot || '')}</select></div>
+        <div class="field"><label for="f-spot">مكان العثور</label><select id="f-spot" name="spot" class="input">${spotOptions(o, src?.spot || '')}</select></div>
         <div class="field"><label for="f-date">تاريخ العثور</label><input id="f-date" name="foundDate" type="date" class="input" value="${esc(i?.foundDate || today())}" max="${today()}"></div>
       </div>
       <div class="field"><label for="f-storage">موضع الحفظ في المكتب <span class="hint">(للموظفين فقط)</span></label><input id="f-storage" name="storage" class="input" maxlength="40" value="${esc(i?.storage || '')}" placeholder="مثال: الخزانة 2 — الرف ب"></div>
