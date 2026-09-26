@@ -1,19 +1,9 @@
 // الصفحة الرئيسية للمكان المختار + صفحة «وجدت غرضاً»
-import { icon, LOGO, CATS, otype } from '../constants.js';
+import { icon, LOGO, otype } from '../constants.js';
 import { $, esc, daysWord } from '../utils.js';
 import { S, curOffice } from '../state.js';
 import { card } from './visitor.js';
 import { hydrate } from '../ui.js';
-
-/* أسئلة شائعة — عدّلها كما تريد */
-const FAQ = [
-  ['كيف أعرف أن غرضي وصل إلى مكتب المفقودات؟', 'كل ما يُسلَّم للمكتب يُسجَّل هنا مع تصنيفه ولونه ومكان العثور عليه. ابحث عنه بكلمة أو تصفّح حسب التصنيف. إن لم تجده، سجّل بلاغاً وسننبّهك عند تسجيل غرض مشابه.'],
-  ['كيف أستلم غرضي؟', 'اضغط «هذا غرضي» واكتب تفاصيل لا تظهر في الإعلان. بعد أن يراجعها موظف المكتب ويقبل طلبك، يظهر لك رمز من 6 أرقام في «طلباتي» تقدّمه عند الاستلام.'],
-  ['لماذا لا تظهر كل تفاصيل الغرض؟', 'نُخفي بعض التفاصيل عمداً حتى لا يدّعي أحد ملكية غرض ليس له. هذه التفاصيل هي ما تثبت به أنك صاحبه.'],
-  ['وجدت غرضاً، ماذا أفعل؟', 'سلّمه لمكتب المفقودات مباشرة، ولا تحتفظ به أو تنشر صوره. الموظف يسجّله ليظهر لصاحبه هنا.'],
-  ['كم يُحفظ الغرض في المكتب؟', 'مدة الحفظ مذكورة في صفحة «المكتب». بعد انتهائها يتصرّف المكتب فيه وفق أنظمة المنشأة.'],
-  ['هل بياناتي ظاهرة للآخرين؟', 'لا. بلاغاتك وطلباتك لا يراها إلا أنت وموظف المكتب، وصور البطاقات والوثائق الشخصية لا تُنشر أبداً.'],
-];
 
 const TAG_ART = `<svg class="tag-art" viewBox="0 0 220 240" aria-hidden="true">
   <path d="M104 18c-30 4-52 26-58 58" fill="none" stroke="var(--hero-accent)" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 7"/>
@@ -47,17 +37,12 @@ export function vHome(){
       </div>
     </section>
 
-    <section class="stats-band" id="home-stats" aria-label="أرقام المكتب"></section>
-
     <section class="home-sec">
       <div class="sec-head"><h2>أحدث المفقودات</h2><button class="link" data-act="nav" data-r="browse">عرض الكل ${icon('fwd')}</button></div>
       <div id="home-latest"></div>
     </section>
 
-    <section class="home-sec">
-      <div class="sec-head"><h2>تصفّح حسب التصنيف</h2></div>
-      <div class="cat-tiles" id="home-cats"></div>
-    </section>
+    <section class="stats-band" id="home-stats" aria-label="أرقام المكتب"></section>
 
     <section class="home-sec">
       <div class="sec-head"><h2>كيف يعمل مفقودك؟</h2></div>
@@ -66,21 +51,6 @@ export function vHome(){
         <li><b>أثبت ملكيتك</b><span>اضغط «هذا غرضي» واكتب تفاصيل لا يعرفها غير صاحبه، ويراجعها موظف المكتب.</span></li>
         <li><b>استلم برمز التحقق</b><span>عند القبول يظهر لك رمز من 6 أرقام تقدّمه في المكتب وتستلم غرضك.</span></li>
       </ol>
-    </section>
-
-    <section class="home-sec">
-      <div class="sec-head"><h2>خصوصيتك أولاً</h2></div>
-      <div class="features">
-        <div class="feat">${icon('lock')}<b>بياناتك لا تظهر للآخرين</b><span>بلاغاتك وطلباتك يراها موظف المكتب فقط.</span></div>
-        <div class="feat">${icon('idcard')}<b>الوثائق بلا صور</b><span>البطاقات والهويات لا تُصوَّر ولا تُنشر تفاصيلها.</span></div>
-        <div class="feat">${icon('shield')}<b>تسليم برمز تحقق</b><span>رمز الاستلام لا يعرفه أحد غيرك.</span></div>
-        <div class="feat">${icon('spark')}<b>مطابقة تلقائية</b><span>نقارن بلاغك بكل غرض جديد وننبّهك عند التشابه.</span></div>
-      </div>
-    </section>
-
-    <section class="home-sec">
-      <div class="sec-head"><h2>أسئلة شائعة</h2></div>
-      <div class="faq">${FAQ.map(([q, a]) => `<details><summary>${esc(q)}${icon('chev')}</summary><p>${esc(a)}</p></details>`).join('')}</div>
     </section>
 
     ${footer(o)}
@@ -106,11 +76,6 @@ export function updateHome(){
         : `<div class="empty">${icon('box')}<b>لا توجد مفقودات مسجّلة حالياً</b><span>عندما يسجّل المكتب غرضاً سيظهر هنا.</span></div>`;
     }
   }
-  const cats = $('#home-cats');
-  if (cats) cats.innerHTML = CATS.map(c => {
-    const n = avail.filter(i => i.cat === c.id).length;
-    return `<button class="cat-tile" data-act="catGo" data-id="${c.id}">${icon(c.icon)}<b>${esc(c.name)}</b><span>${n ? `${n} متاح` : 'لا يوجد'}</span></button>`;
-  }).join('');
   hydrate();
 }
 
@@ -127,6 +92,7 @@ function footer(o){
       <button class="link" data-act="nav" data-r="report">سجّل بلاغ مفقود</button>
       <button class="link" data-act="nav" data-r="found">وجدت غرضاً</button>
       <button class="link" data-act="nav" data-r="office">عن المكتب</button>
+      <button class="link" data-act="nav" data-r="privacy">سياسة الخصوصية وشروط الاستخدام</button>
     </div>
     <small class="sf-copy">© ${new Date().getFullYear()} مفقودك</small>
   </footer>`;

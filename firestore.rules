@@ -52,7 +52,8 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if signedIn() && (userId == me() || isStaffAny());
       allow create, update: if signedIn() && userId == me();
-      allow delete: if false;
+      // «حذف حسابي»: يحذف المستخدم ملفه بنفسه
+      allow delete: if signedIn() && userId == me();
 
       // رموز الاستلام الخاصة: لا يراها أحد غير صاحبها
       match /private/{docId} {
@@ -114,7 +115,9 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.officeId == request.resource.data.officeId;
       allow update: if isStaffOf(resource.data.officeId)
         && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy']);
-      allow delete: if isAdmin();
+      // «حذف حسابي»: يحذف المستخدم طلباته، إلا المقبول منها بانتظار الاستلام (الغرض محجوز له)
+      allow delete: if isAdmin()
+        || (signedIn() && resource.data.uid == me() && resource.data.status != 'approved');
     }
 
     // صلاحيات الموظفين: يمنحها ويسحبها المالك فقط

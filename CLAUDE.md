@@ -13,7 +13,7 @@ Lost-and-found PWA. First deployment: Technical College Al-Ahsa (office id `tc-a
 - `js/firebase.js` — init + `dbx` helper (string paths: `dbx.set('items/abc', data)`, `dbx.watch(col, [[field, op, value]], cb)`).
 - `js/state.js` — global state `S`, auth listener, Firestore subscriptions, role helpers (`isStaffHere`, `modes`), photo/name caches, `write()` wrapper with Arabic error toasts.
 - `js/ui.js` — router (`ROUTES`, `go`, `back`), header/nav/sheet rendering, `hydrate()` (lazy photos `img[data-photo]` and names `[data-uname]`).
-- `js/views/*.js` — pure functions returning HTML strings (`home.js` = landing page for the chosen office + «وجدت غرضاً» guide; visitor default route is `home`). **Always escape user data with `esc()`.**
+- `js/views/*.js` — pure functions returning HTML strings (`home.js` = landing page for the chosen office + «وجدت غرضاً» guide; visitor default route is `home`; `privacy.js` = privacy policy & terms, route `privacy`). Item share links use `#item/<officeId>/<itemId>` (parsed in `state.js`). **Always escape user data with `esc()`.**
 - `js/actions.js` — `ACT` click handlers (`data-act="name"`) and `submitForm` (forms use `data-form="kind"`).
 - `js/constants.js` — categories (`CATS`), colors, office types, statuses, SVG icon paths.
 - `js/utils.js` — dates, Arabic text normalisation/search, `matchScore` heuristic, SHA-256, image compression, `toast`.
