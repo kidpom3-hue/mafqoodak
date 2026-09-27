@@ -1,8 +1,10 @@
 // أدوات مساعدة عامة: التواريخ، البحث العربي، المطابقة، الصور
-import { color, colorName, cat, catName, subName, subLabel, searchWords, statusLabel, isBuilding, roomKind, norm, tokens, STOP } from './constants.js';
+import { color, colorName, cat, catName, subName, subLabel, searchWords, statusLabel, isBuilding, roomKind, norm, tokens, STOP, latinDigits } from './constants.js';
 import { t, tp, locale, isEn } from './i18n.js';
 // كانت هنا سابقاً؛ نعيد تصديرها حتى لا تتغيّر أماكن الاستيراد
 export { isBuilding, norm, tokens, STOP };
+// G1: latinDigits (٠-٩ و۰-۹ إلى 0-9): قبل أي مقارنة أو بحث أو حفظ رقم. مكانها constants.js لأن norm تستخدمها
+export { latinDigits };
 
 /* ---------- helpers ---------- */
 export const $ = (s, r=document) => r.querySelector(s);
@@ -13,23 +15,55 @@ export const LS = {
   set(k, v){ try { localStorage.setItem('mfq:'+k, JSON.stringify(v)); } catch {} },
 };
 export const pad = n => String(n).padStart(2,'0');
-export const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+
+/* ---------- الوقت: بتوقيت الرياض دائماً (G2) ---------- */
+// كل عرض للوقت وكل حساب لليوم بتوقيت الرياض مهما كانت منطقة الجهاز، والقيم المخزّنة (مللي ثانية) لا تتغيّر
+export const TZ = 'Asia/Riyadh';
+// ينشئ منسّق Intl ويحفظه؛ إن لم يدعم المتصفح اللغة أو المنطقة الزمنية يرجع إلى أبسط منسّق
+const FMT = {};
+function fmt(key, o){
+  const k = locale() + '|' + key;
+  if (FMT[k]) return FMT[k];
+  const tries = [[locale(), {...o, timeZone: TZ}], [isEn() ? 'en' : 'ar', {...o, timeZone: TZ}], [isEn() ? 'en' : 'ar', o]];
+  for (const [l, x] of tries){ try { return FMT[k] = new Intl.DateTimeFormat(l, x); } catch {} }
+}
+// يوم بصيغة YYYY-MM-DD بتوقيت الرياض من وقت بالمللي ثانية (للتصدير والمقارنة)
+let isoF;
+export const isoDay = ms => {
+  if (!ms) return '';
+  try {
+    isoF = isoF || new Intl.DateTimeFormat('en-CA', {timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'});
+    const p = Object.fromEntries(isoF.formatToParts(new Date(ms)).map(x => [x.type, x.value]));
+    return `${p.year}-${p.month}-${p.day}`;
+  } catch {
+    // الرياض UTC+3 بلا توقيت صيفي
+    const d = new Date(ms + 3 * 36e5); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  }
+};
+export const today = () => isoDay(Date.now());
 export const dayNum = s => { if (!s) return NaN; const [y,m,d] = s.split('-').map(Number); return Date.UTC(y, m-1, d) / 864e5; };
 export const daysAgo = s => dayNum(today()) - dayNum(s);
+// تاريخ مخزّن كنص (YYYY-MM-DD): نأخذ ظهر ذلك اليوم بتوقيت غرينتش، فيبقى اليوم نفسه في الرياض
+const noon = s => { const [y,m,d] = s.split('-').map(Number); return new Date(Date.UTC(y, m-1, d, 12)); };
 // التاريخ حسب اللغة: ar-SA أو en-GB، بالتقويم الميلادي والأرقام اللاتينية في اللغتين
-const DFS = {};
-const df = () => DFS[locale()] || (DFS[locale()] = (() => { try { return new Intl.DateTimeFormat(locale(), {day: 'numeric', month: 'long'}); } catch { return new Intl.DateTimeFormat(isEn() ? 'en' : 'ar', {day: 'numeric', month: 'long'}); } })());
-export const fmtDate = s => { if (!s) return ''; const [y,m,d] = s.split('-').map(Number); return df().format(new Date(y, m-1, d)); };
+export const fmtDate = s => s ? fmt('d', {day: 'numeric', month: 'long'}).format(noon(s)) : '';
 // التاريخ والوقت (سجل الحيازة): «27 سبتمبر 2026، 10:30 ص» / «27 Sept 2026, 10:30»
-const DTF = {};
-export function fmtDateTime(ms){
+export const fmtDateTime = ms => ms ? fmt('dt', {day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit'}).format(new Date(ms)) : '';
+// G2: الوقت الدقيق الموحّد: «الأحد 27 سبتمبر · 9:31 م»، والسنة فقط إن لم تكن الحالية،
+// وخلال آخر 24 ساعة: «قبل 5 دقائق · 9:31 م». الإنجليزية بالمنطق نفسه
+export function when(ms){
   if (!ms) return '';
-  const k = locale(), o = {day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit'};
-  const f = DTF[k] || (DTF[k] = (() => { try { return new Intl.DateTimeFormat(k, o); } catch { return new Intl.DateTimeFormat(isEn() ? 'en' : 'ar', o); } })());
-  return f.format(new Date(ms));
+  // الساعة لا تنقسم على سطرين: «9:31 م» بمسافة غير قابلة للكسر، وكذلك « · » قبلها
+  const d = new Date(ms), clock = '\u00A0·\u00A0' + fmt('hm', {hour: 'numeric', minute: '2-digit', hour12: true}).format(d).replace(/\s/g, '\u00A0');
+  const m = Math.floor((Date.now() - ms) / 6e4);
+  if (m >= 0 && m < 24 * 60){
+    const rel = m < 1 ? t('time.now') : m < 60 ? tp('time.minAgo', m) : tp('time.hourAgo', Math.floor(m / 60));
+    return rel + clock;
+  }
+  const sameYear = isoDay(ms).slice(0, 4) === today().slice(0, 4);
+  const day = fmt(sameYear ? 'dm' : 'dmy', sameYear ? {day: 'numeric', month: 'long'} : {day: 'numeric', month: 'long', year: 'numeric'}).format(d);
+  return fmt('wd', {weekday: 'long'}).format(d) + ' ' + day + clock;
 }
-// يوم بصيغة YYYY-MM-DD من وقت بالمللي ثانية (للتصدير والمقارنة)
-export const isoDay = ms => { if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 // المدة بالأيام: nom للرفع («متبقٍّ يومان»)، وبدونه للجر والنصب («قبل يومين»، «مدة الحفظ 90 يوماً»)
 export const daysWord = (n, nom = false) => tp(nom ? 'n.daysNom' : 'n.days', n);
 export function relDay(s){
@@ -47,8 +81,7 @@ export function relTime(ms){
   if (m < 60) return tp('time.minAgo', m);
   const h = Math.round(m / 60);
   if (h < 24) return tp('time.hourAgo', h);
-  const d = new Date(ms);
-  return relDay(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`);
+  return relDay(isoDay(ms));
 }
 export const pill = (map, s) => map[s] ? `<span class="pill ${map[s].c}">${statusLabel(map[s])}</span>` : '';
 export const colorDot = id => { const c = color(id); return c ? `<span class="dot" style="background:${c.hex}"></span>` : ''; };
@@ -140,7 +173,7 @@ export function makeRef(office){
   return `${(office?.code || 'MFQ').toUpperCase()}-${refCode(4)}`;
 }
 // كود إشعار التسليم كما يكتبه الموظف: أحرف كبيرة وأرقام فقط
-export const normCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+export const normCode = s => latinDigits(s).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
 // اسم طريقة التصرّف في الغرض (القيمة المخزّنة ← نص بلغة الواجهة)
 export const disposalLabel = d => t('disposal.' + (['donated', 'destroyed', 'authority', 'finder'].includes(d) ? d : 'other'));
 export function dataUrlToBlob(u){

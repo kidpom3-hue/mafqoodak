@@ -1,12 +1,12 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
 import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, claimOf, claimHasRequired, detailValue } from './constants.js';
 import { t, tp, tAr, LANG, setLang } from './i18n.js';
-import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode } from './utils.js';
+import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
 import { loadStats, exportCsv } from './stats.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo } from './state.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
-  signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut,
+  signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion,
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification } from './firebase.js';
 import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar } from './ui.js';
 import { updateBrowse, RATE_DRAFT } from './views/visitor.js';
@@ -79,6 +79,27 @@ function readDetails(form, catId, mode){
   return {details, missing};
 }
 
+/* ---------- «تراجع» (G5) ----------
+   رسالة صغيرة فيها زر «تراجع» لمدة 5 ثوانٍ قبل الحفظ؛ إن لم يُضغط يُنفَّذ الحفظ.
+   عملية جديدة (أو مغادرة الصفحة) تنفّذ السابقة فوراً */
+let UNDO = null;
+function undoable(msg, commit, undo){
+  UNDO?.finish(true);
+  let bar = document.getElementById('undo');
+  if (!bar){ bar = document.createElement('div'); bar.id = 'undo'; bar.className = 'undo-bar'; bar.setAttribute('role', 'status'); bar.setAttribute('aria-live', 'polite'); document.body.appendChild(bar); }
+  bar.innerHTML = `<span>${esc(msg)}</span><button type="button" class="btn sm soft">${icon('undo')}${t('c.undo')}</button>`;
+  bar.classList.add('show');
+  const u = {finish(ok){
+    if (UNDO !== u) return; UNDO = null; clearTimeout(u.timer);
+    bar.classList.remove('show'); bar.innerHTML = '';
+    ok ? commit() : undo();
+  }};
+  u.timer = setTimeout(() => u.finish(true), 5000);
+  bar.querySelector('button').addEventListener('click', () => u.finish(false));
+  UNDO = u;
+}
+addEventListener('pagehide', () => UNDO?.finish(true));
+
 /* ---------- الذكاء الاصطناعي ---------- */
 async function aiFill(){
   const btn = $('#ai-btn'), st = $('#ai-status'); if (!FORM.blob || !btn) return;
@@ -118,6 +139,27 @@ async function aiMatch(reportId){
     const ok = await write(() => dbx.update('reports/' + r.id, {ai: {at: Date.now(), matches}}), t(matches.length ? 'a.aiRanked' : 'a.aiNoMatch'));
     if (!ok && st?.isConnected) st.textContent = '';
   } catch (e){ console.warn(e); if (st?.isConnected) st.textContent = aiErrMsg(e); }
+}
+
+/* ---------- تعديل البلاغ (G3) ----------
+   تحديث للبلاغ نفسه: يبقى ترشيح الموظف (staffPick، pickedAt) وقائمة «ليس غرضي» (rejected) وrenewedAt كما هي،
+   ويُضاف editedAt. نتيجة الذكاء الاصطناعي القديمة تُحذف لأنها بُنيت على الوصف القديم، والمطابقة تُعاد فوراً عند العرض */
+async function saveReportEdit(form, val, catId, sens, bldg, room){
+  const r = S.myReports.find(x => x.id === form.dataset.id);
+  if (!r || r.status !== 'open'){ busy(form, false); return formErr(form, t('rp.gone')); }
+  const {details} = readDetails(form, catId, 'report');
+  const had = !!r.photo, newPhoto = !!FORM.photo && !sens, removing = had && (sens || (FORM.removed && !FORM.photo));
+  const patch = {cat: catId, sub: val('sub'), color: claimOf(catId).fields.includes('color') ? val('color') : '',
+    title: val('title'), desc: val('desc'), spot: val('spot'), bldg, room, lostDate: val('lostDate') || today(),
+    details: Object.keys(details).length ? details : deleteField(), editedAt: Date.now(), ...(r.ai ? {ai: deleteField()} : {})};
+  // الصورة: حذفها يسبق تحديث البلاغ، والجديدة تُحفظ بعده (قواعد reportPhotos تقرأ البلاغ)
+  if (removing){ await write(() => dbx.del('reportPhotos/' + r.id)); cachePhoto('r_' + r.id, null); patch.photo = false; }
+  const ok = await write(() => dbx.update('reports/' + r.id, patch), t('a.reportEdited'));
+  if (ok && newPhoto){
+    cachePhoto('r_' + r.id, FORM.photo);
+    if (await write(() => dbx.set('reportPhotos/' + r.id, {data: FORM.photo})) && !had) await write(() => dbx.update('reports/' + r.id, {photo: true}));
+  }
+  busy(form, false); if (ok){ S.hist = []; go('mine', {focus: r.id}, false); }
 }
 
 /* ---------- إرسال النماذج ---------- */
@@ -184,12 +226,16 @@ async function submitForm(form){
 
   if (kind === 'claim'){
     const i = item(form.dataset.id);
+    // G3: «تعديل الطلب»: الطلب نفسه ما دام قيد المراجعة ولم يُسأل صاحبه
+    const ed = form.dataset.edit ? S.myClaims.find(c => c.id === form.dataset.edit) : null;
+    if (form.dataset.edit && !claimEditable(ed)) return formErr(form, t('cl.noEdit'));
     // المتاح والمحجوز يقبلان الطلب (المحجوز: طلب منافس يراجعه المكتب قبل التسليم)
     if (!i || !ACTIVE.includes(i.status)) return formErr(form, t('cl.unavailable'));
     if (!S.verified) return formErr(form, t('a.verifyFirst'));
     // هوية صاحب الطلب: الاسم كما في البطاقة وآخر 4 أرقام منها (يطابقها الموظف عند التسليم)
     if (val('claimantName').length < 3) return formErr(form, t('a.needClaimantName'));
-    if (!/^\d{4}$/.test(val('idLast4'))) return formErr(form, t('a.needLast4'));
+    const last4 = latinDigits(val('idLast4'));
+    if (!/^\d{4}$/.test(last4)) return formErr(form, t('a.needLast4'));
     // أسئلة التصنيف: الإجبارية منها (مثل المبلغ للنقود)، والماركة للجوالات
     const q = claimOf(i.cat), {details, missing} = readDetails(form, i.cat, 'claim');
     if (q.req.includes('brand') && !val('brand')) return formErr(form, t('a.needDetail', {label: t('if.brand')}));
@@ -197,6 +243,15 @@ async function submitForm(form){
     // الإثبات الحر: إجباري إلا في التصنيفات التي فيها سؤال إجباري («تفاصيل أخرى تثبت أنه لك»)
     if (!claimHasRequired(i.cat) && val('proof').length < 15) return formErr(form, t('a.proofShort'));
     if (!fd.get('pledge')) return formErr(form, t('a.needPledge'));
+    if (ed){
+      // الحقول التي يعدّلها صاحب الطلب فقط (القواعد لا تقبل غيرها) + وقت التعديل
+      busy(form, true);
+      const ok = await write(() => dbx.update('claims/' + ed.id, {proof: val('proof').slice(0, 1200), details,
+        color: q.fields.includes('color') ? val('color') : '', brand: q.fields.includes('brand') ? val('brand').slice(0, 40) : '',
+        claimantName: val('claimantName').slice(0, 120), idLast4: last4, lostSpot: val('spot'), bldg, room, lostDate: val('lostDate'), editedAt: Date.now()}), t('a.claimEdited'));
+      busy(form, false); if (ok){ S.hist = []; go('mine', {}, false); }
+      return;
+    }
     // طلب واحد فقط لكل مستخدم على كل غرض: رقم الطلب ثابت = رقم الغرض_رقم المستخدم
     const id = `${i.id}_${S.uid}`;
     const dup = t('cl.already');
@@ -211,7 +266,7 @@ async function submitForm(form){
       // رقم الطلب القصير يظهر للمستخدم والموظف، ويُبحث به في تبويب الاستلام
       await dbx.set('claims/' + id, {itemId: i.id, officeId: i.officeId, uid: S.uid, no: 'REQ-' + refCode(4), proof: val('proof').slice(0, 1200), details,
         color: q.fields.includes('color') ? val('color') : '', brand: q.fields.includes('brand') ? val('brand').slice(0, 40) : '',
-        claimantName: val('claimantName').slice(0, 120), idLast4: val('idLast4'),
+        claimantName: val('claimantName').slice(0, 120), idLast4: last4,
         lostSpot: val('spot'), bldg, room, lostDate: val('lostDate'),
         ...(val('reportId') ? {reportId: val('reportId').slice(0, 100)} : {}),
         status: 'pending', codeHash, createdAt: Date.now()});
@@ -229,6 +284,8 @@ async function submitForm(form){
     const catId = val('cat');
     if (!catId) return formErr(form, t('a.needCat'));
     if (!val('title')) return formErr(form, t('a.needTitle'));
+    // G3: اسم واضح: 3 أحرف على الأقل بعد حذف المسافات
+    if (val('title').replace(/\s+/g, '').length < 3) return formErr(form, t('a.titleShort'));
     // الموظف يسجّل إجابات الأسئلة الإجبارية للتصنيف (مثل المبلغ للنقود) ليقارنها بما يقوله صاحب الطلب
     if (kind === 'item'){ const {missing} = readDetails(form, catId, 'item'); if (missing) return formErr(form, t('a.needDetail', {label: missing})); }
     const sens = cat(catId).sensitive;
@@ -236,6 +293,7 @@ async function submitForm(form){
 
     if (kind === 'report'){
       if (!S.verified){ busy(form, false); return formErr(form, t('a.verifyFirst')); }
+      if (form.dataset.id) return saveReportEdit(form, val, catId, sens, bldg, room);
       const id = dbx.newId('reports');
       const withPhoto = !!FORM.photo && !sens;
       // إجابات أسئلة التصنيف (اختيارية) تُحفظ لتعبئة طلب الاستلام منها لاحقاً
@@ -363,7 +421,7 @@ async function submitForm(form){
   }
 
   if (kind === 'verify'){
-    const c = S.claims.find(x => x.id === form.dataset.id); const code = val('code').replace(/\D/g, '');
+    const c = S.claims.find(x => x.id === form.dataset.id); const code = latinDigits(val('code')).replace(/\D/g, '');
     if (!c) return;
     if (code.length !== 6) return formErr(form, t('a.code6'));
     // هوية المستلم الفعلي: «طابقتُ البطاقة» إلزامية، والاسم وآخر 4 أرقام (قد يكون مفوّضاً عن صاحب الطلب)
@@ -657,12 +715,18 @@ const ACT = {
     f.querySelector('[name=rating]').value = v; (RATE_DRAFT[f.dataset.id] ||= {}).rating = v;
     f.querySelectorAll('.star').forEach(b => { const on = +b.dataset.v <= v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(+b.dataset.v === v)); });
   },
-  // «ليس غرضي»: يرفض صاحب البلاغ ترشيح الموظف الحالي، فيراه الموظف ويرشّح غيره
+  /* «ليس غرضي» (G5): على أي غرض مقترح (ترشيح الموظف أو «قد يكون لك»). يختفي فوراً، ويُحفظ بعد 5 ثوانٍ
+     ما لم يضغط «تراجع». يُضاف إلى القائمة rejected (تكبر فقط)، فلا يُقترح له مرة أخرى ولا ينبّه، ويراه الموظف */
   notMine(el){
-    const r = S.myReports.find(x => x.id === el.dataset.id); if (!r?.staffPick) return;
-    confirmSheet(t('rc.notMineQ'), t('rc.notMineBody'), t('rc.notMine'),
-      () => write(() => dbx.update('reports/' + r.id, {pickRejected: r.staffPick}), t('rc.notMineDone')), false);
+    const r = S.myReports.find(x => x.id === el.dataset.id), id = el.dataset.item; if (!r || !id) return;
+    if ((r.rejected || []).length >= 30) return toast(t('rc.rejectFull'));
+    const drop = () => { S.rejecting[r.id] = (S.rejecting[r.id] || []).filter(x => x !== id); touch(); };
+    (S.rejecting[r.id] ||= []).push(id); touch();
+    undoable(t('rc.notMineHidden'), () => write(() => dbx.update('reports/' + r.id, {rejected: arrayUnion(id)})).finally(drop), drop);
   },
+  // G3: «تعديل» البلاغ من «طلباتي»، و«تعديل الطلب» ما دام قيد المراجعة بلا سؤال
+  editReport(el){ go('report', {id: el.dataset.id}); },
+  editClaim(el){ const c = S.myClaims.find(x => x.id === el.dataset.id); if (claimEditable(c)) go('claim', {id: c.itemId, edit: c.id}); },
   // «افتح الطلب»: الانتقال إلى بطاقة الطلب في «طلباتي»
   showClaim(el){
     const box = document.getElementById('claim-' + el.dataset.id);
@@ -680,7 +744,7 @@ const ACT = {
   // «وجدته بنفسي»: تأكيد أولاً، وتنبيه إن كان المكتب رشّح غرضاً أو ظهر غرض مشابه (فيطلب استلامه بدل الإغلاق)
   closeReport(el){
     const r = S.myReports.find(x => x.id === el.dataset.id); if (!r) return;
-    const pickOn = r.staffPick && r.pickRejected !== r.staffPick && ACTIVE.includes(item(r.staffPick)?.status);
+    const pickOn = !!pickOf(r);
     const warn = pickOn || maybeFor(r, 1).length ? `<div class="note warn">${icon('info')}<span>${t('rc.closeWarn')}</span></div>` : '';
     PENDING_CONFIRM = () => write(() => dbx.update('reports/' + r.id, {status: 'closed', closedAt: Date.now(), closedReason: 'self'}), t('a.reportClosed'));
     openSheet(`<h2>${t('rc.closeQ')}</h2><p class="muted">${t('rc.closeBody')}</p>${warn}
@@ -688,9 +752,11 @@ const ACT = {
   },
   delReport(el){
     confirmSheet(t('a.delReportQ'), t('a.delReportBody'), t('a.delReportBtn'), async () => {
-      const r = S.reports.find(x => x.id === el.dataset.id);
+      const r = S.myReports.find(x => x.id === el.dataset.id) || S.reports.find(x => x.id === el.dataset.id);
       if (r?.photo) await write(() => dbx.del('reportPhotos/' + r.id));
-      await write(() => dbx.del('reports/' + el.dataset.id), t('a.reportDeleted'));
+      const ok = await write(() => dbx.del('reports/' + el.dataset.id), t('a.reportDeleted'));
+      // الحذف من صفحة التعديل: نعود إلى «طلباتي»
+      if (ok && S.route.name === 'report'){ S.hist = []; go('mine', {}, false); }
     });
   },
   editItem(el){ go('add', {id: el.dataset.id}); },
@@ -955,11 +1021,11 @@ export function bindEvents(){
     if (t.name === 'ratingNote'){ const f = t.closest('form'); if (f) (RATE_DRAFT[f.dataset.id] ||= {}).note = t.value; }
     if (t.id === 'cq'){ S.claimQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = staffClaims(); hydrate(); }, 120); }
     if (t.id === 'sq'){ S.staffQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = staffItems(); hydrate(); }, 120); }
-    if (t.name === 'code' && t.classList.contains('code-input')) t.value = t.value.replace(/\D/g, '').slice(0, 6);
+    if (t.name === 'code' && t.classList.contains('code-input')) t.value = latinDigits(t.value).replace(/\D/g, '').slice(0, 6);
     // خانات الأرقام في أسئلة التصنيف: الأرقام الهندية إلى لاتينية، وحذف ما ليس رقماً
     if (t.classList.contains('num-in')) t.value = detailValue({type: 'num'}, t.value).slice(0, Number(t.maxLength) > 0 ? t.maxLength : 9);
     if (t.classList.contains('code-in')) t.value = normCode(t.value);
-    if (t.name === 'idLast4' || t.name === 'rlast4' || t.name === 'last4') t.value = t.value.replace(/\D/g, '').slice(0, 4);
+    if (t.name === 'idLast4' || t.name === 'rlast4' || t.name === 'last4') t.value = latinDigits(t.value).replace(/\D/g, '').slice(0, 4);
   });
   app.addEventListener('change', e => {
     const t = e.target;

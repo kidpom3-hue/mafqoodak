@@ -1,7 +1,7 @@
 // صفحات المرحلة F (بأسلوب المنصات الحكومية، دون أي شعار حكومي):
 // بطاقة الخدمة (route: service)، ومؤشرات المكتب للزوار (route: numbers)، وبيان إمكانية الوصول (route: a11y)
 import { icon, oName, oPlace, oHours } from '../constants.js';
-import { esc, fmtDate, isoDay } from '../utils.js';
+import { esc, fmtDate, isoDay, TZ } from '../utils.js';
 import { t, tp, locale } from '../i18n.js';
 import { S, curOffice } from '../state.js';
 import { backBtn } from './common.js';
@@ -61,7 +61,7 @@ export function vNumbers(){
   if (!d) return `<div class="wrap" data-view="numbers">${head}<div class="empty">${icon('chart')}<b>${t('num.none')}</b></div></div>`;
   const tile = (label, value, hint = '') => `<div class="kpi"><span class="kpi-l">${label}</span><b class="kpi-v">${value}</b>${hint ? `<span class="kpi-h">${hint}</span>` : ''}</div>`;
   const [y, m] = String(d.month || '').split('-').map(Number);
-  const month = y && m ? new Intl.DateTimeFormat(locale(), {month: 'long', year: 'numeric'}).format(new Date(y, m - 1, 1)) : '';
+  const month = y && m ? new Intl.DateTimeFormat(locale(), {month: 'long', year: 'numeric', timeZone: TZ}).format(new Date(Date.UTC(y, m - 1, 15))) : '';
   return `<div class="wrap" data-view="numbers">${head}
     <h2 class="section-title">${t('num.month', {month: esc(month)})}</h2>
     <div class="kpis">

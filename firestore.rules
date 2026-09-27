@@ -82,12 +82,16 @@ service cloud.firestore {
     function validReport(d) {
       return d.keys().hasOnly(['officeId', 'uid', 'cat', 'sub', 'color', 'title', 'desc', 'spot', 'bldg', 'room',
                                'lostDate', 'photo', 'status', 'createdAt', 'closedAt', 'renewedAt', 'ai', 'staffPick', 'pickedAt',
-                               'details', 'closedReason', 'pickRejected'])
+                               'details', 'closedReason', 'pickRejected', 'rejected', 'editedAt'])
         && d.officeId is string && d.status in ['open', 'closed']
         && validDetails(d)
         // سبب الإغلاق: وجده صاحبه بنفسه، أو استلمه من المكتب
         && (!('closedReason' in d) || d.closedReason in ['self', 'office'])
         && strMax(d, 'pickRejected', 100)
+        // «ليس غرضي»: قائمة أرقام الأغراض التي رفضها صاحب البلاغ (30 على الأكثر)
+        && (!('rejected' in d) || (d.rejected is list && d.rejected.size() <= 30))
+        // وقت آخر تعديل من صاحب البلاغ
+        && (!('editedAt' in d) || d.editedAt is number)
         && strMax(d, 'title', 400) && strMax(d, 'desc', 4000) && strMax(d, 'sub', 200) && strMax(d, 'color', 60)
         && strMax(d, 'spot', 400) && strMax(d, 'bldg', 40) && strMax(d, 'room', 60) && strMax(d, 'lostDate', 20)
         && (!('ai' in d) || d.ai is map);
@@ -191,7 +195,8 @@ service cloud.firestore {
         && request.resource.data.status == 'open'
         && validReport(request.resource.data)
         && !('staffPick' in request.resource.data) && !('pickedAt' in request.resource.data)
-        && !('pickRejected' in request.resource.data) && !('closedReason' in request.resource.data);
+        && !('pickRejected' in request.resource.data) && !('closedReason' in request.resource.data)
+        && !('rejected' in request.resource.data);
       allow update: if signedIn() && (
         // صاحب البلاغ: لا يغيّر صاحبه ولا مكتبه ولا ترشيح الموظف
         (resource.data.uid == me()
@@ -201,6 +206,8 @@ service cloud.firestore {
           // «ليس غرضي»: يرفض صاحب البلاغ ترشيح الموظف الحالي فقط
           && (request.resource.data.get('pickRejected', '') == resource.data.get('pickRejected', '')
               || request.resource.data.get('pickRejected', '') == resource.data.get('staffPick', ''))
+          // قائمة «ليس غرضي» تكبر فقط: لا يُحذف منها شيء
+          && request.resource.data.get('rejected', []).hasAll(resource.data.get('rejected', []))
           && validReport(request.resource.data))
         || (isStaffOf(resource.data.officeId) && onlyChanges(['staffPick', 'pickedAt']))
       );
@@ -251,6 +258,16 @@ service cloud.firestore {
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending' && ('question' in resource.data)
           && onlyChanges(['answer', 'answeredAt'])
           && request.resource.data.answer is string && request.resource.data.answer.size() <= 2000)
+        // «تعديل الطلب»: صاحبه يعدّل إجاباته ما دام قيد المراجعة ولم يسأله الموظف بعد
+        || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending' && !('question' in resource.data)
+          && onlyChanges(['proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'details', 'claimantName', 'idLast4', 'editedAt'])
+          && request.resource.data.editedAt is number
+          && validDetails(request.resource.data)
+          && strMax(request.resource.data, 'proof', 5000) && strMax(request.resource.data, 'lostSpot', 400)
+          && strMax(request.resource.data, 'color', 60) && strMax(request.resource.data, 'brand', 200)
+          && strMax(request.resource.data, 'bldg', 40) && strMax(request.resource.data, 'room', 60)
+          && strMax(request.resource.data, 'lostDate', 20) && strMax(request.resource.data, 'claimantName', 120)
+          && (!('idLast4' in request.resource.data) || request.resource.data.idLast4.matches('[0-9]{4}')))
         // قياس الرضا: صاحب الطلب المكتمل يقيّمه مرة واحدة (1–5 وتعليق اختياري)
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'done' && !('rating' in resource.data)
           && onlyChanges(['rating', 'ratingNote', 'ratedAt'])

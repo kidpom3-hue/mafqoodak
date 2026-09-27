@@ -1,7 +1,7 @@
 // عناصر واجهة مشتركة بين الصفحات
 import { icon, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf } from '../constants.js';
 import { t, hasKey } from '../i18n.js';
-import { esc, relDay, colorDot, isBuilding, roomWord, spotText, showTitle } from '../utils.js';
+import { esc, relDay, colorDot, isBuilding, roomWord, spotText, showTitle, when } from '../utils.js';
 import { aiReady } from '../ai.js';
 import { THEMES, theme, TEXTS, textSize } from '../theme.js';
 import { S, isStaffHere } from '../state.js';
@@ -35,6 +35,23 @@ export function thumbHtml(i, cls = 'row-thumb'){
 // مكان العثور سري (المرحلة E5) لأنه جواب «أين فقدته؟» في طلب الاستلام
 export const miniItem = (i, extra = '') => { const place = staffView() ? spotText(i) : '';
   return `<button class="mini" data-act="openItem" data-id="${esc(i.id)}">${thumbHtml(i)}<span class="grow"><b>${esc(showTitle(i))}</b><span class="meta">${i.color ? colorDot(i.color) + esc(colorName(i.color)) + ' · ' : ''}${place ? esc(place) + ' · ' : ''}${relDay(i.foundDate)}</span></span>${extra}</button>`; };
+// G2: سطر وقت دقيق صغير، مثل «أُرسل: الأحد 27 سبتمبر · 9:31 م»
+export const whenLine = (key, ms) => ms ? `<span class="meta when">${icon('clock')}<span>${t(key, {when: when(ms)})}</span></span>` : '';
+/* G2: مسار طلب الاستلام: خط عمودي صغير بالأحداث الموجودة فقط، مرتّبة بالوقت
+   staff: نص «أجاب صاحب الطلب» بدل «أجبت» */
+export function claimTimeline(c, staff = false){
+  const ev = [['ctl.sent', c.createdAt]];
+  if (c.askedAt) ev.push(['ctl.asked', c.askedAt]);
+  if (c.answer && c.answeredAt) ev.push([staff ? 'ctl.answeredStaff' : 'ctl.answered', c.answeredAt]);
+  if (c.editedAt) ev.push(['ctl.edited', c.editedAt]);
+  if (c.decidedAt) ev.push(['ctl.dec.' + (c.status === 'done' ? 'approved' : c.status), c.decidedAt]);
+  if (c.doneAt) ev.push(['ctl.done', c.doneAt]);
+  ev.sort((a, b) => a[1] - b[1]);
+  // آخر موعد للاستلام: للطلب المقبول (أو الذي انتهت مهلته)، وقد يكون في المستقبل
+  if (c.pickupBy && ['approved', 'expired'].includes(c.status)) ev.push(['ctl.pickupBy', c.pickupBy, c.pickupBy > Date.now()]);
+  return `<ol class="ctl" aria-label="${t('ctl.title')}">${ev.filter(e => typeof e[1] === 'number' && e[1] > 0)
+    .map(([k, ms, future]) => `<li${future ? ' class="future"' : ''}><b>${t(k)}</b> <span>${when(ms)}</span></li>`).join('')}</ol>`;
+}
 export const person = uid => `<span class="person"><img data-avatar="${esc(uid)}" alt="" hidden><span data-uname="${esc(uid)}"></span></span>`;
 
 export function catPicker(sel){

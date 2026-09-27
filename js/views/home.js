@@ -105,7 +105,7 @@ function footer(o){
       ${themePicker()}
       ${textPicker()}
     </div>
-    <small class="sf-copy">© ${new Date().getFullYear()} ${t('app.name')}</small>
+    <small class="sf-copy">© ${today().slice(0, 4)} ${t('app.name')}</small>
   </footer>`;
 }
 

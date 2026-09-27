@@ -4,7 +4,7 @@ import { dbx } from './firebase.js';
 import { S, touch } from './state.js';
 import { catName, subLabel, statusLabel, ITEM_STATUS, oName, keepDaysOf } from './constants.js';
 import { t, locale } from './i18n.js';
-import { dayNum, daysAgo, isoDay, spotName, today, toast, disposalLabel } from './utils.js';
+import { dayNum, daysAgo, isoDay, spotName, today, toast, disposalLabel, TZ } from './utils.js';
 
 const loading = new Set();
 // كل أغراض المكتب بكل حالاتها (مرة واحدة، و«تحديث» يعيد الجلب)
@@ -67,8 +67,9 @@ export function computeStats(items, office, reports = []){
     .sort((a, b) => b.n - a.n);
   const cats = byCat.length > 8 ? [...byCat.slice(0, 7), byCat.slice(7).reduce((o, c) => ({...o, n: o.n + c.n, ret: o.ret + c.ret}), {id: '_rest', n: 0, ret: 0})] : byCat;
   // آخر 6 أشهر: ما وُجد (بتاريخ العثور) وما أُعيد (بتاريخ الإعادة)
-  const now = new Date(), months = [];
-  for (let k = 5; k >= 0; k--){ const d = new Date(now.getFullYear(), now.getMonth() - k, 1); months.push({key: isoDay(d.getTime()).slice(0, 7), date: d, found: 0, ret: 0}); }
+  // الشهر الحالي بتوقيت الرياض، ومنتصف كل شهر بتوقيت غرينتش حتى لا ينزلق الشهر مع منطقة الجهاز
+  const [cy, cm] = today().split('-').map(Number), months = [];
+  for (let k = 5; k >= 0; k--){ const d = new Date(Date.UTC(cy, cm - 1 - k, 15)); months.push({key: isoDay(d.getTime()).slice(0, 7), date: d, found: 0, ret: 0}); }
   const mi = Object.fromEntries(months.map((m, x) => [m.key, x]));
   for (const i of real){
     const f = mi[String(i.foundDate || '').slice(0, 7)]; if (f !== undefined) months[f].found++;
@@ -89,7 +90,7 @@ export function computeStats(items, office, reports = []){
     lost: Object.entries(reports.reduce((m, r) => { const k = r.spot || ''; m[k] = (m[k] || 0) + 1; return m; }, {})).map(([s, c]) => ({s, n: c})).sort((a, b) => b.n - a.n).slice(0, 5),
   };
 }
-export const monthName = d => { try { return new Intl.DateTimeFormat(locale(), {month: 'short'}).format(d); } catch { return String(d.getMonth() + 1); } };
+export const monthName = d => { try { return new Intl.DateTimeFormat(locale(), {month: 'short', timeZone: TZ}).format(d); } catch { return String(d.getUTCMonth() + 1); } };
 
 /* ---------- تصدير CSV (يفتح في Excel بالعربية) ---------- */
 // خلية آمنة: علامات الاقتباس، ومنع تنفيذ الصيغ في Excel (قيمة تبدأ بـ = أو + أو - أو @)

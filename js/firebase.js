@@ -8,7 +8,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence,
-  collection, doc, query, where, onSnapshot, getDoc, getDocs, getCountFromServer, setDoc, updateDoc, deleteDoc, writeBatch, deleteField,
+  collection, doc, query, where, onSnapshot, getDoc, getDocs, getCountFromServer, setDoc, updateDoc, deleteDoc, writeBatch, deleteField, arrayUnion,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import { firebaseConfig } from './config.js';
 import { LANG } from './i18n.js';
@@ -56,6 +56,8 @@ export const dbx = {
 
 // حذف حقل من مستند في update (مثل نقل مكان العثور من items إلى itemSecrets)
 export { deleteField };
+// إضافة عنصر إلى قائمة دون تكرار (قائمة «ليس غرضي» في البلاغ)
+export { arrayUnion };
 export {
   onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut,
