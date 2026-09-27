@@ -29,6 +29,10 @@ export const SETTINGS = {
   // اسم النموذج — راجع القائمة الحالية: https://firebase.google.com/docs/ai-logic/models
   aiModel: 'gemini-3.5-flash-lite',
 
+  // التنبيهات بالبريد عبر EmailJS (اختيارية؛ خطتهم المجانية تكفي نحو 200 رسالة شهرياً وقت كتابة هذا): emailjs.com
+  // اتركها فارغة لإيقافها. خطوات إنشاء الحساب والقالب في README.md (قسم «التنبيهات بالبريد»)
+  emailjs: {publicKey: '', serviceId: '', templateId: ''},
+
   // بيانات أول موقع تُنشأ عند الإعداد الأول (يمكن تعديلها لاحقاً من لوحة الإدارة)
   firstOffice: {
     id: 'tc-ahsa',

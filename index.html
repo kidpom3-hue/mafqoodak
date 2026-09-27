@@ -33,13 +33,50 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alexandria:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+  <!-- الخطوط لا تؤخر أول رسم للصفحة: تُحمَّل بالتوازي وتُطبَّق عند وصولها -->
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Alexandria:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alexandria:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap"></noscript>
   <link rel="stylesheet" href="css/styles.css">
+  <!-- تحميل ملفات التطبيق ومكتبة Firebase بالتوازي بدل انتظار كل ملف لما يستورده (أسرع فتحاً).
+       رقم إصدار Firebase هنا يجب أن يطابق js/firebase.js وjs/ai.js -->
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js">
+  <link rel="modulepreload" href="js/main.js">
+  <link rel="modulepreload" href="js/state.js">
+  <link rel="modulepreload" href="js/ui.js">
+  <link rel="modulepreload" href="js/actions.js">
+  <link rel="modulepreload" href="js/firebase.js">
+  <link rel="modulepreload" href="js/config.js">
+  <link rel="modulepreload" href="js/i18n.js">
+  <link rel="modulepreload" href="js/i18n/ar.js">
+  <link rel="modulepreload" href="js/i18n/en.js">
+  <link rel="modulepreload" href="js/constants.js">
+  <link rel="modulepreload" href="js/utils.js">
+  <link rel="modulepreload" href="js/workflow.js">
+  <link rel="modulepreload" href="js/migrate.js">
+  <link rel="modulepreload" href="js/ai.js">
+  <link rel="modulepreload" href="js/notify.js">
+  <link rel="modulepreload" href="js/theme.js">
+  <link rel="modulepreload" href="js/stats.js">
+  <link rel="modulepreload" href="js/qr.js">
+  <link rel="modulepreload" href="js/sample-data.js">
+  <link rel="modulepreload" href="js/views/common.js">
+  <link rel="modulepreload" href="js/views/home.js">
+  <link rel="modulepreload" href="js/views/visitor.js">
+  <link rel="modulepreload" href="js/views/staff.js">
+  <link rel="modulepreload" href="js/views/admin.js">
+  <link rel="modulepreload" href="js/views/auth.js">
+  <link rel="modulepreload" href="js/views/privacy.js">
+  <link rel="modulepreload" href="js/views/print.js">
+  <link rel="modulepreload" href="js/views/stats.js">
+  <!-- المظهر واللغة المحفوظان على الجهاز يُطبَّقان قبل رسم الصفحة، حتى لا يومض المظهر أو الاتجاه الآخر -->
+  <script>try{var h=document.documentElement,s=localStorage,t=JSON.parse(s.getItem('mfq:theme')||'null'),l=JSON.parse(s.getItem('mfq:lang')||'null');if(t==='light'||t==='dark')h.setAttribute('data-theme',t);if(l==='en'){h.lang='en';h.dir='ltr'}}catch(e){}</script>
 </head>
 <body>
   <div id="app">
     <header class="top" id="hdr"></header>
-    <main id="main"><div class="loading"><span class="spin"></span></div></main>
+    <main id="main"><div class="loading boot"><svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><path d="M9 6h17.5L35 14.5V33a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" fill="var(--primary)"/><circle cx="27.5" cy="12.5" r="2.6" fill="var(--bg)"/><circle cx="18" cy="21" r="5.6" fill="none" stroke="var(--primary-ink)" stroke-width="2.4"/><path d="m22.2 25.2 4.3 4.3" stroke="var(--primary-ink)" stroke-width="2.6" stroke-linecap="round"/><path d="M27.5 12.5C30 7 33 4.5 37 4" fill="none" stroke="var(--tag-line)" stroke-width="1.6" stroke-linecap="round"/></svg><span class="spin"></span></div></main>
     <nav class="bottom" id="nav" hidden></nav>
     <div id="sheet" hidden></div>
     <div id="toast" hidden role="status" aria-live="polite"></div>

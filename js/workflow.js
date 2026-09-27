@@ -16,10 +16,19 @@ export const pickupDays = o => Math.max(1, Math.min(60, Number(o?.pickupDays) ||
 // الطلبات المفتوحة على الغرض (من اشتراك الموظف في طلبات مكتبه)
 export const openClaimsOf = itemId => S.claims.filter(c => c.itemId === itemId && OPEN.includes(c.status));
 
-// قيد في سجل العمليات (سلسلة الحيازة)
+// قيد في سجل العمليات (سلسلة الحيازة). القيود تُحفظ مع كل batch لتُضاف للسجل المعروض بعد نجاحه
+const PENDING_LOGS = new WeakMap();
 function log(b, officeId, action, x = {}){
-  b.set(dbx.ref('logs/' + dbx.newId('logs')), {officeId, itemId: x.itemId || '', claimId: x.claimId || '', reportId: x.reportId || '',
-    action, by: S.uid, at: Date.now(), note: String(x.note || '').slice(0, 600)});
+  const id = dbx.newId('logs');
+  const e = {officeId, itemId: x.itemId || '', claimId: x.claimId || '', reportId: x.reportId || '',
+    action, by: S.uid, at: Date.now(), note: String(x.note || '').slice(0, 600)};
+  b.set(dbx.ref('logs/' + id), e);
+  PENDING_LOGS.set(b, [...(PENDING_LOGS.get(b) || []), {id, ...e}]);
+}
+// تنفيذ الـbatch، ثم إضافة قيوده إلى سجل الحيازة المعروض (إن كان محمّلاً) دون قراءة جديدة
+async function commit(b){
+  await b.commit();
+  for (const e of PENDING_LOGS.get(b) || []) if (Array.isArray(S.logs[e.itemId])) S.logs[e.itemId] = [...S.logs[e.itemId], e];
 }
 // التفاصيل السرية كما هي في itemSecrets (دون حقل id الذي يضيفه الاشتراك)
 function secretOf(i){ const {id, ...s} = S.secrets[i.id] || {}; return {...s, officeId: i.officeId}; }
@@ -55,7 +64,7 @@ export async function approveClaim(c){
   b.update(dbx.ref('claims/' + c.id), {status: 'approved', decidedAt: Date.now(), decidedBy: S.uid, pickupBy});
   b.update(dbx.ref('items/' + i.id), {status: 'reserved', reservedFor: c.id, updatedAt: Date.now()});
   log(b, i.officeId, 'approve', {itemId: i.id, claimId: c.id});
-  await b.commit();
+  await commit(b);
 }
 
 /* رفض طلب: إن كان مقبولاً والغرض محجوزاً له يعود الغرض متاحاً */
@@ -66,7 +75,20 @@ export async function rejectClaim(c, note){
   const i = S.items.find(x => x.id === c.itemId);
   if (c.status === 'approved' && i?.reservedFor === c.id) b.update(dbx.ref('items/' + i.id), {status: 'available', reservedFor: '', updatedAt: Date.now()});
   log(b, c.officeId, 'reject', {itemId: c.itemId, claimId: c.id, note});
-  await b.commit();
+  await commit(b);
+}
+
+/* سؤال تحقق: يسأل الموظف صاحب طلب قيد المراجعة سؤالاً إضافياً، فيجيب من «طلباتي».
+   السؤال الجديد يحلّ محل السابق، والإجابة الأقدم من السؤال تُعدّ غير مُجابة (answeredAt < askedAt) */
+export async function askQuestion(c, q){
+  notMine(c);
+  if (c.status !== 'pending') fail(t('wf.notPending'));
+  const question = String(q || '').trim().slice(0, 300);
+  if (question.length < 5) fail(t('wf.needQuestion'));
+  const b = dbx.batch();
+  b.update(dbx.ref('claims/' + c.id), {question, askedAt: Date.now(), askedBy: S.uid});
+  log(b, c.officeId, 'ask', {itemId: c.itemId, claimId: c.id, note: question});
+  await commit(b);
 }
 
 /* التسليم بعد التحقق من الرمز: فقط للطلب المقبول الذي حُجز له الغرض */
@@ -79,7 +101,7 @@ export async function verifyHandover(c){
   b.update(dbx.ref('items/' + i.id), {status: 'returned', returnedAt: Date.now(), updatedAt: Date.now()});
   const skippedOwn = closeOthers(b, i.id, c.id, 'rejected', tAr('sys.handedVerified'));
   log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id});
-  await b.commit();
+  await commit(b);
   return {skippedOwn};
 }
 
@@ -91,7 +113,7 @@ export async function releaseReservation(c, note = tAr('sys.pickupEnded')){
   const i = S.items.find(x => x.id === c.itemId);
   if (i?.reservedFor === c.id) b.update(dbx.ref('items/' + i.id), {status: 'available', reservedFor: '', updatedAt: Date.now()});
   log(b, c.officeId, 'release', {itemId: c.itemId, claimId: c.id, note});
-  await b.commit();
+  await commit(b);
 }
 
 /* تغيير الحالة يدوياً من «تغيير الحالة»
@@ -117,8 +139,27 @@ export async function setItemStatus(i, to, note = ''){
   } else fail(t('wf.badStatus'));
   b.update(dbx.ref('items/' + i.id), patch);
   log(b, i.officeId, 'status:' + to, {itemId: i.id, note: to === 'returned' ? tAr('sys.directHandover') : note});
-  await b.commit();
+  await commit(b);
   return {skippedOwn};
+}
+
+/* بعد حفظ غرض (جديد أو معدَّل): قيد في السجل، ومعه في batch واحد:
+   ترشيح الغرض لصاحب البلاغ (قبول بلاغ)، أو تأكيد استلام إشعار التسليم وربطه بالغرض.
+   إنشاء الغرض نفسه يبقى قبل ذلك ومتسلسلاً (items ثم التفاصيل والصور) لأن قواعدها تستخدم get(). */
+export async function itemSaved(i, {created = false, fromReport = '', fromFound = ''} = {}){
+  const b = dbx.batch(); const now = Date.now();
+  if (fromReport) b.update(dbx.ref('reports/' + fromReport), {staffPick: i.id, pickedAt: now});
+  if (fromFound) b.update(dbx.ref('foundReports/' + fromFound), {status: 'received', receivedAt: now, receivedBy: S.uid, itemId: i.id});
+  log(b, i.officeId, created ? 'create' : fromFound ? 'receive' : 'edit', {itemId: i.id, reportId: fromReport || fromFound});
+  await commit(b);
+}
+/* إشعار تسليم لم يصل صاحبه بالغرض إلى المكتب: يُغلق (يراه الواجد «مُلغى») */
+export async function dropFound(f){
+  if (f.status !== 'pending') fail(t('wf.badStatus'));
+  const b = dbx.batch();
+  b.update(dbx.ref('foundReports/' + f.id), {status: 'cancelled'});
+  log(b, f.officeId, 'found:drop', {reportId: f.id});
+  await commit(b);
 }
 
 /* التصرّف في الأغراض بعد انتهاء مدة الحفظ (تبرّع، إتلاف، تسليم للجهة المختصة، أخرى) */
@@ -138,7 +179,7 @@ export async function disposeItems(items, method, note = ''){
       log(b, i.officeId, 'dispose', {itemId: i.id, note: tAr('disposal.' + method) + (note ? ' — ' + note : '')});
       n++;
     }
-    await b.commit();
+    await commit(b);
   }
   return n;
 }
@@ -153,6 +194,6 @@ export async function deleteItem(i){
   if (S.secrets[i.id]) b.delete(dbx.ref('itemSecrets/' + i.id));
   b.delete(dbx.ref('items/' + i.id));
   log(b, i.officeId, 'delete', {itemId: i.id, note: full(i).title || i.ref});
-  await b.commit();
+  await commit(b);
   return {skippedOwn};
 }

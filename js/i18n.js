@@ -22,6 +22,8 @@ export function t(key, vars){
   if (s === undefined){ console.warn('[i18n] missing', key); return key; }
   return fill(s, vars);
 }
+// نص بلغة محددة (مثل رسالة بريد بلغة المستلم، لا بلغة الموظف)
+export const tIn = (lang, key, vars) => fill((DICTS[lang] || AR)[key] ?? AR[key] ?? key, vars);
 // النص العربي دائماً: للقيم المخزّنة في قاعدة البيانات (ملاحظات النظام في الطلبات والسجل)
 export const tAr = (key, vars) => fill(AR[key] ?? key, vars);
 

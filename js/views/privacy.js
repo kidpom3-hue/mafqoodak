@@ -8,6 +8,7 @@ import { S, curOffice } from '../state.js';
 import { SETTINGS } from '../config.js';
 import { backBtn } from './common.js';
 import { t, isEn } from '../i18n.js';
+import { emailReady } from '../notify.js';
 
 const SECTIONS = ['about', 'data', 'why', 'who', 'where', 'keep', 'rights', 'terms'];
 
@@ -15,7 +16,7 @@ export function vPrivacy(){
   const o = curOffice() || SETTINGS.firstOffice;
   const contact = [oPlace(o) && t('pv.officeAt', {place: oPlace(o)}), o.phone && t('pv.phone', {phone: o.phone})].filter(Boolean).join(' — ');
   // المتغيرات تمر عبر esc لأنها بيانات المكتب
-  const vars = {office: esc(oName(o)), contact: contact ? ` (${esc(contact)})` : '', ai: SETTINGS.enableAI ? t('pv.ai') : ''};
+  const vars = {office: esc(oName(o)), contact: contact ? ` (${esc(contact)})` : '', ai: SETTINGS.enableAI ? t('pv.ai') : '', email: emailReady() ? t('pv.email') : ''};
   const sec = k => `<section class="panel legal"><h2>${t('pv.' + k)}</h2>${t('pv.' + k + '.b', vars)}</section>`;
   return `<div class="wrap narrow" data-view="privacy">${S.hist.length ? backBtn() : ''}
     <section class="hero"><div class="hero-kicker">${icon('lock')}${t('pv.kicker')}</div>

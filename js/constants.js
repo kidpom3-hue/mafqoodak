@@ -46,6 +46,14 @@ export const P = {
   trash:'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   edit:'<path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/>',
   tag:'<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9Z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+  question:'<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.6 2.3c-.7.4-1.2.9-1.2 1.7v.4M12 16.8h.01"/>',
+  qr:'<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18v2M20 14v2"/>',
+  chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  download:'<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  print:'<path d="M7 9V4h10v5M7 17H5a1 1 0 0 1-1-1v-5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5a1 1 0 0 1-1 1h-2"/><rect x="7" y="14" width="10" height="6" rx="1"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon:'<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/>',
+  contrast:'<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor"/>',
   info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
   swap:'<path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/>',
   sample:'<path d="M4 4h16v16H4z" stroke-dasharray="3 3"/>',
@@ -115,6 +123,11 @@ export const CLAIM_STATUS = {
   rejected:{l:'لم يُقبل',en:'Not accepted',c:'bad'},
   expired:{l:'انتهت مهلة الاستلام',en:'Pickup window ended',c:'mute'},
   cancelled:{l:'أُلغي',en:'Cancelled',c:'mute'},
+};
+// إشعار التسليم (foundReports) كما يراه الواجد: returned محسوبة من حالة الغرض المرتبط
+export const FOUND_STATUS = {
+  pending:{l:'بانتظار تسليمه للمكتب',en:'Awaiting hand-in',c:'warn'}, received:{l:'استلمه المكتب',en:'Received by office',c:'info'},
+  returned:{l:'عاد لصاحبه',en:'Back with its owner',c:'ok'}, cancelled:{l:'مُلغى',en:'Cancelled',c:'mute'},
 };
 export const REPORT_STATUS = { open:{l:'بلاغ مفتوح',en:'Open report',c:'warn'}, closed:{l:'مغلق',en:'Closed',c:'mute'} };
 export const MODE_LABEL = {visitor:{l:'زائر',en:'Visitor'}, staff:{l:'موظف المكتب',en:'Office staff'}, admin:{l:'الإدارة',en:'Admin'}};
