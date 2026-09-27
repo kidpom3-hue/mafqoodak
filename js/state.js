@@ -118,6 +118,8 @@ export function alertKeys(){
   for (const c of myClaims()){
     if (['approved', 'rejected', 'expired', 'cancelled'].includes(c.status)) keys.push(`c:${c.id}:${c.status}`);
     if (awaitingAnswer(c)) keys.push(`q:${c.id}:${c.askedAt}`);   // سؤال تحقق من المكتب بانتظار إجابتك
+    // تقترب مهلة الاستلام (يومان أو أقل)
+    if (c.status === 'approved' && c.pickupBy && c.pickupBy > Date.now() && c.pickupBy - Date.now() <= 2 * 864e5) keys.push(`d:${c.id}`);
   }
   // إشعار التسليم: استلمه المكتب، ثم عاد الغرض لصاحبه
   for (const f of S.myFound){

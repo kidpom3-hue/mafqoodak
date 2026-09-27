@@ -1,12 +1,13 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
 import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS } from '../constants.js';
-import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, spotName, showTitle, isoDay } from '../utils.js';
+import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, spotName, showTitle, isoDay, LS } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer } from '../state.js';
+import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer } from '../state.js';
 import { backBtn, thumbHtml, miniItem, catPicker, colorPicker, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView } from './common.js';
 import { claimCardStaff, rivals, dateOf, qaBox, timeline } from './staff.js';
 import { aiReady } from '../ai.js';
 import { hydrate } from '../ui.js';
+import { msgOf } from '../notify.js';
 
 /* ---------- visitor: choose place ---------- */
 export function vPick(){
@@ -237,12 +238,20 @@ export function vReportForm(){
 }
 
 /* ---------- visitor: my requests ---------- */
+// مركز التنبيهات: كل ما يحتاج انتباهك الآن، والجديد منذ آخر زيارة معلّم
+function alertCenter(){
+  const keys = alertKeys(); if (!keys.length) return '';
+  const seen = new Set(LS.get('seen', []));
+  return `<div class="section-title">${icon('bell')}${t('nt.center')}</div>
+    <ul class="alerts">${keys.map(k => `<li>${icon('bell')}<span class="grow">${t(msgOf(k))}</span>${seen.has(k) ? '' : `<span class="pill info">${t('nt.new')}</span>`}</li>`).join('')}</ul>`;
+}
 export function vMine(){
   if (!S.uid) return `<div class="wrap">${loginPrompt(t('mine.login'))}</div>`;
   const reps = myReports(), cls = myClaims(), fnd = myFound();
   const focus = S.route.params.focus;
   return `<div class="wrap" data-view="mine">
     <section class="hero"><div class="hero-kicker">${icon('inbox')}${t('mine.kicker')}</div><h1 class="hero-title">${t('nav.mine')}</h1></section>
+    ${alertCenter()}
     <div class="section-title">${t('mine.claims')} ${cls.length ? `<span class="count">${cls.length}</span>` : ''}</div>
     ${cls.length ? `<div class="list">${cls.map(claimCardMine).join('')}</div>` : `<div class="note">${icon('info')}<span>${t('mine.noClaims')}</span></div>`}
     <div class="section-title">${t('mine.reports')} ${reps.length ? `<span class="count">${reps.length}</span>` : ''}</div>
@@ -347,7 +356,8 @@ export function vOffice(){
     <button class="btn ghost" data-act="pickOffice">${icon('pin')}${t('ui.changePlace')}</button>
     <div class="panel">
       <div class="section-title">${icon('users')}${t('ofc.work')}</div>
-      ${isStaff ? `<div class="note ok">${icon('check')}<span>${t('ofc.isStaff')}</span></div>`
+      ${isStaff ? `<div class="note ok">${icon('check')}<span>${t('ofc.isStaff')}</span></div>
+        <button class="btn soft" data-act="poster" style="align-self:flex-start">${icon('print')}${t('po.btn')}</button>`
       : req?.status === 'pending' ? `<div class="note warn">${icon('clock')}<span>${t('ofc.reqPending')}</span></div>`
       : `<p class="muted">${t('ofc.grantNote')}</p><button class="btn soft" data-act="nav" data-r="join">${icon('shield')}${t('ofc.request')}</button>`}
     </div>
