@@ -2,7 +2,7 @@
 // لا اشتراك دائم، حفاظاً على حصة القراءة اليومية في الخطة المجانية.
 import { dbx } from './firebase.js';
 import { S, touch } from './state.js';
-import { catName, subLabel, colorName, statusLabel, ITEM_STATUS, oName } from './constants.js';
+import { catName, subLabel, statusLabel, ITEM_STATUS, oName } from './constants.js';
 import { t, locale } from './i18n.js';
 import { dayNum, daysAgo, isoDay, spotName, today, toast } from './utils.js';
 
@@ -11,13 +11,15 @@ const loading = new Set();
 export async function loadStats(officeId, force = false){
   if (!officeId || loading.has(officeId) || (S.stats[officeId] && !force)) return;
   loading.add(officeId);
-  try { S.stats[officeId] = {items: await dbx.list('items', [['officeId', '==', officeId]]), at: Date.now()}; }
-  catch (e){ console.warn(e); S.stats[officeId] = {items: [], at: Date.now(), error: true}; }
+  try {
+    const [items, reports] = await Promise.all([dbx.list('items', [['officeId', '==', officeId]]), dbx.list('reports', [['officeId', '==', officeId]]).catch(() => [])]);
+    S.stats[officeId] = {items, reports, at: Date.now()};
+  } catch (e){ console.warn(e); S.stats[officeId] = {items: [], reports: [], at: Date.now(), error: true}; }
   finally { loading.delete(officeId); touch(); }
 }
 
 // الأرقام: نسبة الإعادة = المُسلَّم ÷ (المتاح + المحجوز + المُسلَّم + المُتصرَّف فيه)، مثل جدول الإدارة. الأمثلة لا تُحسب
-export function computeStats(items, office){
+export function computeStats(items, office, reports = []){
   const real = items.filter(i => !i.sample);
   const n = st => real.filter(i => i.status === st).length;
   const returned = real.filter(i => i.status === 'returned');
@@ -45,6 +47,8 @@ export function computeStats(items, office){
     rate: base ? Math.round(100 * returned.length / base) : null,
     avgDays: days.length ? Math.round(10 * days.reduce((a, b) => a + b, 0) / days.length) / 10 : null,
     cats, months, spots,
+    // أكثر أماكن الفقد (من بلاغات المفقودين)
+    lost: Object.entries(reports.reduce((m, r) => { const k = r.spot || ''; m[k] = (m[k] || 0) + 1; return m; }, {})).map(([s, c]) => ({s, n: c})).sort((a, b) => b.n - a.n).slice(0, 5),
   };
 }
 export const monthName = d => { try { return new Intl.DateTimeFormat(locale(), {month: 'short'}).format(d); } catch { return String(d.getMonth() + 1); } };
@@ -56,17 +60,13 @@ export async function exportCsv(officeId){
   await loadStats(officeId);
   const items = S.stats[officeId]?.items || [];
   if (!items.length){ toast(t('sx.csvEmpty')); return; }
-  // التفاصيل السرية لموظفي المكتب (قراءة لكل غرض، عند الضغط فقط)
-  let sec = {};
-  try { sec = Object.fromEntries((await dbx.list('itemSecrets', [['officeId', '==', officeId]])).map(s => [s.id, s])); } catch (e){ console.warn(e); }
+  // الحقول العامة فقط: لا تفاصيل سرية في ملف قد يُرسل خارج المكتب
   const office = S.offices.find(o => o.id === officeId);
-  const cols = ['ref', 'category', 'type', 'title', 'color', 'brand', 'desc', 'place', 'bldg', 'room', 'foundDate', 'status', 'returnedDate', 'disposal', 'disposalNote', 'handoverNote', 'storage', 'createdAt', 'sample'];
-  const rows = items.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).map(i => {
-    const s = sec[i.id] || {};
-    return [i.ref, catName(i.cat), subLabel(i.sub), s.title || '', colorName(s.color), s.brand, s.desc, spotName(i.spot, officeId), s.bldg, s.room, i.foundDate,
-      statusLabel(ITEM_STATUS[i.status]) || i.status, isoDay(i.returnedAt), i.disposal ? t('disposal.' + (['donated', 'destroyed', 'authority'].includes(i.disposal) ? i.disposal : 'other')) : '',
-      s.disposalNote, s.handoverNote, s.storage, isoDay(i.createdAt), i.sample ? t('c.sample') : ''];
-  });
+  const cols = ['ref', 'category', 'type', 'place', 'foundDate', 'status', 'returnedDate', 'disposal', 'createdAt', 'sample'];
+  const rows = items.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).map(i => [
+    i.ref, catName(i.cat), subLabel(i.sub), spotName(i.spot, officeId), i.foundDate,
+    statusLabel(ITEM_STATUS[i.status]) || i.status, isoDay(i.returnedAt), i.disposal ? t('disposal.' + (['donated', 'destroyed', 'authority'].includes(i.disposal) ? i.disposal : 'other')) : '',
+    isoDay(i.createdAt), i.sample ? t('c.sample') : '']);
   const csv = '\uFEFF' + [cols.map(c => t('csv.' + c)), ...rows].map(r => r.map(cell).join(',')).join('\r\n');
   const url = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'}));
   const a = document.createElement('a');
