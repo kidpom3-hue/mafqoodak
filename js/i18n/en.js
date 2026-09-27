@@ -342,7 +342,7 @@ export const EN = {
   "if.tNew": "Log a found item",
   "if.fromReport": "We've filled in the fields from the report. Check them before saving. Once saved, the item is suggested to the person who reported it and they get an alert.",
   "if.photo": "Item photo",
-  "if.secretNote": "Visitors only see the category, type, area and date found. Everything else is visible to office staff only and is checked against claimants' answers.",
+  "if.secretNote": "Visitors only see the category, type and date found. The place it was found and everything else are visible to office staff only, and are checked against claimants' answers.",
   "if.title": "Item name (staff only)",
   "if.titlePh": "e.g. White wireless earbuds",
   "if.brand": "Brand or maker",
@@ -455,7 +455,7 @@ export const EN = {
   "mine.sent": "sent {when}",
   // الزائر: البلاغ، المكتب، الأسئلة الشائعة، طلب الصلاحية
   "faq.q1": "How do I know if my item reached the lost property office?",
-  "faq.a1": "Everything handed in is listed here with its category, type and the area it was found in. Search with a word or browse by category. If you can't find it, file a report and we'll alert you when something similar is logged.",
+  "faq.a1": "Everything handed in is listed here with its category, type and the date it was found. Where it was found isn't shown, because the office asks you that to confirm it's yours. Search with a word or browse by category. If you can't find it, file a report and we'll alert you when something similar is logged.",
   "faq.q2": "How do I collect my item?",
   "faq.a2": "Tap \"This is mine\" and give details that aren't shown in the listing. Once office staff review and approve your claim, a 6-digit code appears in \"My requests\". Show it when you collect.",
   "faq.q3": "Why aren't all the item's details shown?",
@@ -512,7 +512,7 @@ export const EN = {
   "pv.why": "Why we collect it",
   "pv.why.b": "<ul>\n        <li>To sign you in and protect your account.</li>\n        <li>To compare your report with logged items and alert you to similar ones.</li>\n        <li>So office staff can confirm you own an item before handing it over, and make sure the right person collects it.</li>\n        <li>To run the office and keep a record of handovers.</li>\n      </ul>",
   "pv.who": "Who can see your data",
-  "pv.who.b": "<ul>\n        <li><b>You:</b> all your reports, claims and codes.</li>\n        <li><b>Lost property staff at the same place:</b> your name, email, reports and claims at their office only, so they can review them and contact you.</li>\n        <li><b>Platform administrators:</b> for oversight and technical support.</li>\n        <li><b>Other visitors:</b> none of your data. Publicly listed items are logged by the office and contain no owner details, and photos of ID cards and personal documents are never uploaded.</li>\n        <li>An item's exact details and clear photos are visible to office staff only, to protect owners from false claims.</li>\n      </ul>",
+  "pv.who.b": "<ul>\n        <li><b>You:</b> all your reports, claims and codes.</li>\n        <li><b>Lost property staff at the same place:</b> your name, email, reports and claims at their office only, so they can review them and contact you.</li>\n        <li><b>Platform administrators:</b> for oversight and technical support.</li>\n        <li><b>Other visitors:</b> none of your data. Publicly listed items are logged by the office and contain no owner details, and photos of ID cards and personal documents are never uploaded.</li>\n        <li>An item's exact details, where it was found and its clear photos are visible to office staff only, to protect owners from false claims.</li>\n      </ul>",
   "pv.where": "Where your data is stored",
   "pv.where.b": "<p>Data is stored in Google's <b>Firebase</b> cloud service and may be stored or processed on servers outside Saudi Arabia. Google protects data in transit and at rest, and the platform's security rules stop anyone reading what they aren't entitled to.</p>\n      {ai}{email}",
   "pv.keep": "How long we keep it",
@@ -1036,4 +1036,8 @@ export const EN = {
   "sx.closed.office": "Via the office",
   "sx.closed.self": "Found by its owner",
   "sx.closed.none": "Older, no reason",
+  // المرحلة E5: مكان العثور سري
+  "st.inPhoto": "Visible in photo",
+  "c.blurColorHint": "Blurring hides details but still shows the colour. If the colour matters for verification, choose \"No photo\".",
+  "migrate.spots": "Moved the found location to the private record: {items}",
 };

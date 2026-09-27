@@ -1,8 +1,8 @@
 // انتقالات حالة المفقودات وطلبات الاستلام في مكان واحد.
 // كل انتقال يُكتب في writeBatch واحد (الغرض + الطلبات + قيد في السجل logs)،
 // فإما ينجح كله أو لا يُكتب منه شيء، حتى لا تبقى البيانات ناقصة إذا انقطع الاتصال.
-import { dbx } from './firebase.js';
-import { S, full } from './state.js';
+import { dbx, deleteField } from './firebase.js';
+import { S, full, item } from './state.js';
 import { SETTINGS } from './config.js';
 import { pubPhoto } from './views/common.js';
 import { t, tAr } from './i18n.js';
@@ -37,6 +37,26 @@ async function commit(b, guarded = false){
 // التفاصيل السرية كما هي في itemSecrets (دون حقل id الذي يضيفه الاشتراك)
 function secretOf(i){ const {id, ...s} = S.secrets[i.id] || {}; return {...s, officeId: i.officeId}; }
 
+/* مكان العثور سري منذ المرحلة E5: مكانه itemSecrets، والقواعد ترفض أي تعديل على غرض ما زال spot في مستنده العام.
+   احتياط للأغراض القديمة التي لم تنقلها migrate.js بعد: كل تعديل على الغرض هنا يمر عبر itemUpdate،
+   فيحذف spot من items (deleteField) وينقله إلى itemSecrets في الـ batch نفسه:
+   ضمن الكتابة الكاملة لـ itemSecrets إن كانت في العملية (secret)، وإلا بـ merge */
+function publicSpot(i){
+  const p = item(i.id) || i;   // المستند العام كما وصل من Firestore (لا full)
+  return p && Object.prototype.hasOwnProperty.call(p, 'spot') ? String(p.spot ?? '') : null;
+}
+function itemUpdate(b, i, patch, secret = null){
+  const sp = publicSpot(i);
+  if (sp !== null){
+    patch = {...patch, spot: deleteField()};
+    const keep = S.secrets[i.id]?.spot ?? sp;
+    if (secret){ if (secret.spot === undefined) secret.spot = keep; }
+    else b.set(dbx.ref('itemSecrets/' + i.id), {officeId: i.officeId, spot: keep}, {merge: true});
+  }
+  if (secret) b.set(dbx.ref('itemSecrets/' + i.id), secret);
+  b.update(dbx.ref('items/' + i.id), patch);
+}
+
 // الغرض بأحدث نسخة: من الاشتراك، أو من الخادم إن لم يكن محمّلاً (مثل المُسلَّم)
 async function freshItem(id){
   const i = S.items.find(x => x.id === id) || await dbx.get('items/' + id).then(d => d && {id, ...d}).catch(() => null);
@@ -67,7 +87,7 @@ export async function approveClaim(c, {reason = ''} = {}){
   if (!(i.status === 'available' || (i.status === 'reserved' && !holder))) fail(t('wf.notAvailable'));
   if (i.status === 'reserved'){
     const b0 = dbx.batch();
-    b0.update(dbx.ref('items/' + i.id), {status: 'available', reservedFor: '', updatedAt: Date.now()});
+    itemUpdate(b0, i, {status: 'available', reservedFor: '', updatedAt: Date.now()});
     log(b0, i.officeId, 'status:available', {itemId: i.id, note: tAr('sys.orphanReserved')});
     await commit(b0, true);
   }
@@ -76,7 +96,7 @@ export async function approveClaim(c, {reason = ''} = {}){
   const note = String(reason || '').trim().slice(0, 600);
   const b = dbx.batch();
   b.update(dbx.ref('claims/' + c.id), {status: 'approved', decidedAt: Date.now(), decidedBy: S.uid, pickupBy, ...(note ? {note} : {})});
-  b.update(dbx.ref('items/' + i.id), {status: 'reserved', reservedFor: c.id, updatedAt: Date.now()});
+  itemUpdate(b, i, {status: 'reserved', reservedFor: c.id, updatedAt: Date.now()});
   log(b, i.officeId, 'approve', {itemId: i.id, claimId: c.id, note});
   await commit(b, true);
 }
@@ -95,7 +115,7 @@ export async function reactivateClaim(c){
     to = 'approved';
     const o = S.offices.find(x => x.id === i.officeId);
     b.update(dbx.ref('claims/' + c.id), {status: 'approved', note: '', decidedAt: now, decidedBy: S.uid, pickupBy: now + pickupDays(o) * 864e5});
-    b.update(dbx.ref('items/' + i.id), {status: 'reserved', reservedFor: c.id, updatedAt: now});
+    itemUpdate(b, i, {status: 'reserved', reservedFor: c.id, updatedAt: now});
   } else b.update(dbx.ref('claims/' + c.id), {status: 'pending', note: '', decidedAt: now, decidedBy: S.uid});
   log(b, i.officeId, 'reactivate', {itemId: i.id, claimId: c.id, note: tAr(to === 'approved' ? 'sys.reactivatedApproved' : 'sys.reactivatedPending')});
   await commit(b, true);
@@ -109,7 +129,7 @@ export async function rejectClaim(c, note){
   const b = dbx.batch();
   b.update(dbx.ref('claims/' + c.id), {status: 'rejected', note: String(note || '').slice(0, 200), decidedAt: Date.now(), decidedBy: S.uid});
   const i = S.items.find(x => x.id === c.itemId);
-  if (c.status === 'approved' && i?.reservedFor === c.id) b.update(dbx.ref('items/' + i.id), {status: 'available', reservedFor: '', updatedAt: Date.now()});
+  if (c.status === 'approved' && i?.reservedFor === c.id) itemUpdate(b, i, {status: 'available', reservedFor: '', updatedAt: Date.now()});
   log(b, c.officeId, 'reject', {itemId: c.itemId, claimId: c.id, note});
   await commit(b);
 }
@@ -137,7 +157,7 @@ export async function verifyHandover(c, receiver = {}){
   if (name.length < 3 || !/^\d{4}$/.test(last4)) fail(t('wf.needReceiver'));
   const b = dbx.batch();
   b.update(dbx.ref('claims/' + c.id), {status: 'done', doneAt: Date.now(), doneBy: S.uid, handoverNote: tAr('sys.receivedBy', {name, last4})});
-  b.update(dbx.ref('items/' + i.id), {status: 'returned', returnedAt: Date.now(), updatedAt: Date.now()});
+  itemUpdate(b, i, {status: 'returned', returnedAt: Date.now(), updatedAt: Date.now()});
   const skippedOwn = closeOthers(b, i.id, c.id, 'rejected', tAr('sys.handedVerified'));
   log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id, note: tAr('sys.receivedBy', {name, last4})});
   await commit(b, true);
@@ -150,7 +170,7 @@ export async function releaseReservation(c, note = tAr('sys.pickupEnded')){
   const b = dbx.batch();
   b.update(dbx.ref('claims/' + c.id), {status: 'expired', note, decidedAt: Date.now(), decidedBy: S.uid});
   const i = S.items.find(x => x.id === c.itemId);
-  if (i?.reservedFor === c.id) b.update(dbx.ref('items/' + i.id), {status: 'available', reservedFor: '', updatedAt: Date.now()});
+  if (i?.reservedFor === c.id) itemUpdate(b, i, {status: 'available', reservedFor: '', updatedAt: Date.now()});
   log(b, c.officeId, 'release', {itemId: c.itemId, claimId: c.id, note});
   await commit(b);
 }
@@ -161,7 +181,7 @@ export async function releaseReservation(c, note = tAr('sys.pickupEnded')){
 export async function setItemStatus(i, to, note = ''){
   const b = dbx.batch(); const now = Date.now();
   const patch = {status: to, updatedAt: now, reservedFor: ''};
-  let skippedOwn = false;
+  let skippedOwn = false, secret = null;
   if (to === 'available'){
     const held = S.claims.find(x => x.id === i.reservedFor && x.status === 'approved');
     if (held){
@@ -171,12 +191,12 @@ export async function setItemStatus(i, to, note = ''){
   } else if (to === 'returned'){
     if (String(note).trim().length < 6) fail(t('wf.needHandoverNote'));
     patch.returnedAt = now;
-    b.set(dbx.ref('itemSecrets/' + i.id), {...secretOf(i), handoverNote: String(note).slice(0, 600)});
+    secret = {...secretOf(i), handoverNote: String(note).slice(0, 600)};
     skippedOwn = closeOthers(b, i.id, '', 'cancelled', tAr('sys.handedDirect'));
   } else if (to === 'archived'){
     skippedOwn = closeOthers(b, i.id, '', 'cancelled', tAr('sys.archived'));
   } else fail(t('wf.badStatus'));
-  b.update(dbx.ref('items/' + i.id), patch);
+  itemUpdate(b, i, patch, secret);
   log(b, i.officeId, 'status:' + to, {itemId: i.id, note: to === 'returned' ? tAr('sys.directHandover') : note});
   await commit(b);
   return {skippedOwn};
@@ -217,8 +237,7 @@ export async function disposeItems(items, method, note = ''){
     const b = dbx.batch(); const now = Date.now();
     for (const i of items.slice(k, k + 60)){
       if (i.status !== 'available') continue;
-      b.update(dbx.ref('items/' + i.id), {status: 'disposed', disposal: method, disposedAt: now, reservedFor: '', updatedAt: now});
-      b.set(dbx.ref('itemSecrets/' + i.id), {...secretOf(i), disposalNote: String(note).slice(0, 600)});
+      itemUpdate(b, i, {status: 'disposed', disposal: method, disposedAt: now, reservedFor: '', updatedAt: now}, {...secretOf(i), disposalNote: String(note).slice(0, 600)});
       closeOthers(b, i.id, '', 'cancelled', tAr('sys.retentionEnded'));
       log(b, i.officeId, 'dispose', {itemId: i.id, note: tAr('disposal.' + method) + (note ? ' — ' + note : '')});
       n++;

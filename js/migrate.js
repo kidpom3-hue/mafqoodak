@@ -1,6 +1,7 @@
 // نقل الأغراض القديمة (مرة واحدة): التفاصيل السرية كانت في items المقروءة للجميع، ومكانها الآن itemSecrets
 // يعمل تلقائياً عند فتح لوحة الموظف، ولكل مكتب مرة واحدة في الجلسة.
-import { dbx } from './firebase.js';
+// المرحلة E5: مكان العثور (spot) سري أيضاً، وينقله migrateSpots لكل غرض محمّل (النشطة، وما جُلب بفلتر الحالة).
+import { dbx, deleteField } from './firebase.js';
 import { S, isStaffHere, cachePhoto } from './state.js';
 import { makeBlur, publicTitle, toast } from './utils.js';
 import { t, tp } from './i18n.js';
@@ -25,7 +26,7 @@ export async function migrateItems(){
       // 1) التفاصيل السرية في itemSecrets
       try {
         await dbx.set('itemSecrets/' + i.id, {officeId: i.officeId, title: i.title || '', color: i.color || '', brand: i.brand || '',
-          desc: i.desc || '', bldg: i.bldg || '', room: i.room || '', storage: i.storage || ''});
+          desc: i.desc || '', spot: i.spot || '', bldg: i.bldg || '', room: i.room || '', storage: i.storage || ''});
       } catch (e){
         console.warn(e);
         // القواعد القديمة ما زالت منشورة: نتوقف تماماً ولا نحذف شيئاً
@@ -46,13 +47,43 @@ export async function migrateItems(){
           }
         } catch (e){ console.warn(e); continue; }   // لا ننتقل للخطوة 3 إن فشلت الصورة
       }
-      // 3) إعادة كتابة المستند العام كاملاً (دون merge) حتى تُحذف الحقول القديمة منه
-      const pub = {officeId: i.officeId, ref: i.ref, cat: i.cat, sub: i.sub || '', title: publicTitle(i.cat, i.sub), spot: i.spot || '',
+      // 3) إعادة كتابة المستند العام كاملاً (دون merge) حتى تُحذف الحقول القديمة منه (ومنها spot، صار في itemSecrets)
+      const pub = {officeId: i.officeId, ref: i.ref, cat: i.cat, sub: i.sub || '', title: publicTitle(i.cat, i.sub),
         foundDate: i.foundDate, photo, status: i.status || 'available', createdBy: i.createdBy || '', createdAt: i.createdAt || Date.now(),
         updatedAt: Date.now(), sample: !!i.sample};
-      for (const k of ['fromReport', 'reservedFor', 'returnedAt']) if (i[k] !== undefined) pub[k] = i[k];
+      for (const k of ['fromReport', 'fromFound', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt']) if (i[k] !== undefined) pub[k] = i[k];
       try { await dbx.set('items/' + i.id, pub); n++; } catch (e){ console.warn(e); }
     }
     if (n) toast(t('migrate.done', {items: tp('n.itemGen', n)}));
   } finally { running = false; }
+}
+
+/* المرحلة E5: نقل مكان العثور من المستند العام إلى itemSecrets لكل غرض محمّل ما زال فيه spot عام.
+   batch واحد لكل غرض: itemSecrets بـ merge {officeId, spot}، وitems بـ update {spot: deleteField()}.
+   لا نعيد كتابة المستند العام كاملاً (الخطوة 3 أعلاه) حتى لا تسقط حقول أحدث مثل fromFound وdisposal. */
+const spotDone = new Set(); let spotRunning = false, spotDenied = false;
+export function allowSpotRetry(){ spotDenied = false; }
+const hasPublicSpot = i => Object.prototype.hasOwnProperty.call(i, 'spot');
+export async function migrateSpots(){
+  if (spotRunning || spotDenied || !isStaffHere()) return;
+  const office = S.officeId;
+  const todo = [...S.items, ...Object.values(S.extraItems).flat()]
+    .filter(i => i.officeId === office && hasPublicSpot(i) && !legacy(i) && !spotDone.has(i.id));
+  if (!todo.length) return;
+  spotRunning = true; let n = 0;
+  try {
+    for (const i of todo){
+      spotDone.add(i.id);
+      const b = dbx.batch();
+      b.set(dbx.ref('itemSecrets/' + i.id), {officeId: i.officeId, spot: S.secrets[i.id]?.spot ?? String(i.spot ?? '')}, {merge: true});
+      b.update(dbx.ref('items/' + i.id), {spot: deleteField()});
+      try { await b.commit(); n++; }
+      catch (e){
+        console.warn(e); spotDone.delete(i.id);
+        // القواعد الجديدة لم تُنشر بعد: نتوقف ونعيد المحاولة عند فتح اللوحة من جديد
+        if (String(e?.code || '').includes('permission-denied')){ spotDenied = true; toast(t('migrate.publishRules')); return; }
+      }
+    }
+    if (n) toast(t('migrate.spots', {items: tp('n.item', n)}));
+  } finally { spotRunning = false; }
 }

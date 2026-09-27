@@ -12,8 +12,11 @@ export async function loadStats(officeId, force = false){
   if (!officeId || loading.has(officeId) || (S.stats[officeId] && !force)) return;
   loading.add(officeId);
   try {
-    const [items, reports] = await Promise.all([dbx.list('items', [['officeId', '==', officeId]]), dbx.list('reports', [['officeId', '==', officeId]]).catch(() => [])]);
-    S.stats[officeId] = {items, reports, at: Date.now()};
+    const [items, reports, secrets] = await Promise.all([dbx.list('items', [['officeId', '==', officeId]]), dbx.list('reports', [['officeId', '==', officeId]]).catch(() => []),
+      dbx.list('itemSecrets', [['officeId', '==', officeId]]).catch(() => [])]);
+    // مكان العثور سري (المرحلة E5): نأخذه من itemSecrets، ونضم spot فقط (لا شيء غيره من التفاصيل السرية)
+    const spotOf = Object.fromEntries(secrets.filter(x => x.spot !== undefined).map(x => [x.id, x.spot]));
+    S.stats[officeId] = {items: items.map(i => i.id in spotOf ? {...i, spot: spotOf[i.id]} : i), reports, at: Date.now()};
   } catch (e){ console.warn(e); S.stats[officeId] = {items: [], reports: [], at: Date.now(), error: true}; }
   finally { loading.delete(officeId); touch(); }
 }
@@ -61,7 +64,7 @@ export async function exportCsv(officeId){
   await loadStats(officeId);
   const items = S.stats[officeId]?.items || [];
   if (!items.length){ toast(t('sx.csvEmpty')); return; }
-  // الحقول العامة فقط: لا تفاصيل سرية في ملف قد يُرسل خارج المكتب
+  // الحقول العامة فقط: لا تفاصيل سرية في ملف قد يُرسل خارج المكتب، باستثناء مكان العثور (من itemSecrets، للإحصاء)
   const office = S.offices.find(o => o.id === officeId);
   const cols = ['ref', 'category', 'type', 'place', 'foundDate', 'status', 'returnedDate', 'disposal', 'createdAt', 'sample'];
   const rows = items.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).map(i => [

@@ -1,6 +1,6 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
 import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
-import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, spotName, showTitle, isoDay, LS, disposalLabel } from '../utils.js';
+import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale } from '../state.js';
 import { backBtn, thumbHtml, miniItem, catPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView } from './common.js';
@@ -61,7 +61,7 @@ export function visibleItems(){
   if (S.filter.cat !== 'all') arr = arr.filter(i => i.cat === S.filter.cat);
   if (S.filter.range !== 'all'){ const lim = +S.filter.range; arr = arr.filter(i => daysAgo(i.foundDate) <= lim); }
   const q = tokens(S.filter.q);
-  if (q.length) return arr.map(i => ({i, s: textScore(q, i)})).filter(x => x.s > 0).sort((a,b) => b.s - a.s || (b.i.createdAt||0) - (a.i.createdAt||0)).map(x => x.i);
+  if (q.length) return arr.map(i => ({i, s: textScore(q, i, false)})).filter(x => x.s > 0).sort((a,b) => b.s - a.s || (b.i.createdAt||0) - (a.i.createdAt||0)).map(x => x.i);
   return arr.sort((a,b) => (dayNum(b.foundDate) - dayNum(a.foundDate)) || ((b.createdAt||0) - (a.createdAt||0)));
 }
 // بطاقات هيكلية تظهر أثناء تحميل المفقودات
@@ -75,7 +75,6 @@ export function card(i){
     <div class="card-body">
       <span class="ref">${esc(i.ref)}</span>
       <h3>${esc(showTitle(i))}</h3>
-      ${i.spot ? `<div class="meta">${icon('pin')}<span>${esc(spotName(i.spot, i.officeId))}</span></div>` : ''}
       <div class="meta">${icon('clock')}<span>${relDay(i.foundDate)}</span></div>
       ${i.status !== 'available' ? pill(ITEM_STATUS, i.status) : ''}
     </div>
@@ -162,7 +161,7 @@ export function vItem(){
           <dt>${t('c.category')}</dt><dd>${icon(c.icon)}${esc(catName(i.cat))}${i.sub ? ' — ' + esc(subLabel(i.sub)) : ''}</dd>
           ${staffMode && f.color ? `<dt>${t('c.color')}</dt><dd>${colorDot(f.color)}${esc(colorName(f.color))}</dd>` : ''}
           ${staffMode && f.brand ? `<dt>${t('st.cmpBrand')}</dt><dd>${esc(f.brand)}</dd>` : ''}
-          <dt>${t('if.spot')}</dt><dd>${esc((staffMode ? spotText(f) : spotName(i.spot, i.officeId)) || t('it.unknown'))}</dd>
+          ${staffMode ? `<dt>${t('if.spot')}</dt><dd>${esc(spotText(f) || t('it.unknown'))}</dd>` : ''}
           <dt>${t('if.date')}</dt><dd>${fmtDate(i.foundDate)} <span class="muted">(${relDay(i.foundDate)})</span></dd>
           ${staffMode && f.storage ? `<dt>${t('if.storage')}</dt><dd>${esc(f.storage)}</dd>` : ''}
           ${i.status === 'disposed' && i.disposal ? `<dt>${t('a.method')}</dt><dd>${disposalLabel(i.disposal)}${i.disposedAt ? ` <span class="muted">(${fmtDate(isoDay(i.disposedAt))})</span>` : ''}</dd>` : ''}
