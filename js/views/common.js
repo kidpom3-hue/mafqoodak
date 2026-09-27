@@ -1,6 +1,6 @@
 // عناصر واجهة مشتركة بين الصفحات
-import { icon, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel } from '../constants.js';
-import { t } from '../i18n.js';
+import { icon, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf } from '../constants.js';
+import { t, hasKey } from '../i18n.js';
 import { esc, relDay, colorDot, isBuilding, roomWord, spotText, showTitle } from '../utils.js';
 import { aiReady } from '../ai.js';
 import { THEMES, theme } from '../theme.js';
@@ -46,6 +46,38 @@ export function subsPicker(catId, sel){
 // unknown: يضيف خيار «لا أتذكر» (في نموذج الاستلام)
 export function colorPicker(sel, unknown = false){
   return `<div class="swatches" role="radiogroup" aria-label="${t('c.color')}">${unknown ? `<label><input type="radio" name="color" value="" ${!sel ? 'checked' : ''}><span class="sw sw-unknown">?</span>${t('c.dontRemember')}</label>` : ''}${COLORS.map(c => `<label><input type="radio" name="color" value="${c.id}" ${sel === c.id ? 'checked' : ''}><span class="sw" style="background:${c.hex}"></span>${esc(colorName(c.id))}</label>`).join('')}</div>`;
+}
+/* ---------- أسئلة التصنيف (المرحلة E) ----------
+   تُرسم داخل <div id="cat-fields"> في نموذج الغرض (item) والبلاغ (report) والطلب (claim)، وتُعاد عند تغيير التصنيف.
+   الخانات: اللون (color)، والماركة (brand)، وإجابات الأسئلة d_<k>. src: {color, brand, details} لتعبئتها */
+// تسمية السؤال: الخاصة بالتصنيف (df.<cat>.<k>) إن وُجدت، وإلا العامة (df.<k>)
+export const dfLabel = (catId, k) => t(hasKey(`df.${catId}.${k}`) ? `df.${catId}.${k}` : `df.${k}`);
+// اسم خيار في سؤال اختيار (مثل «كان في»: ظرف، محفظة…)
+export const dfOpt = (k, o) => t(`df.${k}.${o}`);
+// هل السؤال إجباري في هذا النموذج؟ (البلاغ: كلها اختيارية)
+export const detailReq = (d, mode) => mode === 'item' ? d.req === 'both' || d.req === 'staff' : mode === 'claim' ? d.req === 'both' || d.req === 'claim' : false;
+export function catFields(catId, src = {}, mode = 'item'){
+  if (!catId) return '';
+  const q = claimOf(catId), det = src?.details || {};
+  const opt = on => on ? '' : ` <span class="hint">${t('c.optional')}</span>`;
+  const colorLabel = hasKey(`df.${catId}.color`) ? t(`df.${catId}.color`) : t(mode === 'claim' ? 'cl.color' : 'c.color');
+  const brandReq = mode === 'claim' && q.req.includes('brand');
+  const out = [];
+  if (q.fields.includes('color')) out.push(`<div class="field"><span class="label">${colorLabel}</span>${colorPicker(src?.color || '', mode === 'claim')}</div>`);
+  if (q.fields.includes('brand') && mode !== 'report') out.push(`<div class="field"><label for="cf-brand">${t('if.brand')}${mode === 'item' ? ` <span class="hint">${t('if.staffOnly')}</span>` : opt(brandReq)}</label>
+    <input id="cf-brand" name="brand" class="input" maxlength="40" autocomplete="off" value="${esc(src?.brand || '')}" ${mode === 'item' ? `placeholder="${t('if.brandPh')}"` : ''}></div>`);
+  for (const d of q.details){
+    if (mode === 'claim' && d.as) continue;   // الاسم وآخر 4 أرقام في صندوق الهوية أصلاً
+    const id = `cf-${d.k}`, v = det[d.k] || '', req = detailReq(d, mode);
+    const lab = `<label for="${id}">${dfLabel(catId, d.k)}${opt(req)}</label>`;
+    const ph = hasKey(`df.${d.k}.ph`) ? ` placeholder="${esc(t(`df.${d.k}.ph`))}"` : '';
+    const input = d.type === 'pick'
+      ? `<select id="${id}" name="d_${d.k}" class="input"><option value="">${t('df.pickNone')}</option>${d.opts.map(o => `<option value="${o}" ${v === o ? 'selected' : ''}>${dfOpt(d.k, o)}</option>`).join('')}</select>`
+      : d.type === 'text' ? `<input id="${id}" name="d_${d.k}" class="input" maxlength="80" autocomplete="off" value="${esc(v)}"${ph}>`
+      : `<input id="${id}" name="d_${d.k}" class="input num-in" inputmode="numeric" dir="ltr" autocomplete="off" maxlength="${d.type === 'last4' ? 4 : 9}" value="${esc(v)}"${ph}>`;
+    out.push(`<div class="field${req ? ' req' : ''}">${lab}${input}</div>`);
+  }
+  return out.join('');
 }
 // كيف تظهر صورة الغرض للعامة (يختارها الموظف)
 export function photoModePicker(sel = 'blur'){

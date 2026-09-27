@@ -1,9 +1,9 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
-import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf } from '../constants.js';
+import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, spotName, showTitle, isoDay, LS, disposalLabel } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale } from '../state.js';
-import { backBtn, thumbHtml, miniItem, catPicker, colorPicker, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView } from './common.js';
+import { backBtn, thumbHtml, miniItem, catPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView } from './common.js';
 import { claimCardStaff, rivals, dateOf, qaBox, timeline, catKeepNote } from './staff.js';
 import { aiReady } from '../ai.js';
 import { hydrate } from '../ui.js';
@@ -190,29 +190,32 @@ export function vClaimForm(){
   const prev = S.myClaims.find(cl => cl.itemId === i.id);
   if (prev) return `<div class="wrap" data-view="claim">${backBtn()}<div class="note warn">${icon('info')}<span>${t('cl.already')}</span></div>
     <button class="btn soft" data-act="nav" data-r="mine">${t('it.follow')}</button></div>`;
+  // «هذا غرضي — اطلب استلامه» من بلاغ عليه ترشيح: الطلب يُعبّأ من البلاغ تلقائياً ويُربط به (reportId)
+  const pre = S.route.params.report ? myReports().find(r => r.id === S.route.params.report && r.status === 'open') : null;
   // بلاغ مفتوح من التصنيف نفسه: نعرض تعبئة الطلب منه
-  const rep = myReports().find(r => r.status === 'open' && r.cat === i.cat && r.officeId === i.officeId);
-  // أسئلة الاستلام حسب التصنيف (constants.js): الوثائق والنقود بلا لون ولا ماركة
-  const q = claimOf(i.cat), ids = i.cat === 'ids';
+  const rep = pre ? null : myReports().find(r => r.status === 'open' && r.cat === i.cat && r.officeId === i.officeId);
+  // أسئلة التصنيف (constants.js): نفس أسئلة الموظف، والإثبات الحر اختياري إن كان في التصنيف سؤال إجباري
+  const ids = i.cat === 'ids', proofOpt = claimHasRequired(i.cat), q = claimOf(i.cat);
+  const src = pre && pre.cat === i.cat ? {color: pre.color, details: pre.details || {}} : {};
   return `<div class="wrap" data-view="claim">${backBtn()}
     <section class="hero"><div class="hero-kicker">${icon('shield')}${t('cl.kicker')}</div><h1 class="hero-title">${t('cl.title')}</h1></section>
     ${miniItem(i)}
     <form data-form="claim" data-id="${esc(i.id)}" class="panel" novalidate>
       ${rep ? `<div class="note info">${icon('bell')}<span>${t('cl.hasReport', {title: esc(rep.title)})}</span><button type="button" class="btn sm soft" data-act="useReport" data-id="${esc(rep.id)}">${t('cl.useReport')}</button></div>` : ''}
-      <input type="hidden" name="reportId" value="">
+      ${pre ? `<div class="note info">${icon('bell')}<span>${t('cl.fromReport', {title: esc(pre.title)})}</span></div>` : ''}
+      <input type="hidden" name="reportId" value="${esc(pre?.id || '')}">
       <div class="field id-box" role="group" aria-labelledby="c-idt"><span class="label" id="c-idt">${icon('idcard')}${t('cl.idTitle')}</span>
         <div class="field"><label for="c-name">${t(ids ? 'cl.nameIds' : 'cl.name')}</label><input id="c-name" name="claimantName" class="input" maxlength="120" autocomplete="name" required></div>
         <div class="field"><label for="c-last4">${t(ids ? 'cl.last4Ids' : 'cl.last4')}</label><input id="c-last4" name="idLast4" class="input" inputmode="numeric" maxlength="4" dir="ltr" autocomplete="off" required></div>
         <span class="hint">${icon('lock')}${t('cl.idPrivate')}</span></div>
-      ${q.fields.includes('color') ? `<div class="field"><span class="label">${t('cl.color')}</span>${colorPicker('', true)}</div>` : ''}
-      ${q.fields.includes('brand') ? `<div class="field"><label for="c-brand">${t('if.brand')} <span class="hint">${t('c.optional')}</span></label><input id="c-brand" name="brand" class="input" maxlength="40" autocomplete="off"></div>` : ''}
-      <div class="field"><label for="proof">${t(i.cat === 'cash' ? 'cl.proofCash' : 'cl.proof')}</label>
-        <textarea id="proof" name="proof" class="input" required></textarea>
+      <div id="cat-fields" data-mode="claim">${catFields(i.cat, src, 'claim')}</div>
+      <div class="field"><label for="proof">${t(proofOpt ? 'cl.proofMore' : 'cl.proof')}${proofOpt ? ` <span class="hint">${t('c.optional')}</span>` : ''}</label>
+        <textarea id="proof" name="proof" class="input" ${proofOpt ? '' : 'required'}>${esc(pre?.desc || '')}</textarea>
         <span class="hint">${t(q.hint)}</span></div>
-      <div class="field"><label for="c-spot">${t('cl.where')}</label><select id="c-spot" name="spot" class="input">${spotOptions(o, '')}</select></div>
-      ${spotExtra(null)}
-      <div class="field"><label for="c-date">${t('cl.when')} <span class="hint">${t('c.optional')}</span></label><input id="c-date" name="lostDate" type="date" class="input" max="${today()}">
-        <span class="hint date-hint">${t('cl.dateHint')}</span></div>
+      <div class="field"><label for="c-spot">${t('cl.where')}</label><select id="c-spot" name="spot" class="input">${spotOptions(o, pre?.spot || '')}</select></div>
+      ${spotExtra(pre)}
+      <div class="field"><label for="c-date">${t('cl.when')} <span class="hint">${t('c.optional')}</span></label><input id="c-date" name="lostDate" type="date" class="input" max="${today()}" value="${esc(pre?.lostDate || '')}">
+        <span class="hint date-hint" ${pre?.lostDate ? 'hidden' : ''}>${t('cl.dateHint')}</span></div>
       <label class="check"><input type="checkbox" name="pledge" id="pledge"><span>${t('cl.pledge')}</span></label>
       <div class="form-err" hidden></div>
       <button class="btn block" type="submit">${icon('check')}${t('cl.send')}</button>
@@ -234,7 +237,7 @@ export function vReportForm(){
       ${photoField(null, t('rp.photo'))}
       <div class="field"><span class="label">${t('c.category')}</span>${catPicker('')}</div>
       <div class="field" id="subs-field" hidden><span class="label">${t('c.type')}</span><div id="subs"></div></div>
-      <div class="field"><span class="label">${t('c.color')}</span>${colorPicker('')}</div>
+      <div id="cat-fields" data-mode="report"></div>
       <div class="field"><label for="r-title">${t('rp.name')}</label><input id="r-title" name="title" class="input" required placeholder="${t('rp.namePh')}" maxlength="80"></div>
       <div class="field"><label for="r-desc">${t('rp.desc')}</label><textarea id="r-desc" name="desc" class="input" placeholder="${t('rp.descPh')}" maxlength="600"></textarea></div>
       <div class="two">
@@ -278,8 +281,8 @@ export function foundCardMine(f, focus){
   const o = S.offices.find(x => x.id === f.officeId);
   const yours = f.status === 'received' && it?.status === 'disposed' && it.disposal === 'finder';   // أُعيد لمن وجده
   const st = yours ? 'yours' : f.status === 'received' && it?.status === 'returned' ? 'returned' : f.status;
-  const body = st === 'pending' ? `${f.code ? `<div class="code-tag"><small>${t('hi.code')}</small><span class="digits" dir="ltr">${esc(f.code)}</span><small>${t('hi.codeHint')}</small></div>` : ''}
-      <div class="note info">${icon('building')}<span>${t('hi.pendingNote', {place: esc(oPlace(o) || oName(o))})}</span></div>
+  const body = st === 'pending' ? `<div class="note info">${icon('building')}<span>${t('hi.pendingNote', {place: esc(oPlace(o) || oName(o))})}</span></div>
+      ${f.code ? `<span class="meta">${t('hi.codeLine')} <span dir="ltr">${esc(f.code)}</span></span>` : ''}
       <div class="btn-row"><button class="btn sm ghost" data-act="cancelFound" data-id="${esc(f.id)}">${icon('x')}${t('hi.cancel')}</button></div>`
     : st === 'returned' ? `<div class="note ok">${icon('check')}<span>${t('hi.returned')}</span></div>`
     : st === 'yours' ? `<div class="note ok">${icon('check')}<span>${t('hi.yours')}${it ? ` (<b dir="ltr">${esc(it.ref)}</b>)` : ''}</span></div>
@@ -317,41 +320,53 @@ export function claimCardMine(c){
   else if (c.status === 'rejected') body = `<div class="note warn">${icon('info')}<span>${c.note ? t('mine.rejectedWhy', {note: esc(noteText(c.note))}) : t('mine.rejected')}</span></div>`;
   else if (c.status === 'expired') body = `<div class="note warn">${icon('clock')}<span>${t('mine.expired')}</span></div>`;
   else if (c.status === 'cancelled') body = `<div class="note">${icon('info')}<span>${c.note ? t('mine.cancelledWhy', {note: esc(noteText(c.note))}) : t('mine.cancelled')}</span></div>`;
-  return `<div class="box">
+  return `<div class="box" id="claim-${esc(c.id)}" tabindex="-1">
     <div class="box-head"><div>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<h3>${esc(i ? showTitle(i) : t(gone ? 'mine.goneTitle' : 'c.loadingDots'))}</h3><span class="meta">${icon('building')}${esc(officeName(c.officeId))} · ${t('mine.sent', {when: relTime(c.createdAt)})}</span></div>${pill(CLAIM_STATUS, c.status)}</div>
     ${['pending', 'approved', 'done'].includes(c.status) && !gone ? claimSteps(c.status) : ''}
     ${body}
   </div>`;
 }
 export function reportCardMine(r, focus){
-  // ترشيح الموظف يظهر فقط ما دام الغرض متاحاً أو محجوزاً (لا بعد تسليمه لغيرك)
+  // ترشيح الموظف يظهر فقط ما دام الغرض متاحاً أو محجوزاً (لا بعد تسليمه لغيرك)، ولم يقل صاحب البلاغ «ليس غرضي»
   if (r.staffPick && !item(r.staffPick)) ensureItem(r.staffPick);
   const pickItem = r.staffPick ? item(r.staffPick) : null;
-  const pick = pickItem && ACTIVE.includes(pickItem.status) ? pickItem : null;
+  const pick = pickItem && ACTIVE.includes(pickItem.status) && r.pickRejected !== r.staffPick ? pickItem : null;
   // «قد يكون لك»: مطابقة صارمة بالبيانات العامة، بلا نسب مئوية
   const cands = r.status === 'open' ? maybeFor(r, 4).filter(i => i.id !== r.staffPick) : [];
   const ai = r.ai?.matches || [];
+  // طلب استلام نشط مرتبط بالبلاغ: لا زر إغلاق، بل متابعة الطلب (إن رُفض يعود البلاغ كما كان)
+  const active = linkedClaim(r);
+  const closeBtn = active ? '' : `<button class="btn sm ghost" data-act="closeReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.foundIt')}</button>`;
+  const claimNote = active ? `<div class="note info">${icon('inbox')}<span>${t('rc.hasClaim', {status: `<b>${esc(statusLabel(CLAIM_STATUS[active.status]))}</b>`})}</span>
+      <button class="btn sm soft" data-act="showClaim" data-id="${esc(active.id)}">${t('rc.openClaim')}</button></div>` : '';
+  const pickBox = pick ? `<div class="pick-box"><span class="t">${icon('shield')}${t('rc.staffPick')}</span>${miniItem(pick)}
+      ${active ? '' : `<div class="btn-row"><button class="btn sm" data-act="goClaim" data-id="${esc(pick.id)}" data-report="${esc(r.id)}">${icon('check')}${t('rc.isMine')}</button>
+        <button class="btn sm ghost" data-act="notMine" data-id="${esc(r.id)}">${icon('x')}${t('rc.notMine')}</button></div>`}</div>` : '';
   return `<div class="box" ${focus ? 'style="border-color:var(--primary)"' : ''}>
     <div class="box-head"><div><h3>${esc(r.title)}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''} · ${t('st.lostOn', {date: relDay(r.lostDate)})}</span><span class="meta">${icon('building')}${esc(officeName(r.officeId))}</span></div>${pill(REPORT_STATUS, r.status)}</div>
-    ${r.status === 'open' && isStale(r) ? `<div class="note warn stale">${icon('clock')}<span><b>${t('rc.stillQ')}</b> ${t('rc.stillHint')}</span></div>
+    ${r.status === 'open' && isStale(r) && !active ? `<div class="note warn stale">${icon('clock')}<span><b>${t('rc.stillQ')}</b> ${t('rc.stillHint')}</span></div>
       <div class="btn-row"><button class="btn sm" data-act="renewReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.stillYes')}</button>
         <button class="btn sm ghost" data-act="closeReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.stillFound')}</button></div>`
     : r.status === 'open' ? `
-      ${pick ? `<div class="pick-box"><span class="t">${icon('shield')}${t('rc.staffPick')}</span>${miniItem(pick)}</div>` : ''}
+      ${claimNote}
+      ${pickBox}
       ${cands.length ? `<span class="label">${t('rc.maybe')}</span><div class="list">${cands.map(i => miniItem(i)).join('')}</div>
         <p class="hint">${t('rc.maybeHint')}</p>`
-        : !pick ? `<div class="note">${icon('clock')}<span>${t('rc.none')}</span></div>` : ''}
+        : !pick && !active ? `<div class="note">${icon('clock')}<span>${t('rc.none')}</span></div>` : ''}
       ${ai.length ? `<span class="label">${icon('spark')} ${t('rc.ai')}</span><div class="list">${ai.map(m => { const it = item(m.id); return it && ACTIVE.includes(it.status) ? `<div>${miniItem(it)}<div class="reason">${esc(m.reason || '')}</div></div>` : ''; }).join('')}</div>`
         : r.ai ? `<div class="note">${icon('spark')}<span>${t('rc.aiNone', {when: relTime(r.ai.at)})}</span></div>` : ''}
       <div class="btn-row">
         ${aiReady() ? `<button class="btn sm soft" data-act="aiMatch" data-id="${esc(r.id)}">${icon('spark')}${t('rc.aiMatch')}</button>` : ''}
-        <button class="btn sm ghost" data-act="closeReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.foundIt')}</button>
+        ${closeBtn}
         <button class="btn sm ghost" data-act="delReport" data-id="${esc(r.id)}">${icon('trash')}${t('c.delete')}</button>
       </div>
       <span class="ai-status" id="ai-${esc(r.id)}"></span>`
-    : `<div class="btn-row"><button class="btn sm ghost" data-act="delReport" data-id="${esc(r.id)}">${icon('trash')}${t('rc.delete')}</button></div>`}
+    : `${r.closedReason ? `<div class="note ${r.closedReason === 'office' ? 'ok' : ''}">${icon('check')}<span>${t(r.closedReason === 'office' ? 'rc.closedOffice' : 'rc.closedSelf')}</span></div>` : ''}
+      <div class="btn-row"><button class="btn sm ghost" data-act="delReport" data-id="${esc(r.id)}">${icon('trash')}${t('rc.delete')}</button></div>`}
   </div>`;
 }
+// طلب الاستلام النشط (قيد المراجعة أو مقبول) المرتبط بالبلاغ: عبر reportId أو على الغرض المرشَّح
+export const linkedClaim = r => myClaims().find(c => (c.reportId === r.id || (r.staffPick && c.itemId === r.staffPick)) && ['pending', 'approved'].includes(c.status)) || null;
 
 /* ---------- visitor: office info ---------- */
 /* أسئلة شائعة — نصوصها في القاموسين (faq.q1… وfaq.a1…)، عدّلها كما تريد */

@@ -67,6 +67,9 @@ export function vStats(){
       ${table([t('if.spot'), t('sx.count')], spotRows.map(r => [r.label, r.n]))}</figure>
     ${s.lost.length ? `<figure class="panel viz"><figcaption class="section-title">${t('sx.byLost')}</figcaption>${hbars(s.lost.map(x => ({label: x.s ? spotName(x.s, id) : t('it.unknown'), n: x.n, tip: String(x.n)})))}
       ${table([t('if.spot'), t('sx.count')], s.lost.map(x => [x.s ? spotName(x.s, id) : t('it.unknown'), x.n]))}</figure>` : ''}
+    ${s.closed.some(x => x.n) ? `<section class="panel viz"><div class="section-title">${t('sx.closed')}</div>
+      <p class="kpi-line">${s.closed.map(x => `${t('sx.closed.' + x.k)} <b>${x.n}</b>`).join(' · ')}</p>
+      ${table([t('sx.closedWhy'), t('sx.count')], s.closed.map(x => [t('sx.closed.' + x.k), x.n]))}</section>` : ''}
     <p class="hint">${t('sx.note', {items: tp('n.item', data.items.length)})}</p>
   </div>`;
 }

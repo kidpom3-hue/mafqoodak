@@ -144,7 +144,7 @@ function navItems(){
   if (S.mode === 'staff'){
     const pend = S.claims.filter(c => c.status === 'pending').length;
     // البلاغات التي لها مرشّح لم يُرشَّح بعد + إشعارات التسليم المعلّقة
-    const open = S.reports.filter(r => r.status === 'open' && !r.staffPick && candidatesFor(r, 1, full).length).length + S.found.length;
+    const open = S.reports.filter(r => r.status === 'open' && (!r.staffPick || r.pickRejected === r.staffPick) && candidatesFor(r, 1, full).length).length + S.found.length;
     return [
       {r: 'staff', tab: 'items', l: t('nav.store'), i: 'box'},
       {r: 'add', l: t('nav.add'), i: 'plus'},

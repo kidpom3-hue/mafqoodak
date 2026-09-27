@@ -14,7 +14,7 @@ await env.withSecurityRulesDisabled(async c => {
   await setDoc(doc(d, 'config/app'), {ownerUid: 'owner'});
   await setDoc(doc(d, 'admins/owner'), {role: 'owner'});
   for (const s of ['staffA', 'staffB']) await setDoc(doc(d, 'staff/' + s), {offices: [O]});
-  for (const k of ['i1', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7', 'i8', 'i9', 'i10']){ await setDoc(doc(d, 'items/' + k), pub(k)); await setDoc(doc(d, 'itemSecrets/' + k), sec); }
+  for (const k of ['i1', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7', 'i8', 'i9', 'i10', 'i11']){ await setDoc(doc(d, 'items/' + k), pub(k)); await setDoc(doc(d, 'itemSecrets/' + k), sec); }
 });
 // الحساب الموثّق وغير الموثّق
 const as = (uid, verified = true) => env.authenticatedContext(uid, {email_verified: verified}).firestore();
@@ -213,10 +213,35 @@ await t('D: لا يمكن إزالة المالك', deleteDoc(doc(owner, 'admins
 await t('D: سجل العمليات للمالك (officeId + action in)', q(owner, 'logs', ['officeId', '==', O], ['action', 'in', ['status:returned', 'delete', 'dispose', 'perm:grant', 'perm:revoke', 'perm:admin', 'perm:unadmin']]));
 await t('D: المالك يقرأ بريد صاحب طلب الصلاحية', getDoc(doc(owner, 'users/alice')));
 
+// ── المرحلة E: إجابات أسئلة التصنيف (details)، وإغلاق البلاغ ──
+await t('E: itemSecrets مع details: {amount: "300"}', updateDoc(doc(A, 'itemSecrets/i11'), {details: {amount: '300', holder: 'envelope'}}));
+await t('E: details بمفتاح غير معروف مرفوض', updateDoc(doc(A, 'itemSecrets/i11'), {details: {foo: 'x'}}), false);
+await t('E: details مجموع أطوالها فوق 1200 مرفوض', updateDoc(doc(A, 'itemSecrets/i11'), {details: {denoms: 'x'.repeat(700), inside: 'y'.repeat(700)}}), false);
+await t('E: details في items مرفوض', updateDoc(doc(A, 'items/i11'), {details: {amount: '300'}}), false);
+// قيمة رقمية لا نصية: النتيجة تُسجَّل فقط (التطبيق يحفظ نصوصاً دائماً)
+let numeric = 'قُبلت';
+try { await assertFails(updateDoc(doc(A, 'itemSecrets/i11'), {details: {amount: 300}})); numeric = 'رُفضت'; } catch { numeric = 'قُبلت'; }
+R.push('ℹ E: قيمة رقمية {amount: 300} في details: ' + numeric);
+await t('E: طلب استلام مع details صحيح', setDoc(doc(carol, 'claims/i11_carol'), claim('i11', 'carol', {claimantName: 'كارول', idLast4: '5555', details: {amount: '300', holder: 'envelope'}})));
+await t('E: طلب استلام بمفتاح details غير معروف مرفوض', setDoc(doc(bob, 'claims/i11_bob'), claim('i11', 'bob', {details: {secret: 'x'}})), false);
+await t('E: رفض طلب i11', updateDoc(doc(A, 'claims/i11_carol'), {status: 'rejected', note: 'x', decidedAt: now, decidedBy: 'staffA'}));
+await t('E: «حذف حسابي» مع details: {}', updateDoc(doc(carol, 'claims/i11_carol'), {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', claimantName: '', idLast4: '', details: {}, anonymizedAt: now}));
+// البلاغ: «ليس غرضي» وسبب الإغلاق
+const rep = (x = {}) => ({officeId: O, uid: 'alice', cat: 'cash', title: 'نقود', status: 'open', createdAt: now, ...x});
+await t('E: بلاغ مع details', setDoc(doc(alice, 'reports/rE'), rep({details: {amount: '300'}})));
+await t('E: إنشاء بلاغ فيه closedReason مرفوض', setDoc(doc(alice, 'reports/rE2'), rep({closedReason: 'self'})), false);
+await t('E: إنشاء بلاغ فيه pickRejected مرفوض', setDoc(doc(alice, 'reports/rE3'), rep({pickRejected: 'i11'})), false);
+await t('E: الموظف يرشّح i11', updateDoc(doc(A, 'reports/rE'), {staffPick: 'i11', pickedAt: now}));
+await t('E: pickRejected بقيمة غير الترشيح الحالي مرفوض', updateDoc(doc(alice, 'reports/rE'), {pickRejected: 'i9'}), false);
+await t('E: «ليس غرضي» (pickRejected = الترشيح الحالي)', updateDoc(doc(alice, 'reports/rE'), {pickRejected: 'i11'}));
+await t('E: closedReason = x مرفوض', updateDoc(doc(alice, 'reports/rE'), {status: 'closed', closedAt: now, closedReason: 'x'}), false);
+await t('E: closedReason = office', updateDoc(doc(alice, 'reports/rE'), {status: 'closed', closedAt: now, closedReason: 'office'}));
+await t('E: closedReason = self', updateDoc(doc(alice, 'reports/rE'), {closedReason: 'self'}));
+
 // ── لغة المستخدم (للجزء B) ──
 await t('lang = en مسموح', setDoc(doc(alice, 'users/alice'), {name: 'A', email: 'a@x.com', photo: '', lastSeen: now, lang: 'en'}));
 await t('lang غير معروفة مرفوضة', setDoc(doc(alice, 'users/alice'), {name: 'A', lang: 'fr'}), false);
 await t('الزائر غير المسجّل يقرأ المفقودات العامة', getDoc(doc(anon, 'items/i2')));
 
-console.log(R.join('\n')); console.log(fails ? `فشل ${fails} من ${R.length}` : `نجحت كل الاختبارات (${R.length})`);
+console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

@@ -94,6 +94,9 @@ export function matchScore(r, it){
   let inter = 0; a.forEach(t => { if (b.has(t)) inter++; });
   if (a.size && b.size) s += Math.round(28 * inter / Math.min(a.size, b.size));
   if (r.lostDate && it.foundDate){ const d = dayNum(it.foundDate) - dayNum(r.lostDate); if (d < -1) s -= 30; else if (d <= 7) s += 6; }
+  // إجابة رقمية متطابقة تماماً بين البلاغ والتفاصيل السرية (المبلغ، عدد المفاتيح، آخر 4 أرقام): للموظف فقط،
+  // لأن الزائر يقارن بالبيانات العامة التي لا details فيها
+  for (const k of ['amount', 'keyCount', 'docLast4']) if (r.details?.[k] && r.details[k] === it.details?.[k]){ s += 15; break; }
   if (r.spot && it.spot && r.spot === it.spot){
     s += 6;
     if (r.bldg && r.bldg === it.bldg) s += 4;   // نفس المبنى يرفع احتمال التطابق

@@ -45,10 +45,23 @@ service cloud.firestore {
     function strMax(d, k, n) { return !(k in d) || (d[k] is string && d[k].size() <= n); }
     function photoDoc() { return request.resource.data.keys().hasOnly(['data']) && smallImage(); }
     // تفاصيل الغرض السرية: لا تُكتب أبداً في items (المقروءة للجميع)، مكانها itemSecrets
-    function secretKeys() { return ['color', 'brand', 'desc', 'bldg', 'room', 'storage']; }
+    function secretKeys() { return ['color', 'brand', 'desc', 'bldg', 'room', 'storage', 'details']; }
+    // إجابات أسئلة التصنيف (المبلغ، عدد المفاتيح، خلفية الشاشة…): خريطة نصوص قصيرة بمفاتيح معروفة فقط
+    // (نفس القائمة في DETAIL_KEYS في js/constants.js — عدّلهما معاً)
+    function detailKeys() {
+      return ['amount', 'denoms', 'holder', 'docName', 'docLast4', 'issuer', 'cardName', 'cashInside', 'model', 'lockscreen',
+              'mark', 'keyCount', 'keyring', 'carBrand', 'engraving', 'size', 'caseDesc', 'inside', 'bookName', 'nameOn'];
+    }
+    function validDetails(d) {
+      return !('details' in d) || (d.details is map
+        && d.details.keys().hasOnly(detailKeys())
+        && d.details.size() <= 8
+        // كل القيم نصوص، ومجموع أطوالها محدود
+        && d.details.values().join('').size() <= 1200);
+    }
     function validSecret(d) {
-      return d.keys().hasOnly(['officeId', 'title', 'color', 'brand', 'desc', 'bldg', 'room', 'storage', 'handoverNote', 'disposalNote', 'finderNote'])
-        && d.officeId is string
+      return d.keys().hasOnly(['officeId', 'title', 'color', 'brand', 'desc', 'bldg', 'room', 'storage', 'handoverNote', 'disposalNote', 'finderNote', 'details'])
+        && d.officeId is string && validDetails(d)
         && strMax(d, 'title', 400) && strMax(d, 'color', 60) && strMax(d, 'brand', 200) && strMax(d, 'desc', 4000)
         && strMax(d, 'bldg', 40) && strMax(d, 'room', 60) && strMax(d, 'storage', 200)
         && strMax(d, 'handoverNote', 600) && strMax(d, 'disposalNote', 600) && strMax(d, 'finderNote', 300);
@@ -66,8 +79,13 @@ service cloud.firestore {
 
     function validReport(d) {
       return d.keys().hasOnly(['officeId', 'uid', 'cat', 'sub', 'color', 'title', 'desc', 'spot', 'bldg', 'room',
-                               'lostDate', 'photo', 'status', 'createdAt', 'closedAt', 'renewedAt', 'ai', 'staffPick', 'pickedAt'])
+                               'lostDate', 'photo', 'status', 'createdAt', 'closedAt', 'renewedAt', 'ai', 'staffPick', 'pickedAt',
+                               'details', 'closedReason', 'pickRejected'])
         && d.officeId is string && d.status in ['open', 'closed']
+        && validDetails(d)
+        // سبب الإغلاق: وجده صاحبه بنفسه، أو استلمه من المكتب
+        && (!('closedReason' in d) || d.closedReason in ['self', 'office'])
+        && strMax(d, 'pickRejected', 100)
         && strMax(d, 'title', 400) && strMax(d, 'desc', 4000) && strMax(d, 'sub', 200) && strMax(d, 'color', 60)
         && strMax(d, 'spot', 400) && strMax(d, 'bldg', 40) && strMax(d, 'room', 60) && strMax(d, 'lostDate', 20)
         && (!('ai' in d) || d.ai is map);
@@ -170,13 +188,17 @@ service cloud.firestore {
         && request.resource.data.uid == me()
         && request.resource.data.status == 'open'
         && validReport(request.resource.data)
-        && !('staffPick' in request.resource.data) && !('pickedAt' in request.resource.data);
+        && !('staffPick' in request.resource.data) && !('pickedAt' in request.resource.data)
+        && !('pickRejected' in request.resource.data) && !('closedReason' in request.resource.data);
       allow update: if signedIn() && (
         // صاحب البلاغ: لا يغيّر صاحبه ولا مكتبه ولا ترشيح الموظف
         (resource.data.uid == me()
           && request.resource.data.uid == me()
           && request.resource.data.officeId == resource.data.officeId
           && request.resource.data.get('staffPick', '') == resource.data.get('staffPick', '')
+          // «ليس غرضي»: يرفض صاحب البلاغ ترشيح الموظف الحالي فقط
+          && (request.resource.data.get('pickRejected', '') == resource.data.get('pickRejected', '')
+              || request.resource.data.get('pickRejected', '') == resource.data.get('staffPick', ''))
           && validReport(request.resource.data))
         || (isStaffOf(resource.data.officeId) && onlyChanges(['staffPick', 'pickedAt']))
       );
@@ -194,7 +216,8 @@ service cloud.firestore {
     match /claims/{claimId} {
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
       allow create: if verified()
-        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'status', 'codeHash', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'details', 'status', 'codeHash', 'createdAt'])
+        && validDetails(request.resource.data)
         // الاسم كما في البطاقة وآخر 4 أرقام منها: يطابقها الموظف مع البطاقة عند التسليم
         && strMax(request.resource.data, 'claimantName', 120)
         && (!('idLast4' in request.resource.data) || request.resource.data.idLast4.matches('[0-9]{4}'))
@@ -228,7 +251,7 @@ service cloud.firestore {
         // (المرفوض يبقى حتى لا يُحذف ويُعاد إرساله لتخمين التفاصيل من جديد)
         || (signedIn() && resource.data.uid == me() && resource.data.status in ['done', 'rejected', 'expired', 'cancelled']
           && request.resource.data.uid == 'deleted' && request.resource.data.proof == ''
-          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'claimantName', 'idLast4', 'handoverNote', 'anonymizedAt']));
+          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'claimantName', 'idLast4', 'handoverNote', 'details', 'anonymizedAt']));
       // يحذف المستخدم طلبه ما دام قيد المراجعة فقط
       allow delete: if isAdmin()
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending');
