@@ -173,8 +173,9 @@ export async function makeBlur(dataUrl){
 }
 
 let toastTimer;
+// الرسالة المنبثقة في منطقة aria-live="polite" ثابتة في الصفحة (لا hidden)، فيقرؤها قارئ الشاشة عند تغيّر نصها
 export function toast(msg){
   const t = document.getElementById('toast'); if (!t) return;
-  t.textContent = msg; t.hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2800);
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.classList.remove('show'); t.textContent = ''; }, 2800);
 }

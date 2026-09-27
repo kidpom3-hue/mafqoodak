@@ -71,16 +71,19 @@
   <link rel="modulepreload" href="js/views/print.js">
   <link rel="modulepreload" href="js/views/stats.js">
   <link rel="modulepreload" href="js/views/audit.js">
+  <link rel="modulepreload" href="js/views/gov.js">
   <!-- المظهر واللغة المحفوظان على الجهاز يُطبَّقان قبل رسم الصفحة، حتى لا يومض المظهر أو الاتجاه الآخر -->
-  <script>try{var h=document.documentElement,s=localStorage,t=JSON.parse(s.getItem('mfq:theme')||'null'),l=JSON.parse(s.getItem('mfq:lang')||'null');if(t==='light'||t==='dark')h.setAttribute('data-theme',t);if(l==='en'){h.lang='en';h.dir='ltr'}}catch(e){}</script>
+  <script>try{var h=document.documentElement,s=localStorage,t=JSON.parse(s.getItem('mfq:theme')||'null'),l=JSON.parse(s.getItem('mfq:lang')||'null'),x=JSON.parse(s.getItem('mfq:text')||'null');if(t==='light'||t==='dark')h.setAttribute('data-theme',t);if(l==='en'){h.lang='en';h.dir='ltr'}if(x==='l'||x==='xl')h.setAttribute('data-text',x)}catch(e){}</script>
 </head>
 <body>
+  <!-- رابط «تخطَّ إلى المحتوى»: أول عنصر في الصفحة لمستخدمي لوحة المفاتيح وقارئ الشاشة (نصه يُترجم في main.js) -->
+  <a class="skip" href="#main" id="skip">تخطَّ إلى المحتوى</a>
   <div id="app">
     <header class="top" id="hdr"></header>
-    <main id="main"><div class="loading boot"><svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><path d="M9 6h17.5L35 14.5V33a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" fill="var(--primary)"/><circle cx="27.5" cy="12.5" r="2.6" fill="var(--bg)"/><circle cx="18" cy="21" r="5.6" fill="none" stroke="var(--primary-ink)" stroke-width="2.4"/><path d="m22.2 25.2 4.3 4.3" stroke="var(--primary-ink)" stroke-width="2.6" stroke-linecap="round"/><path d="M27.5 12.5C30 7 33 4.5 37 4" fill="none" stroke="var(--tag-line)" stroke-width="1.6" stroke-linecap="round"/></svg><span class="spin"></span></div></main>
-    <nav class="bottom" id="nav" hidden></nav>
+    <main id="main" tabindex="-1"><div class="loading boot"><svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><path d="M9 6h17.5L35 14.5V33a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" fill="var(--primary)"/><circle cx="27.5" cy="12.5" r="2.6" fill="var(--bg)"/><circle cx="18" cy="21" r="5.6" fill="none" stroke="var(--primary-ink)" stroke-width="2.4"/><path d="m22.2 25.2 4.3 4.3" stroke="var(--primary-ink)" stroke-width="2.6" stroke-linecap="round"/><path d="M27.5 12.5C30 7 33 4.5 37 4" fill="none" stroke="var(--tag-line)" stroke-width="1.6" stroke-linecap="round"/></svg><span class="spin"></span></div></main>
+    <nav class="bottom" id="nav" hidden aria-label="Main"></nav>
     <div id="sheet" hidden></div>
-    <div id="toast" hidden role="status" aria-live="polite"></div>
+    <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   </div>
   <noscript><div class="noscript">يحتاج تطبيق مفقودك إلى تفعيل JavaScript في المتصفح.</div></noscript>
   <script type="module" src="js/main.js"></script>

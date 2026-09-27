@@ -2,7 +2,7 @@
 import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale } from '../state.js';
+import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo } from '../state.js';
 import { backBtn, thumbHtml, miniItem, catPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView } from './common.js';
 import { claimCardStaff, rivals, dateOf, qaBox, timeline, catKeepNote } from './staff.js';
 import { aiReady } from '../ai.js';
@@ -283,7 +283,8 @@ export function foundCardMine(f, focus){
   const body = st === 'pending' ? `<div class="note info">${icon('building')}<span>${t('hi.pendingNote', {place: esc(oPlace(o) || oName(o))})}</span></div>
       ${f.code ? `<span class="meta">${t('hi.codeLine')} <span dir="ltr">${esc(f.code)}</span></span>` : ''}
       <div class="btn-row"><button class="btn sm ghost" data-act="cancelFound" data-id="${esc(f.id)}">${icon('x')}${t('hi.cancel')}</button></div>`
-    : st === 'returned' ? `<div class="note ok">${icon('check')}<span>${t('hi.returned')}</span></div>`
+    : st === 'returned' ? `<div class="note ok">${icon('check')}<span>${t('hi.returned')}</span></div>
+      <div class="btn-row"><button class="btn sm soft" data-act="nav" data-r="thanks" data-id="${esc(f.id)}">${icon('print')}${t('ty.btn')}</button></div>`
     : st === 'yours' ? `<div class="note ok">${icon('check')}<span>${t('hi.yours')}${it ? ` (<b dir="ltr">${esc(it.ref)}</b>)` : ''}</span></div>
       ${o ? `<dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>` : ''}`
     : st === 'received' ? `<div class="note ok">${icon('check')}<span>${it ? t('hi.receivedRef', {ref: `<b>${esc(it.ref)}</b>`}) : t('hi.received')}</span></div>`
@@ -315,15 +316,33 @@ export function claimCardMine(c){
     : `<div class="note warn">${icon('info')}<span>${t('mine.noCode')}</span></div>`;
   // مهلة الاستلام للطلب المقبول
   if (c.status === 'approved' && c.pickupBy && !gone) body = `<div class="note ${Date.now() > c.pickupBy ? 'warn' : 'info'}">${icon('clock')}<span>${t(Date.now() > c.pickupBy ? 'st.pickupEnded' : 'mine.collectBy', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`})}</span></div>` + body;
-  else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>${t('mine.done', {when: relTime(c.doneAt)})}</span></div>`;
+  else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>${t('mine.done', {when: relTime(c.doneAt)})}</span></div>${rateBox(c)}`;
   else if (c.status === 'rejected') body = `<div class="note warn">${icon('info')}<span>${c.note ? t('mine.rejectedWhy', {note: esc(noteText(c.note))}) : t('mine.rejected')}</span></div>`;
   else if (c.status === 'expired') body = `<div class="note warn">${icon('clock')}<span>${t('mine.expired')}</span></div>`;
   else if (c.status === 'cancelled') body = `<div class="note">${icon('info')}<span>${c.note ? t('mine.cancelledWhy', {note: esc(noteText(c.note))}) : t('mine.cancelled')}</span></div>`;
   return `<div class="box" id="claim-${esc(c.id)}" tabindex="-1">
-    <div class="box-head"><div>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<h3>${esc(i ? showTitle(i) : t(gone ? 'mine.goneTitle' : 'c.loadingDots'))}</h3><span class="meta">${icon('building')}${esc(officeName(c.officeId))} · ${t('mine.sent', {when: relTime(c.createdAt)})}</span></div>${pill(CLAIM_STATUS, c.status)}</div>
+    <div class="box-head"><div>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<h3>${esc(i ? showTitle(i) : t(gone ? 'mine.goneTitle' : 'c.loadingDots'))}</h3><span class="meta">${icon('building')}${esc(officeName(c.officeId))} · ${t('mine.sent', {when: relTime(c.createdAt)})}</span>
+      <span class="meta">${t('c.reqNo')}: <b dir="ltr" class="req-no">${esc(claimNo(c))}</b></span></div>${pill(CLAIM_STATUS, c.status)}</div>
     ${['pending', 'approved', 'done'].includes(c.status) && !gone ? claimSteps(c.status) : ''}
     ${body}
   </div>`;
+}
+/* قياس رضا المستفيد: الطلب المكتمل يُسأل مرة واحدة «كيف كانت تجربتك؟» (5 نجوم وتعليق اختياري) */
+// مسودة التقييم: «طلباتي» تُعاد رسمها عند تغيّر البيانات، فنحفظ النجوم والتعليق حتى لا يضيعا
+export const RATE_DRAFT = {};
+const stars = n => `<span class="stars" role="img" aria-label="${t('rt.aria', {n})}">${[1, 2, 3, 4, 5].map(k => `<span class="${k <= n ? 'on' : ''}" aria-hidden="true">★</span>`).join('')}</span>`;
+function rateBox(c){
+  if (c.rating) return `<div class="note ok">${stars(c.rating)}<span>${t('rt.thanks')}</span></div>`;
+  const dr = RATE_DRAFT[c.id] || {};
+  return `<form class="rate" data-form="rate" data-id="${esc(c.id)}" novalidate>
+    <b id="rt-q-${esc(c.id)}">${t('rt.q')}</b>
+    <div class="star-row" role="group" aria-labelledby="rt-q-${esc(c.id)}">${[1, 2, 3, 4, 5].map(k => `<button type="button" class="star${k <= (dr.rating || 0) ? ' on' : ''}" data-act="rateStar" data-v="${k}" aria-pressed="${k === dr.rating}" aria-label="${t('rt.star', {n: k})}">★</button>`).join('')}</div>
+    <input type="hidden" name="rating" value="${dr.rating || ''}">
+    <label class="sr-only" for="rt-n-${esc(c.id)}">${t('rt.note')}</label>
+    <textarea id="rt-n-${esc(c.id)}" name="ratingNote" class="input" maxlength="300" rows="2" placeholder="${t('rt.note')}">${esc(dr.note || '')}</textarea>
+    <div class="form-err" hidden></div>
+    <button class="btn sm" type="submit">${icon('check')}${t('rt.send')}</button>
+  </form>`;
 }
 export function reportCardMine(r, focus){
   // ترشيح الموظف يظهر فقط ما دام الغرض متاحاً أو محجوزاً (لا بعد تسليمه لغيرك)، ولم يقل صاحب البلاغ «ليس غرضي»
@@ -369,6 +388,8 @@ export const linkedClaim = r => myClaims().find(c => (c.reportId === r.id || (r.
 
 /* ---------- visitor: office info ---------- */
 /* أسئلة شائعة — نصوصها في القاموسين (faq.q1… وfaq.a1…)، عدّلها كما تريد */
+// المصطلحات الموحّدة في كل الواجهة (المرحلة F): اسم واحد لكل مفهوم
+const TERMS = ['report', 'claim', 'handin', 'ref', 'reqNo', 'code'];
 const FAQ = () => [1, 2, 3, 4, 5, 6, 7].map(n => [t('faq.q' + n), t('faq.a' + n)]);
 
 export function vOffice(){
@@ -386,6 +407,11 @@ export function vOffice(){
       </dl>
     </div>
     <button class="btn ghost" data-act="pickOffice">${icon('pin')}${t('ui.changePlace')}</button>
+    <div class="panel">
+      <h2 class="section-title">${icon('grid')}${t('svc.indexTitle')}</h2>
+      <div class="svc-links" role="list">${['claim', 'report', 'handin'].map(id => `<button role="listitem" class="opt" data-act="nav" data-r="service" data-id="${id}">${icon(id === 'claim' ? 'shield' : id === 'report' ? 'bell' : 'tag')}<span class="grow">${t('svc.' + id + '.name')}</span>${icon('fwd')}</button>`).join('')}</div>
+      <button class="btn ghost" data-act="nav" data-r="numbers" style="align-self:flex-start">${icon('chart')}${t('num.title')}</button>
+    </div>
     <div class="panel">
       <div class="section-title">${icon('users')}${t('ofc.work')}</div>
       ${isStaff ? `<div class="note ok">${icon('check')}<span>${t('ofc.isStaff')}</span></div>
@@ -406,6 +432,10 @@ export function vOffice(){
     <section class="home-sec">
       <div class="sec-head"><h2>${t('ofc.faq')}</h2></div>
       <div class="faq">${FAQ().map(([q, a]) => `<details><summary>${esc(q)}${icon('chev')}</summary><p>${esc(a)}</p></details>`).join('')}</div>
+    </section>
+    <section class="home-sec">
+      <div class="sec-head"><h2>${t('term.title')}</h2></div>
+      <dl class="facts terms">${TERMS.map(k => `<dt>${t('term.' + k)}</dt><dd>${t('term.' + k + '.d')}</dd>`).join('')}</dl>
     </section>
     <button class="link" data-act="nav" data-r="privacy" style="align-self:center">${icon('lock')}${t('foot.privacy')}</button>
   </div>`;

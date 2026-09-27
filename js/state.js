@@ -33,6 +33,7 @@ export const S = {
   finders: {},                   // للموظف: صاحب إشعار التسليم المرتبط بالغرض (رقم الإشعار ← uid)، لتنبيه تضارب المصالح
   showStale: false,              // للموظف: إظهار البلاغات القديمة (أكثر من 60 يوماً دون تجديد)
   adminList: [],                 // للإدارة: حسابات المديرين (admins)
+  pubStats: {},                  // مؤشرات المكتب للزوار: رقم المكتب ← وثيقة publicStats أو null أو 'loading'
   audit: {},                     // للإدارة: «سجل العمليات» (مكتب|فلتر ← قائمة أو 'loading')
   verified: false,               // البريد موثّق؟
   secrets: {},   // تفاصيل المفقودات السرية (للموظف فقط): رقم الغرض ← {title, color, brand, desc, bldg, room, storage}
@@ -40,10 +41,10 @@ export const S = {
   officeId: LS.get('office', null),
   mode: LS.get('mode', 'visitor'),
   // فتح صفحة محددة من اختصارات أيقونة التطبيق (مثل ./#report)
-  route: SHARED ? {name: 'item', params: {id: SHARED[2]}} : {name: ['report', 'browse', 'mine', 'found', 'office', 'privacy'].includes(location.hash.slice(1)) ? location.hash.slice(1) : ({staff: 'staff', admin: 'admin'})[LS.get('mode', 'visitor')] || 'home', params: {}},
+  route: SHARED ? {name: 'item', params: {id: SHARED[2]}} : {name: ['report', 'browse', 'mine', 'found', 'office', 'privacy', 'numbers', 'a11y', 'service'].includes(location.hash.slice(1)) ? location.hash.slice(1) : ({staff: 'staff', admin: 'admin'})[LS.get('mode', 'visitor')] || 'home', params: {}},
   hist: [],
   filter: {q: '', cat: 'all', status: 'available', range: 'all'},
-  staffTab: 'items', staffQ: '', staffStatus: 'active', adminTab: 'overview',
+  staffTab: 'items', staffQ: '', claimQ: '', staffStatus: 'active', adminTab: 'overview',
   sheet: null,
 };
 
@@ -104,6 +105,8 @@ export function conflictOf(c, i){
    ويُخفى عند الموظف افتراضياً ولا يدخل في مطابقة الأغراض الجديدة */
 export const STALE_DAYS = 60;
 export const isStale = r => r?.status === 'open' && Date.now() - (r.renewedAt || r.createdAt || 0) > STALE_DAYS * 864e5;
+// رقم الطلب القصير (المرحلة F): REQ-XXXX يُحفظ عند الإنشاء، والطلبات القديمة يُشتق رقمها من آخر 4 أحرف من رقمها الطويل
+export const claimNo = c => c?.no || ('REQ-' + String(c?.id || '').slice(-4).toUpperCase());
 export const myCode = id => S.priv?.codes?.[id] || LS.get('codes', {})[id] || null;
 export const MATCH_MIN = SETTINGS.matchThreshold;
 

@@ -3,16 +3,16 @@ import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, 
 import { t, tp, tAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode } from './utils.js';
 import { loadStats, exportCsv } from './stats.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor } from './state.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut,
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification } from './firebase.js';
 import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar } from './ui.js';
-import { updateBrowse } from './views/visitor.js';
-import { updateStaff, staffItems, claimChecks, keepLeft, catKeepNote, foundCardStaff } from './views/staff.js';
-import { FORM, subsPicker, pubPhoto, person, themePicker, catFields, dfLabel, detailReq } from './views/common.js';
-import { setTheme } from './theme.js';
+import { updateBrowse, RATE_DRAFT } from './views/visitor.js';
+import { updateStaff, staffItems, staffClaims, claimChecks, keepLeft, catKeepNote, foundCardStaff } from './views/staff.js';
+import { FORM, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, detailReq } from './views/common.js';
+import { setTheme, setTextSize } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
 import { analyzePhoto, rankMatches, aiErrMsg, aiReady } from './ai.js';
 import { SETTINGS } from './config.js';
@@ -208,7 +208,8 @@ async function submitForm(form){
     await dbx.set('users/' + S.uid + '/private/codes', {codes: {[id]: code}}, {merge: true}).catch(e => console.warn(e));
     try {
       // خانات التصنيف فقط (الوثائق والنقود بلا لون ولا ماركة)، وإجابات أسئلته في details
-      await dbx.set('claims/' + id, {itemId: i.id, officeId: i.officeId, uid: S.uid, proof: val('proof').slice(0, 1200), details,
+      // رقم الطلب القصير يظهر للمستخدم والموظف، ويُبحث به في تبويب الاستلام
+      await dbx.set('claims/' + id, {itemId: i.id, officeId: i.officeId, uid: S.uid, no: 'REQ-' + refCode(4), proof: val('proof').slice(0, 1200), details,
         color: q.fields.includes('color') ? val('color') : '', brand: q.fields.includes('brand') ? val('brand').slice(0, 40) : '',
         claimantName: val('claimantName').slice(0, 120), idLast4: val('idLast4'),
         lostSpot: val('spot'), bldg, room, lostDate: val('lostDate'),
@@ -347,6 +348,8 @@ async function submitForm(form){
     const data = {name: val('name'), short: val('short'), type: val('type'), city: val('city'), code, place: val('place'), hours: val('hours'), phone: val('phone'),
       retentionDays: Math.max(7, Math.min(365, parseInt(val('retentionDays'), 10) || 90)),
       pickupDays: Math.max(1, Math.min(60, parseInt(val('pickupDays'), 10) || 7)),
+      // مدة مراجعة الطلب بأيام العمل (تظهر في بطاقة خدمة الاستلام)
+      reviewDays: Math.max(1, Math.min(30, parseInt(val('reviewDays'), 10) || 2)),
       spots: val('spots').split('\n').map(s => s.trim()).filter(Boolean).slice(0, 40),
       active: old ? old.active !== false : true, createdAt: old?.createdAt || Date.now()};
     // الأسماء بالإنجليزية (اختيارية): الفارغ يعني «اعرض العربي». أماكن spotsEn بنفس ترتيب spots
@@ -398,7 +401,7 @@ async function submitForm(form){
       for (const c of claims){
         // الاسم وآخر 4 أرقام وملاحظة التسليم تُمسح أيضاً (القواعد تسمح بذلك)
         if (['done', 'rejected', 'expired', 'cancelled'].includes(c.status)) await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '',
-          ...(c.answer ? {answer: ''} : {}), ...(c.claimantName ? {claimantName: ''} : {}), ...(c.idLast4 ? {idLast4: ''} : {}), ...(c.handoverNote ? {handoverNote: ''} : {}), ...(c.details ? {details: {}} : {}), anonymizedAt: Date.now()});
+          ...(c.answer ? {answer: ''} : {}), ...(c.claimantName ? {claimantName: ''} : {}), ...(c.idLast4 ? {idLast4: ''} : {}), ...(c.handoverNote ? {handoverNote: ''} : {}), ...(c.details ? {details: {}} : {}), ...(c.ratingNote ? {ratingNote: ''} : {}), anonymizedAt: Date.now()});
         else if (c.status === 'pending') await dbx.del('claims/' + c.id);
       }
       // إشعارات التسليم: المستلَم يبقى سجلاً للمكتب بلا بيانات صاحبه، والبقية تُحذف
@@ -434,6 +437,16 @@ async function submitForm(form){
     const ok = await write(() => dbx.set('foundReports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), spot: val('spot'), bldg, room,
       foundDate: val('foundDate') || today(), note: val('note').slice(0, 500), code, status: 'pending', createdAt: Date.now()}), t('hi.sent'));
     busy(form, false); if (ok){ S.hist = []; go('mine', {focus: id}, false); }
+    return;
+  }
+  // قياس الرضا: تقييم الطلب المكتمل مرة واحدة (القواعد تمنع التقييم الثاني)
+  if (kind === 'rate'){
+    const c = S.myClaims.find(x => x.id === form.dataset.id); if (!c || c.status !== 'done' || c.rating) return;
+    const rating = parseInt(val('rating'), 10);
+    if (!(rating >= 1 && rating <= 5)) return formErr(form, t('rt.need'));
+    busy(form, true);
+    const ok = await write(() => dbx.update('claims/' + c.id, {rating, ratingNote: val('ratingNote').slice(0, 300), ratedAt: Date.now()}), t('rt.thanks'));
+    busy(form, false); if (!ok) return;
     return;
   }
   // قبول طلب فيه تضارب مصالح: السبب إلزامي، ويُحفظ في note والسجل
@@ -542,7 +555,7 @@ const ACT = {
     if (r === 'admin' && tab) S.adminTab = tab;
     const fromNav = !!el.closest('#nav, .top-links, .brand');
     if (fromNav) S.hist = [];
-    go(r, {}, !fromNav);
+    go(r, el.dataset.id ? {id: el.dataset.id} : {}, !fromNav);   // data-id: مثل بطاقة خدمة محددة (service)
     if (fromNav && r !== homeRoute()) tabEntry();
   },
   back(){ back(); },
@@ -570,6 +583,7 @@ const ACT = {
         ${notifySupported() ? `<button class="opt" data-act="notify" aria-pressed="${notifyOn()}">${icon('bell')}<span class="grow">${t('nt.label')}</span><span class="pill ${notifyOn() ? 'ok' : 'mute'}">${t(notifyOn() ? 'nt.on' : 'nt.off')}</span></button>
           ${notifyDenied() ? `<p class="hint">${t('nt.deniedHint')}</p>` : ''}` : ''}
         <div class="opt-row"><span class="label">${icon('contrast')}${t('th.label')}</span>${themePicker()}</div>
+        <div class="opt-row"><span class="label">${icon('info')}${t('tx.label')}</span>${textPicker()}</div>
         <button class="opt" data-act="signOut">${icon('x')}${t('acc.signOut')}</button>
         <p class="hint">${icon('info')}${t('acc.shared')}</p>
         <button class="opt" data-act="nav" data-r="privacy">${icon('lock')}${t('acc.privacy')}</button>
@@ -613,6 +627,11 @@ const ACT = {
     setTheme(el.dataset.v);
     el.parentElement.querySelectorAll('button').forEach(b => { const on = b === el; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
   },
+  // حجم الخط: يُطبَّق فوراً ويُحفظ على الجهاز
+  textSize(el){
+    setTextSize(el.dataset.v);
+    el.parentElement.querySelectorAll('button').forEach(b => { const on = b === el; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+  },
   // إشعارات المتصفح: تفعيل أو إيقاف
   async notify(el){
     const r = await toggleNotify();
@@ -632,6 +651,12 @@ const ACT = {
   openItem(el){ go('item', {id: el.dataset.id}); },
   // «هذا غرضي — اطلب استلامه» من ترشيح البلاغ: يُعبّأ الطلب من البلاغ ويُربط به
   goClaim(el){ if (!needLogin()) go('claim', {id: el.dataset.id, ...(el.dataset.report ? {report: el.dataset.report} : {})}); },
+  // اختيار عدد النجوم في تقييم الطلب
+  rateStar(el){
+    const f = el.closest('form'), v = +el.dataset.v; if (!f) return;
+    f.querySelector('[name=rating]').value = v; (RATE_DRAFT[f.dataset.id] ||= {}).rating = v;
+    f.querySelectorAll('.star').forEach(b => { const on = +b.dataset.v <= v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(+b.dataset.v === v)); });
+  },
   // «ليس غرضي»: يرفض صاحب البلاغ ترشيح الموظف الحالي، فيراه الموظف ويرشّح غيره
   notMine(el){
     const r = S.myReports.find(x => x.id === el.dataset.id); if (!r?.staffPick) return;
@@ -821,6 +846,7 @@ const ACT = {
     const tip = i && cat(i.cat).staffCheck ? `<div class="note info">${icon('shield')}<span>${t(cat(i.cat).staffCheck)}</span></div>` : '';
     openSheet(`<h2>${icon('shield')} ${t('a.handTitle', {ref: i ? esc(i.ref) : ''})}</h2>
       <p class="muted">${t('a.askCode', {who: person(c.uid)})}</p>
+      <p class="meta">${t('c.reqNo')}: <b dir="ltr">${esc(claimNo(c))}</b></p>
       <dl class="facts id-facts"><dt>${t('st.cmpName')}</dt><dd>${c.claimantName ? esc(c.claimantName) : `<span class="muted">${t('st.notSaid')}</span>`}</dd>
         <dt>${t('st.cmpLast4')}</dt><dd>${c.idLast4 ? `<b dir="ltr">${esc(c.idLast4)}</b>` : `<span class="muted">${t('st.notSaid')}</span>`}</dd></dl>
       <div class="note warn">${icon('idcard')}<span>${t('a.matchId')}</span></div>${tip}
@@ -926,6 +952,8 @@ export function bindEvents(){
   app.addEventListener('input', e => {
     const t = e.target;
     if (t.id === 'q'){ S.filter.q = t.value; clearTimeout(qTimer); qTimer = setTimeout(updateBrowse, 120); }
+    if (t.name === 'ratingNote'){ const f = t.closest('form'); if (f) (RATE_DRAFT[f.dataset.id] ||= {}).note = t.value; }
+    if (t.id === 'cq'){ S.claimQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = staffClaims(); hydrate(); }, 120); }
     if (t.id === 'sq'){ S.staffQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = staffItems(); hydrate(); }, 120); }
     if (t.name === 'code' && t.classList.contains('code-input')) t.value = t.value.replace(/\D/g, '').slice(0, 6);
     // خانات الأرقام في أسئلة التصنيف: الأرقام الهندية إلى لاتينية، وحذف ما ليس رقماً

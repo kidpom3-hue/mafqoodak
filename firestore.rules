@@ -218,8 +218,10 @@ service cloud.firestore {
     match /claims/{claimId} {
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
       allow create: if verified()
-        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'details', 'status', 'codeHash', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'details', 'no', 'status', 'codeHash', 'createdAt'])
         && validDetails(request.resource.data)
+        // رقم الطلب القصير (مثل REQ-7K3M) يظهر للمستخدم والموظف
+        && strMax(request.resource.data, 'no', 16)
         // الاسم كما في البطاقة وآخر 4 أرقام منها: يطابقها الموظف مع البطاقة عند التسليم
         && strMax(request.resource.data, 'claimantName', 120)
         && (!('idLast4' in request.resource.data) || request.resource.data.idLast4.matches('[0-9]{4}'))
@@ -249,11 +251,16 @@ service cloud.firestore {
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending' && ('question' in resource.data)
           && onlyChanges(['answer', 'answeredAt'])
           && request.resource.data.answer is string && request.resource.data.answer.size() <= 2000)
+        // قياس الرضا: صاحب الطلب المكتمل يقيّمه مرة واحدة (1–5 وتعليق اختياري)
+        || (signedIn() && resource.data.uid == me() && resource.data.status == 'done' && !('rating' in resource.data)
+          && onlyChanges(['rating', 'ratingNote', 'ratedAt'])
+          && request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+          && strMax(request.resource.data, 'ratingNote', 300))
         // «حذف حسابي»: الطلب المنتهي لا يُحذف، بل تُمسح منه بيانات صاحبه ويبقى السجل للمكتب
         // (المرفوض يبقى حتى لا يُحذف ويُعاد إرساله لتخمين التفاصيل من جديد)
         || (signedIn() && resource.data.uid == me() && resource.data.status in ['done', 'rejected', 'expired', 'cancelled']
           && request.resource.data.uid == 'deleted' && request.resource.data.proof == ''
-          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'claimantName', 'idLast4', 'handoverNote', 'details', 'anonymizedAt']));
+          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'claimantName', 'idLast4', 'handoverNote', 'details', 'ratingNote', 'anonymizedAt']));
       // يحذف المستخدم طلبه ما دام قيد المراجعة فقط
       allow delete: if isAdmin()
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending');
@@ -284,6 +291,21 @@ service cloud.firestore {
           && request.resource.data.status in ['pending', 'received', 'cancelled']
           && strMax(request.resource.data, 'itemId', 100));
       allow delete: if isAdmin() || (signedIn() && resource.data.uid == me() && resource.data.status != 'received');
+    }
+
+    // مؤشرات المكتب للزوار (شفافية): أرقام مجمّعة فقط، يكتبها جهاز موظف المكتب عند فتح الإحصاءات
+    match /publicStats/{officeId} {
+      allow read: if true;
+      allow write: if isStaffOf(officeId)
+        && request.resource.data.keys().hasOnly(['month', 'monthReceived', 'monthReturned', 'totalReceived', 'totalReturned',
+                                                  'returnRate', 'avgDays', 'avgRating', 'ratings', 'updatedAt'])
+        && strMax(request.resource.data, 'month', 7)
+        && request.resource.data.get('monthReceived', 0) is number && request.resource.data.get('monthReturned', 0) is number
+        && request.resource.data.get('totalReceived', 0) is number && request.resource.data.get('totalReturned', 0) is number
+        && request.resource.data.get('returnRate', 0) is number
+        && request.resource.data.get('returnRate', 0) >= 0 && request.resource.data.get('returnRate', 0) <= 100
+        && request.resource.data.get('avgDays', 0) is number && request.resource.data.get('avgRating', 0) is number
+        && request.resource.data.get('ratings', 0) is number && request.resource.data.get('updatedAt', 0) is number;
     }
 
     // سجل العمليات (سلسلة الحيازة): يُضاف إليه فقط، ولا يُعدَّل

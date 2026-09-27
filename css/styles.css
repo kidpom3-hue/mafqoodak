@@ -588,7 +588,7 @@ html[dir=ltr] svg.i.dir{transform:scaleX(-1)}
 
 /* ملصقات QR وملصق المكتب */
 .qr-bg{fill:var(--qr-bg)} .qr-ink{fill:var(--qr-ink)}
-.labels{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.labels{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(250px,100%),1fr));gap:12px}
 .labels>.label{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:10px;break-inside:avoid;page-break-inside:avoid}
 .labels>.label .qr{width:104px;height:104px;flex:none}
 .lb-text{display:flex;flex-direction:column;gap:2px;min-width:0;font-size:12.5px;overflow-wrap:anywhere}
@@ -699,3 +699,49 @@ html[dir=ltr] svg.i.dir{transform:scaleX(-1)}
 .kpi-line{font-size:14px;line-height:1.8}
 .kpi-line b{font-size:18px;font-variant-numeric:tabular-nums}
 .box.flash{outline:2px solid var(--primary);outline-offset:2px}
+
+/* ---------- المرحلة F: مواكبة المنصات الحكومية ---------- */
+/* رابط «تخطَّ إلى المحتوى»: مخفي حتى يصله التركيز بلوحة المفاتيح */
+.skip{position:absolute;inset-inline-start:8px;top:-60px;z-index:100;background:var(--primary);color:var(--primary-ink);padding:10px 14px;border-radius:10px;font-weight:700;text-decoration:none}
+.skip:focus{top:8px}
+main:focus{outline:none}
+/* الرسالة المنبثقة: منطقة aria-live ثابتة، تظهر بالصنف show فقط */
+#toast:not(.show){position:fixed;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;box-shadow:none}
+/* مؤشر التركيز: 2px واضح في الوضعين (يشمل الروابط والأزرار داخل النصوص) */
+a:focus-visible,button:focus-visible,[role=button]:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+/* حجم الخط: كبير / أكبر (zoom على body يكبّر كل شيء بنسبته، ويبقى التخطيط مرناً حتى عرض 320) */
+html[data-text=l] body{zoom:1.12}
+html[data-text=xl] body{zoom:1.25}
+.text-seg .tx-a{font-weight:800;line-height:1}
+/* بطاقة الخدمة */
+.svc-sec p{line-height:1.8}
+.svc-list,.svc-steps{margin:0;padding-inline-start:22px;display:flex;flex-direction:column;gap:6px;line-height:1.7}
+.svc-links{display:flex;flex-direction:column;gap:6px}
+.terms dt{font-weight:700}
+/* تقييم الطلب المكتمل */
+.rate{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.star-row{display:flex;gap:4px;flex-wrap:wrap}
+.star{flex:1 1 36px;max-width:48px;min-width:36px;min-height:40px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:22px;line-height:1;cursor:pointer}
+.star.on{color:var(--warn);border-color:var(--warn);background:var(--warn-soft)}
+.stars{color:var(--warn);letter-spacing:1px;flex:none}
+.stars span:not(.on){color:var(--line)}
+.stars-sm{color:var(--warn)}
+.rating-notes{margin:0;padding-inline-start:18px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.req-no{font-family:var(--f-mono);font-weight:600;letter-spacing:.04em}
+/* شهادة شكر الأمانة: A4 أفقي عند الطباعة، بلا شعارات */
+.cert{background:var(--surface);border:2px solid var(--line);border-radius:18px;padding:32px 24px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px;max-width:900px;width:100%;margin-inline:auto}
+.cert-kicker{font-weight:700;color:var(--muted);letter-spacing:.04em}
+.cert-title{font-family:var(--f-display);font-size:clamp(26px,6vw,40px);font-weight:800}
+.cert-body{font-size:clamp(16px,3.4vw,21px);line-height:2;max-width:720px;overflow-wrap:anywhere}
+.cert-note{color:var(--muted)}
+@page thanks{size:A4 landscape;margin:14mm}
+@media print{
+  .thanks-page{page:thanks}
+  .cert{border-color:#999;min-height:170mm;justify-content:center;background:#fff;color:#000}
+  html[data-text] body{zoom:1}
+}
+/* بالخط الكبير: أزرار الاختيار (مثل أوضاع العرض وتبويبا الدخول) تلتف ولا تتجاوز عرض الشاشة */
+html[data-text] .seg{max-width:100%;flex-wrap:wrap}
+html[data-text] .seg button{white-space:normal;min-width:0;flex:1 1 auto;justify-content:center;text-align:center}
+html[data-text] .box-head{flex-wrap:wrap}
+html[data-text] .pill{white-space:normal}

@@ -3,7 +3,7 @@ import { icon, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLab
 import { t, hasKey } from '../i18n.js';
 import { esc, relDay, colorDot, isBuilding, roomWord, spotText, showTitle } from '../utils.js';
 import { aiReady } from '../ai.js';
-import { THEMES, theme } from '../theme.js';
+import { THEMES, theme, TEXTS, textSize } from '../theme.js';
 import { S, isStaffHere } from '../state.js';
 
 /* حالة نموذج الإدخال الحالي (الصورة المختارة) */
@@ -124,5 +124,7 @@ export function spotExtra(x){
 export const verifyPrompt = what => `<div class="empty">${icon('lock')}<b>${t('c.verifyTitle')}</b><span>${t('c.verifyBody', {what})}</span>
   <div class="btn-row" style="justify-content:center"><button class="btn" data-act="checkVerified">${icon('check')}${t('c.verified')}</button><button class="btn ghost" data-act="resendVerify">${t('c.resendLink')}</button></div></div>`;
 // اختيار المظهر: تلقائي / فاتح / داكن (في نافذة الحساب وأسفل الصفحة الرئيسية)
+// حجم الخط: عادي / كبير / أكبر (في نافذة الحساب وأسفل الصفحة الرئيسية، بجانب المظهر)
+export const textPicker = () => `<div class="seg theme-seg text-seg" role="radiogroup" aria-label="${t('tx.label')}">${TEXTS.map((v, k) => `<button type="button" class="${textSize() === v ? 'on' : ''}" data-act="textSize" data-v="${v}" role="radio" aria-checked="${textSize() === v}"><span class="tx-a" style="font-size:${13 + 3 * k}px" aria-hidden="true">${t('tx.a')}</span><span>${t('tx.' + v)}</span></button>`).join('')}</div>`;
 export const themePicker = () => `<div class="seg theme-seg" role="radiogroup" aria-label="${t('th.label')}">${THEMES.map(v => `<button type="button" class="${theme() === v ? 'on' : ''}" data-act="theme" data-v="${v}" role="radio" aria-checked="${theme() === v}">${icon(v === 'light' ? 'sun' : v === 'dark' ? 'moon' : 'contrast')}<span>${t('th.' + v)}</span></button>`).join('')}</div>`;
 export const loginPrompt = (msg) => `<div class="empty">${icon('lock')}<b>${msg}</b><button class="btn" data-act="login">${icon('users')}${t('c.signIn')}</button></div>`;

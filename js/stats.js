@@ -12,13 +12,47 @@ export async function loadStats(officeId, force = false){
   if (!officeId || loading.has(officeId) || (S.stats[officeId] && !force)) return;
   loading.add(officeId);
   try {
-    const [items, reports, secrets] = await Promise.all([dbx.list('items', [['officeId', '==', officeId]]), dbx.list('reports', [['officeId', '==', officeId]]).catch(() => []),
-      dbx.list('itemSecrets', [['officeId', '==', officeId]]).catch(() => [])]);
+    const [items, reports, secrets, done, pub] = await Promise.all([dbx.list('items', [['officeId', '==', officeId]]), dbx.list('reports', [['officeId', '==', officeId]]).catch(() => []),
+      dbx.list('itemSecrets', [['officeId', '==', officeId]]).catch(() => []),
+      // الطلبات المكتملة: للتقييم فقط (مساواة فقط، فلا فهرس مركّب)
+      dbx.list('claims', [['officeId', '==', officeId], ['status', '==', 'done']]).catch(() => []),
+      dbx.get('publicStats/' + officeId).catch(() => null)]);
     // مكان العثور سري (المرحلة E5): نأخذه من itemSecrets، ونضم spot فقط (لا شيء غيره من التفاصيل السرية)
     const spotOf = Object.fromEntries(secrets.filter(x => x.spot !== undefined).map(x => [x.id, x.spot]));
-    S.stats[officeId] = {items: items.map(i => i.id in spotOf ? {...i, spot: spotOf[i.id]} : i), reports, at: Date.now()};
-  } catch (e){ console.warn(e); S.stats[officeId] = {items: [], reports: [], at: Date.now(), error: true}; }
+    // من الطلبات نحتفظ بالتقييم فقط (لا بيانات أصحابها)
+    const ratings = done.filter(c => Number.isInteger(c.rating) && c.rating >= 1 && c.rating <= 5).map(c => ({rating: c.rating, note: c.ratingNote || '', at: c.ratedAt || 0}));
+    S.stats[officeId] = {items: items.map(i => i.id in spotOf ? {...i, spot: spotOf[i.id]} : i), reports, ratings, at: Date.now()};
+    publishPublic(officeId, pub);
+  } catch (e){ console.warn(e); S.stats[officeId] = {items: [], reports: [], ratings: [], at: Date.now(), error: true}; }
   finally { loading.delete(officeId); touch(); }
+}
+
+// الرضا: المتوسط (منزلة عشرية واحدة)، والعدد، والتوزيع 1–5، وآخر 10 تعليقات
+export function ratingStats(ratings = []){
+  const n = ratings.length, dist = [1, 2, 3, 4, 5].map(k => ({k, n: ratings.filter(r => r.rating === k).length}));
+  return {n, avg: n ? Math.round(10 * ratings.reduce((a, r) => a + r.rating, 0) / n) / 10 : null, dist,
+    notes: ratings.filter(r => r.note.trim()).sort((a, b) => b.at - a.at).slice(0, 10)};
+}
+
+/* مؤشرات المكتب للزوار (publicStats/{officeId}): أرقام مجمّعة فقط، يكتبها جهاز الموظف عند فتح الإحصاءات
+   إذا تغيّرت الأرقام أو مضى يوم على آخر تحديث. الزائر يقرأ وثيقة واحدة في صفحة «مؤشرات المكتب» */
+async function publishPublic(officeId, old){
+  const data = S.stats[officeId]; const office = S.offices.find(o => o.id === officeId); if (!data || !office) return;
+  const s = computeStats(data.items, office, data.reports), r = ratingStats(data.ratings), m = s.months[s.months.length - 1];
+  const next = {month: m?.key || today().slice(0, 7), monthReceived: m?.found || 0, monthReturned: m?.ret || 0,
+    totalReceived: s.total, totalReturned: s.returned, returnRate: s.rate ?? 0, avgDays: s.avgDays ?? 0,
+    avgRating: r.avg ?? 0, ratings: r.n};
+  const same = old && Object.keys(next).every(k => old[k] === next[k]);
+  if (same && Date.now() - (old.updatedAt || 0) < 864e5) return;
+  try { await dbx.set('publicStats/' + officeId, {...next, updatedAt: Date.now()}); S.pubStats[officeId] = {...next, updatedAt: Date.now()}; }
+  catch (e){ console.warn('[publicStats]', e?.code || e); }
+}
+// للزائر: وثيقة المؤشرات (قراءة واحدة عند فتح الصفحة)
+export async function loadPublicStats(officeId){
+  if (!officeId || officeId in S.pubStats) return;
+  S.pubStats[officeId] = 'loading';
+  try { S.pubStats[officeId] = await dbx.get('publicStats/' + officeId); } catch (e){ console.warn(e); S.pubStats[officeId] = null; }
+  touch();
 }
 
 // الأرقام: نسبة الإعادة = المُسلَّم ÷ (المتاح + المحجوز + المُسلَّم + المُتصرَّف فيه)، مثل جدول الإدارة. الأمثلة لا تُحسب
