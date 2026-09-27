@@ -47,6 +47,8 @@ export function computeStats(items, office, reports = []){
     avgDays: days.length ? Math.round(10 * days.reduce((a, b) => a + b, 0) / days.length) / 10 : null,
     cats, months, spots,
     // أكثر أماكن الفقد (من بلاغات المفقودين)
+    // البلاغات المغلقة حسب السبب: أرجع المكتب الغرض، أو وجده صاحبه بنفسه، أو قديمة بلا سبب (قبل المرحلة E)
+    closed: ['office', 'self', 'none'].map(k => ({k, n: reports.filter(r => r.status === 'closed' && (r.closedReason || 'none') === k).length})),
     lost: Object.entries(reports.reduce((m, r) => { const k = r.spot || ''; m[k] = (m[k] || 0) + 1; return m; }, {})).map(([s, c]) => ({s, n: c})).sort((a, b) => b.n - a.n).slice(0, 5),
   };
 }

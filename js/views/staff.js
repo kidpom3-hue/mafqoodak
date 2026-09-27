@@ -1,9 +1,9 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
-import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, claimOf, keepDaysOf } from '../constants.js';
+import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, claimOf, keepDaysOf, detailValue } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale } from '../state.js';
-import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, colorPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm } from './common.js';
+import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt } from './common.js';
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry } from '../migrate.js';
 
@@ -133,14 +133,33 @@ export function timeline(i){
 }
 /* مقارنة إجابات صاحب الطلب بالحقيقة (من itemSecrets) */
 const OK = '<span class="v ok">✓</span>', OK2 = '<span class="v ok">✓✓</span>', NO = '<span class="v bad">✗</span>', NA = () => `<span class="v mute">${t('st.na')}</span>`;
-// نتيجة المقارنة الآلية: اللون والمكان والتاريخ (تُستخدم في الجدول وفي تحذير القبول)
-// التصنيفات بلا لون في نموذج الاستلام (الوثائق والنقود) لا تُحسب فيها المقارنة باللون
+const isRes = v => v === OK || v === OK2 || v === NO;
+/* مقارنة إجابة سؤال التصنيف بالحقيقة: ✓ أو ✗، أو '' بلا نتيجة
+   الأرقام وآخر 4 والاختيار: تطابق تام · التقريبي: الفرق ضمن الأكبر من 20% أو 20 ريالاً
+   النص الحر: ✓ إذا احتوى أحدهما الآخر أو اشتركا في كلمة من 3 أحرف فأكثر، ولا ✗ آلياً على نص حر أبداً */
+export function detailCheck(d, said, truth){
+  const a = detailValue(d, said), b = detailValue(d, truth);
+  if (!a || !b) return '';
+  if (d.type === 'num' || d.type === 'last4' || d.type === 'pick') return a === b ? OK : NO;
+  if (d.type === 'approx'){ const x = Number(a), y = Number(b); return Math.abs(x - y) <= Math.max(0.2 * Math.max(x, y), 20) ? OK : NO; }
+  const na = norm(a), nb = norm(b);
+  if (na && nb && (na.includes(nb) || nb.includes(na))) return OK;
+  const tb = new Set(tokens(b).filter(w => w.length >= 3));
+  return tokens(a).some(w => w.length >= 3 && tb.has(w)) ? OK : '';
+}
+// ما قاله صاحب الطلب في سؤال: من claims.details، أو من حقل موجود في الطلب (as: الاسم وآخر 4 أرقام)
+const saidOf = (c, d) => d.as ? c[d.as] || '' : c.details?.[d.k] || '';
+// نتيجة المقارنة الآلية: اللون والمكان والتاريخ وأسئلة التصنيف (تُستخدم في الجدول وفي تحذير القبول).
+// total = عدد الصفوف التي لها نتيجة (✓ أو ✗)، وhits = المتطابق منها
 export function claimChecks(c, f){
-  const color = !claimOf(f?.cat).fields.includes('color') ? '' : !c.color ? NA() : !f?.color ? '' : c.color === f.color ? OK : NO;
+  const q = claimOf(f?.cat);
+  const color = !q.fields.includes('color') ? '' : !c.color ? NA() : !f?.color ? '' : c.color === f.color ? OK : NO;
   const place = !c.lostSpot ? NA() : !f?.spot ? '' : c.lostSpot !== f.spot ? NO : (c.bldg && c.bldg === f.bldg ? OK2 : OK);
   const gap = c.lostDate && f?.foundDate ? dayNum(f.foundDate) - dayNum(c.lostDate) : null;
   const date = !c.lostDate ? NA() : gap === null ? '' : gap >= 0 && gap <= 14 ? OK : NO;
-  return {color, place, date, hits: [color, place, date].filter(v => v === OK || v === OK2).length};
+  const det = q.details.map(d => ({d, said: saidOf(c, d), truth: f?.details?.[d.k] || ''})).map(x => ({...x, v: detailCheck(x.d, x.said, x.truth)}));
+  const all = [color, place, date, ...det.map(x => x.v)];
+  return {color, place, date, det, hits: all.filter(v => v === OK || v === OK2).length, total: all.filter(isRes).length};
 }
 // تنبيه تضارب المصالح: صاحب الطلب هو من سلّم الغرض للمكتب، أو الموظف الذي سجّله
 export const conflictNote = kind => kind ? `<div class="note bad conflict" role="alert">${icon('alert')}<span><b>${t(kind === 'finder' ? 'st.conflictFinder' : 'st.conflictRecorder')}</b></span></div>` : '';
@@ -148,23 +167,29 @@ function claimCompare(c, f){
   if (!f) return '';
   const said = x => x ? esc(x) : `<span class="muted">${t('st.notSaid')}</span>`, truth = x => x ? esc(x) : '<span class="muted">—</span>';
   // اللون: مطابقة تلقائية · المكان: ✓ المنطقة نفسها، ✓✓ والمبنى نفسه · التاريخ: فُقد قبل العثور أو في يومه، بفارق 14 يوماً على الأكثر
-  const {color, place, date, hits} = claimChecks(c, f);
-  const fields = claimOf(f.cat).fields, kind = conflictOf(c, f);
+  // أسئلة التصنيف: إجابة صاحب الطلب بجانب ما سجّله الموظف (الغرض القديم بلا إجابات: «—» بلا نتيجة)
+  const {color, place, date, det, hits, total} = claimChecks(c, f);
+  const q = claimOf(f.cat), kind = conflictOf(c, f);
   const row = (k, a, b, v = '') => `<div class="cmp-row"><b>${k}</b><span>${a}</span><span>${b}</span>${v || '<span class="v"></span>'}</div>`;
   const card = `<span class="muted">${t('st.onCard')}</span>`;
+  const asKeys = q.details.filter(d => d.as).map(d => d.as);
+  // عرض الإجابة: اسم الخيار من القاموس، والأرقام من اليسار لليمين
+  const fmt = (d, v) => d.type === 'pick' ? ((d.opts || []).includes(v) ? dfOpt(d.k, v) : esc(v)) : d.type === 'text' ? esc(v) : `<span dir="ltr">${esc(v)}</span>`;
+  const none = `<span class="muted">${t('st.notSaid')}</span>`;
   return `<div class="cmp${kind ? ' cmp-conflict' : ''}">
     ${kind ? `<div class="cmp-alert">${icon('alert')}<span>${t(kind === 'finder' ? 'st.conflictShortF' : 'st.conflictShortR')}</span></div>` : ''}
     <div class="cmp-row cmp-head"><b></b><span>${t('st.cmpSaid')}</span><span>${t('st.cmpTruth')}</span><span class="v"></span></div>
-    ${row(t(f.cat === 'ids' ? 'cl.nameIds' : 'st.cmpName'), said(c.claimantName), card)}
-    ${row(t('st.cmpLast4'), c.idLast4 ? `<span dir="ltr">${esc(c.idLast4)}</span>` : said(''), card)}
+    ${asKeys.includes('claimantName') ? '' : row(t('st.cmpName'), said(c.claimantName), card)}
+    ${asKeys.includes('idLast4') ? '' : row(t('st.cmpLast4'), c.idLast4 ? `<span dir="ltr">${esc(c.idLast4)}</span>` : said(''), card)}
     ${f.finderNote ? row(t('st.cmpFinder'), '<span class="muted">—</span>', esc(f.finderNote)) : ''}
-    ${fields.includes('color') ? row(t('c.color'), said(colorName(c.color)), truth(colorName(f.color)), color) : ''}
+    ${det.map(x => row(dfLabel(f.cat, x.d.k), x.said ? fmt(x.d, x.said) : none, x.truth ? fmt(x.d, x.truth) : x.d.as ? card : truth(''), x.v)).join('')}
+    ${q.fields.includes('color') ? row(t('c.color'), said(colorName(c.color)), truth(colorName(f.color)), color) : ''}
     ${row(t('st.cmpPlace'), said(spotText({spot: c.lostSpot, bldg: c.bldg, room: c.room})), truth(spotText(f)), place)}
     ${row(t('st.cmpDate'), said(c.lostDate && fmtDate(c.lostDate)), truth(f.foundDate && t('st.foundOn', {date: fmtDate(f.foundDate)})), date)}
-    ${fields.includes('brand') ? row(t('st.cmpBrand'), said(c.brand), truth(f.brand)) : ''}
+    ${q.fields.includes('brand') ? row(t('st.cmpBrand'), said(c.brand), truth(f.brand)) : ''}
     ${row(t('st.cmpProof'), said(c.proof), truth(f.desc))}
     ${c.question ? row(`${t('st.cmpQA')}: <span class="cmp-q">${esc(c.question)}</span>`, answered(c) ? esc(c.answer) : `<span class="muted">${t(c.status === 'pending' ? 'qa.waiting' : 'qa.none')}</span>`, '<span class="muted">—</span>') : ''}
-    <div class="cmp-sum">${t('st.cmpSum', {n: hits})}</div>
+    <div class="cmp-sum">${t('st.cmpSum', {n: hits, total})}</div>
   </div>`;
 }
 // سؤال التحقق وإجابته (للموظف ولصاحب الطلب)
@@ -240,10 +265,12 @@ export function foundCardStaff(f){
       ${done ? '' : `<button class="btn sm ghost" data-act="dropFound" data-id="${esc(f.id)}">${icon('x')}${t('hi.drop')}</button>`}</div>
   </div>`;
 }
+// خانة البحث بكود إشعار التسليم تظهر فقط إذا زادت الإشعارات المعلّقة على هذا العدد
+export const CODE_SEARCH_MIN = 5;
 export function staffReports(){
   const fs = S.found.slice().sort((a, b) => b.createdAt - a.createdAt);
-  // البحث بكود إشعار التسليم: الواجد يُري الموظف الكود فيفتح إشعاره مباشرة
-  const codeBox = `<form class="filters code-find" data-form="findCode" novalidate>
+  // البحث بكود إشعار التسليم: يظهر فقط مع إشعارات كثيرة (الجهات الكبيرة)، وإلا يكفي اختيار الإشعار من القائمة
+  const codeBox = fs.length <= CODE_SEARCH_MIN ? '' : `<form class="filters code-find" data-form="findCode" novalidate>
       <label class="searchbar" style="flex:1;min-width:180px">${icon('tag')}<input name="code" class="code-in" dir="ltr" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="${t('hi.codePh')}" aria-label="${t('hi.codeAria')}"></label>
       <button class="btn sm" type="submit">${icon('search')}${t('hi.codeOpen')}</button></form>`;
   // إشعارات التسليم أولاً (أغراض في الطريق إلى المكتب)، ثم بلاغات المفقودين
@@ -256,12 +283,15 @@ export function staffReports(){
   const oldBtn = old.length ? `<div class="btn-row"><button class="btn sm ghost" data-act="toggleStale" aria-pressed="${S.showStale}">${icon('clock')}${t(S.showStale ? 'st.hideOld' : 'st.showOld', {n: old.length})}</button></div>` : '';
   if (!rs.length) return found + oldBtn + `<div class="empty">${icon('bell')}<b>${t('st.noReports')}</b><span>${t('st.noReportsSub')}</span></div>`;
   return found + oldBtn + `<div class="list">${rs.map(r => {
-    const cands = candidatesFor(r, 3, full);   // الموظف يقارن بالتفاصيل السرية أيضاً
+    // الموظف يقارن بالتفاصيل السرية أيضاً، والغرض الذي قال صاحب البلاغ «ليس غرضي» لا يُرشَّح له من جديد
+    const cands = candidatesFor(r, 4, full).filter(x => x.i.id !== r.pickRejected).slice(0, 3);
+    const rejected = r.pickRejected && r.pickRejected === r.staffPick;
     return `<div class="box">
       <div class="box-head"><div><h3>${esc(r.title)}${isStale(r) ? ` <span class="pill mute">${t('st.oldReport')}</span>` : ''}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(subLabel(r.sub)) : ''}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''}</span></div><span class="meta">${relTime(r.createdAt)}</span></div>
       ${r.photo ? `<div class="row-thumb" style="width:84px;height:84px">${icon('camera')}<img data-photo="r_${esc(r.id)}" alt="" hidden></div>` : ''}
       ${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}
       <div class="meta">${person(r.uid)} · ${r.spot ? t('st.lostAt', {place: esc(spotText(r)), date: fmtDate(r.lostDate)}) : t('st.lostOn', {date: fmtDate(r.lostDate)})}</div>
+      ${rejected ? `<div class="note warn">${icon('x')}<span>${t('st.pickRejected', {ref: esc(item(r.pickRejected)?.ref || '')})}</span></div>` : ''}
       ${acceptBtn(r)}
       ${cands.length ? `<span class="label">${t('st.cands')}</span><div class="list">${cands.map(({i, s}) => `<div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
         ${r.staffPick === i.id ? `<span class="pill ok">${icon('check')}${t('st.picked')}</span>` : `<button class="btn sm soft" data-act="pickFor" data-r="${esc(r.id)}" data-i="${esc(i.id)}">${t('st.pick')}</button>`}</div>`).join('')}</div>`
@@ -284,7 +314,7 @@ export function vItemForm(){
   const r = !i && S.route.params.fromReport ? S.reports.find(x => x.id === S.route.params.fromReport) : null;
   // عند استلام غرض من واجد سجّل إشعار تسليم: التصنيف والنوع ومكان العثور وتاريخه
   const f = !i && !r && S.route.params.fromFound ? S.found.find(x => x.id === S.route.params.fromFound) : null;
-  const src = i || (r ? {cat: r.cat, sub: r.sub, color: r.color, title: r.title, desc: r.desc, spot: r.spot, bldg: r.bldg, room: r.room}
+  const src = i || (r ? {cat: r.cat, sub: r.sub, color: r.color, title: r.title, desc: r.desc, spot: r.spot, bldg: r.bldg, room: r.room, details: r.details || {}}
     : f ? {cat: f.cat, sub: f.sub, title: subName(f.sub) || cat(f.cat).name, spot: f.spot, bldg: f.bldg, room: f.room} : null);
   // الموظف يرى الأصل الواضح (p_)، والقيمة القديمة true صورتها في itemPhotos
   const photoKey = i?.photo ? (i.photo === true ? i.id : 'p_' + i.id) : r?.photo && !cat(r.cat).sensitive ? 'r_' + r.id : null;
@@ -299,9 +329,8 @@ export function vItemForm(){
       <div class="field"><span class="label">${t('c.category')}</span>${catPicker(src?.cat || '')}</div>
       <div class="field" id="subs-field" ${src?.cat && cat(src.cat).subs.length ? '' : 'hidden'}><span class="label">${t('c.type')}</span><div id="subs">${src?.cat ? subsPicker(src.cat, src.sub) : ''}</div></div>
       <div class="note">${icon('lock')}<span>${t('if.secretNote')}</span></div>
-      <div class="field"><span class="label">${t('c.color')}</span>${colorPicker(src?.color || '')}</div>
+      <div id="cat-fields" data-mode="item">${catFields(src?.cat, src, 'item')}</div>
       <div class="field"><label for="f-title">${t('if.title')}</label><input id="f-title" name="title" class="input" required maxlength="80" value="${esc(src?.title || '')}" placeholder="${t('if.titlePh')}"></div>
-      <div class="field"><label for="f-brand">${t('if.brand')} <span class="hint">${t('if.staffOnly')}</span></label><input id="f-brand" name="brand" class="input" maxlength="40" value="${esc(src?.brand || '')}" placeholder="${t('if.brandPh')}"></div>
       <div class="field"><label for="f-desc">${t('if.desc')}</label><textarea id="f-desc" name="desc" class="input" maxlength="600" placeholder="${t('if.descPh')}">${esc(src?.desc || '')}</textarea></div>
       <div class="two">
         <div class="field"><label for="f-spot">${t('if.spot')}</label><select id="f-spot" name="spot" class="input">${spotOptions(o, src?.spot || '')}</select></div>

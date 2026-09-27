@@ -67,37 +67,67 @@ export const LOGO = `<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><p
 
 /* ---------- reference data ---------- */
 // name وsubs: القيم العربية المخزّنة (لا تتغيّر). en وsubsEn: للعرض بالإنجليزية فقط، بنفس الترتيب.
-// أسئلة طلب الاستلام حسب التصنيف (المرحلة D):
-//   claim.fields: خانات إضافية في نموذج الاستلام من ['color', 'brand'] (الوثائق والنقود بلا لون ولا ماركة)
-//   claim.hint: مفتاح تلميح خانة «ماذا بداخله» في القاموسين (cl.h.<id>)، وstaffCheck: مفتاح نصيحة الموظف (sc.<id>)
+// أسئلة التصنيف (المرحلتان D وE): كل سؤال يُسأل في مكانين، ويضع جدول المقارنة الإجابتين جنباً إلى جنب:
+//   الموظف يسجّل الإجابة سراً عند إضافة الغرض (itemSecrets.details)، وصاحب الطلب يُسأل السؤال نفسه (claims.details)،
+//   وبلاغ المفقود يحفظها أيضاً (reports.details) لتعبئة الطلب منه لاحقاً.
+// claim: {fields, req, details, hint}
+//   fields: أيٌّ من 'color' و'brand' يظهر · req: الإجبارية منها في طلب الاستلام
+//   details: [{k, type, req, opts, as}]
+//     type: 'num' أرقام · 'approx' رقم تقريبي · 'last4' أربعة أرقام · 'text' نص قصير · 'pick' اختيار من opts (يُحفظ معرّف الخيار)
+//     req: 'both' إجباري للموظف ولصاحب الطلب · 'staff' للموظف فقط · 'claim' لصاحب الطلب فقط (نموذج البلاغ: كلها اختيارية)
+//     as: حقل موجود في الطلب يقارَن به بدل سؤال جديد (claimantName، idLast4)، فلا يُسأل صاحب الطلب مرتين
+//   hint: مفتاح تلميح خانة الإثبات الحرة (cl.h.<id>)
+// staffCheck: مفتاح نصيحة الموظف (sc.<id>). التسميات في القاموسين: df.<k> وdf.<k>.ph، وdf.<cat>.<k> تتقدم عليها،
+//   وخيارات pick: df.<k>.<opt>، وتسمية اللون الخاصة: df.<cat>.color
 // retentionDays: مدة حفظ خاصة بالتصنيف، تُطبَّق إن كانت أقصر من مدة المكتب. disposal: طريقة التصرّف المقترحة.
 // publicName/publicEn: الاسم في الإعلان العام بدل اسم النوع (النقود: «مبلغ مالي» دون المبلغ)
-const CLAIM_STD = {fields: ['color', 'brand']};
+const CB = ['color', 'brand'];
+const q = (k, type = 'text', req = '', x = {}) => ({k, type, req, ...x});
 export const CATS = [
   {id:'ids', name:'بطاقات ووثائق', en:'Cards & documents', icon:'idcard', sensitive:true, subs:['هوية وطنية','هوية مقيم','بطاقة متدرب','رخصة قيادة','بطاقة بنكية','جواز سفر','وثيقة أخرى'], subsEn:['National ID','Resident ID (Iqama)','Trainee card','Driving licence','Bank card','Passport','Other document'],
-    claim:{fields: [], hint: 'cl.h.ids'}, staffCheck: 'sc.ids', retentionDays: 30, disposal: 'authority'},
+    claim:{fields: [], details: [q('docName', 'text', 'staff', {as: 'claimantName'}), q('docLast4', 'last4', 'staff', {as: 'idLast4'}), q('issuer')], hint: 'cl.h.ids'},
+    staffCheck: 'sc.ids', retentionDays: 30, disposal: 'authority'},
   {id:'cash', name:'نقود', en:'Cash', icon:'cash', sensitive:true, publicName:'مبلغ مالي', publicEn:'Sum of money', subs:['نقود ورقية','عملات','ظرف نقود'], subsEn:['Banknotes','Coins','Envelope of money'],
-    claim:{fields: [], hint: 'cl.h.cash'}, staffCheck: 'sc.cash'},
+    claim:{fields: [], details: [q('amount', 'num', 'both'), q('denoms'), q('holder', 'pick', '', {opts: ['envelope', 'wallet', 'clip', 'none']})], hint: 'cl.h.cash'}, staffCheck: 'sc.cash'},
   {id:'wallets', name:'محافظ', en:'Wallets', icon:'wallet', subs:['محفظة رجالية','محفظة نسائية','حافظة بطاقات','محفظة جوال'], subsEn:["Men's wallet","Women's wallet",'Card holder','Phone wallet'],
-    claim:{...CLAIM_STD, hint: 'cl.h.wallets'}},
+    claim:{fields: CB, details: [q('cardName'), q('cashInside', 'approx')], hint: 'cl.h.wallets'}},
   {id:'phones', name:'جوالات وأجهزة', en:'Phones & devices', icon:'phone', subs:['جوال','جهاز لوحي','لابتوب','ساعة ذكية'], subsEn:['Phone','Tablet','Laptop','Smartwatch'],
-    claim:{...CLAIM_STD, hint: 'cl.h.phones'}, staffCheck: 'sc.phones'},
-  {id:'acc', name:'ملحقات إلكترونية', en:'Electronic accessories', icon:'plug', subs:['سماعات','شاحن','كيبل','باور بانك','فلاش USB','آلة حاسبة'], subsEn:['Headphones','Charger','Cable','Power bank','USB flash drive','Calculator']},
+    claim:{fields: CB, req: ['brand'], details: [q('model'), q('lockscreen')], hint: 'cl.h.phones'}, staffCheck: 'sc.phones'},
+  {id:'acc', name:'ملحقات إلكترونية', en:'Electronic accessories', icon:'plug', subs:['سماعات','شاحن','كيبل','باور بانك','فلاش USB','آلة حاسبة'], subsEn:['Headphones','Charger','Cable','Power bank','USB flash drive','Calculator'],
+    claim:{fields: CB, details: [q('mark')], hint: 'cl.h.acc'}},
   {id:'keys', name:'مفاتيح', en:'Keys', icon:'key', subs:['مفتاح سيارة','مفاتيح منزل','ميدالية','بطاقة دخول'], subsEn:['Car key','House keys','Keyring','Access card'],
-    claim:{...CLAIM_STD, hint: 'cl.h.keys'}},
+    claim:{fields: [], details: [q('keyCount', 'num', 'both'), q('keyring'), q('carBrand')], hint: 'cl.h.keys'}},
   {id:'jewelry', name:'مجوهرات وساعات', en:'Jewellery & watches', icon:'ring', subs:['خاتم','سلسال','أسورة','ساعة يد','أقراط'], subsEn:['Ring','Necklace','Bracelet','Wristwatch','Earrings'],
-    claim:{...CLAIM_STD, hint: 'cl.h.jewelry'}},
+    claim:{fields: CB, details: [q('engraving'), q('size')], hint: 'cl.h.jewelry'}},
   {id:'glasses', name:'نظارات', en:'Glasses', icon:'glasses', subs:['نظارة طبية','نظارة شمسية','علبة نظارة'], subsEn:['Prescription glasses','Sunglasses','Glasses case'],
-    claim:{...CLAIM_STD, hint: 'cl.h.glasses'}},
-  {id:'bags', name:'حقائب', en:'Bags', icon:'bag', subs:['حقيبة ظهر','حقيبة لابتوب','حقيبة يد','حقيبة رياضية'], subsEn:['Backpack','Laptop bag','Handbag','Sports bag']},
-  {id:'study', name:'كتب وأدوات دراسية', en:'Books & study supplies', icon:'book', subs:['كتاب','دفتر','ملف أوراق','مقلمة','أدوات هندسية'], subsEn:['Book','Notebook','Document folder','Pencil case','Geometry set']},
-  {id:'clothes', name:'ملابس', en:'Clothing', icon:'shirt', subs:['شماغ أو غترة','عباية','جاكيت','قبعة','حذاء'], subsEn:['Shemagh or ghutra','Abaya','Jacket','Cap','Shoes']},
-  {id:'tools', name:'عُدد وأدوات ورش', en:'Workshop tools', icon:'wrench', subs:['عدة يدوية','جهاز قياس','خوذة سلامة','نظارة سلامة','قفازات'], subsEn:['Hand tools','Measuring device','Safety helmet','Safety glasses','Gloves']},
-  {id:'bottles', name:'قوارير وحافظات', en:'Bottles & flasks', icon:'bottle', subs:['قارورة ماء','حافظة قهوة (ترمس)','علبة طعام'], subsEn:['Water bottle','Coffee flask (thermos)','Food container'], retentionDays: 14},
+    claim:{fields: CB, details: [q('caseDesc')], hint: 'cl.h.glasses'}},
+  {id:'bags', name:'حقائب', en:'Bags', icon:'bag', subs:['حقيبة ظهر','حقيبة لابتوب','حقيبة يد','حقيبة رياضية'], subsEn:['Backpack','Laptop bag','Handbag','Sports bag'],
+    claim:{fields: CB, details: [q('inside', 'text', 'claim')], hint: 'cl.h.bags'}},
+  {id:'study', name:'كتب وأدوات دراسية', en:'Books & study supplies', icon:'book', subs:['كتاب','دفتر','ملف أوراق','مقلمة','أدوات هندسية'], subsEn:['Book','Notebook','Document folder','Pencil case','Geometry set'],
+    claim:{fields: [], details: [q('bookName'), q('nameOn'), q('inside')], hint: 'cl.h.study'}},
+  {id:'clothes', name:'ملابس', en:'Clothing', icon:'shirt', subs:['شماغ أو غترة','عباية','جاكيت','قبعة','حذاء'], subsEn:['Shemagh or ghutra','Abaya','Jacket','Cap','Shoes'],
+    claim:{fields: CB, details: [q('size'), q('mark')], hint: 'cl.h.clothes'}},
+  {id:'tools', name:'عُدد وأدوات ورش', en:'Workshop tools', icon:'wrench', subs:['عدة يدوية','جهاز قياس','خوذة سلامة','نظارة سلامة','قفازات'], subsEn:['Hand tools','Measuring device','Safety helmet','Safety glasses','Gloves'],
+    claim:{fields: CB, details: [q('mark')], hint: 'cl.h.tools'}},
+  {id:'bottles', name:'قوارير وحافظات', en:'Bottles & flasks', icon:'bottle', subs:['قارورة ماء','حافظة قهوة (ترمس)','علبة طعام'], subsEn:['Water bottle','Coffee flask (thermos)','Food container'], retentionDays: 14,
+    claim:{fields: CB, details: [q('mark')], hint: 'cl.h.bottles'}},
   {id:'other', name:'أخرى', en:'Other', icon:'box', subs:[], subsEn:[]},
 ];
-// أسئلة الاستلام للتصنيف (الافتراضي: اللون والماركة، وتلميح عام)
-export const claimOf = id => cat(id).claim || {...CLAIM_STD, hint: 'cl.proofHint'};
+// مفاتيح أسئلة التصنيف المسموحة: نفس قائمة detailKeys() في firestore.rules حرفياً (عدّلهما معاً)
+export const DETAIL_KEYS = ['amount', 'denoms', 'holder', 'docName', 'docLast4', 'issuer', 'cardName', 'cashInside', 'model', 'lockscreen',
+  'mark', 'keyCount', 'keyring', 'carBrand', 'engraving', 'size', 'caseDesc', 'inside', 'bookName', 'nameOn'];
+// أسئلة التصنيف كاملة (الافتراضي: اللون والماركة، وتلميح عام)
+export const claimOf = id => ({fields: CB, req: [], details: [], hint: 'cl.proofHint', ...(cat(id).claim || {})});
+// هل في طلب الاستلام سؤال إجباري؟ (عندها تصبح خانة الإثبات الحرة اختيارية: «تفاصيل أخرى تثبت أنه لك»)
+export const claimHasRequired = id => { const c = claimOf(id); return c.req.length > 0 || c.details.some(d => d.as || d.req === 'both' || d.req === 'claim'); };
+// قيمة إجابة كما تُحفظ: الأرقام الهندية إلى لاتينية، والرقمية أرقام فقط، والنص حتى 80 حرفاً، والاختيار من القائمة فقط
+export function detailValue(d, v){
+  v = String(v ?? '').replace(/[٠-٩]/g, x => '٠١٢٣٤٥٦٧٨٩'.indexOf(x)).replace(/[۰-۹]/g, x => '۰۱۲۳۴۵۶۷۸۹'.indexOf(x)).trim();
+  if (d.type === 'num' || d.type === 'approx') return v.replace(/\D/g, '').slice(0, 9);
+  if (d.type === 'last4') return v.replace(/\D/g, '').slice(0, 4);
+  if (d.type === 'pick') return (d.opts || []).includes(v) ? v : '';
+  return v.slice(0, 80);
+}
 // مدة الحفظ الفعلية للغرض: مدة التصنيف إن كانت أقصر من مدة المكتب
 export const keepDaysOf = (catId, office) => { const o = Number(office?.retentionDays) || 90, c = cat(catId).retentionDays; return c && c < o ? c : o; };
 // alt/altEn: كلمات إضافية للبحث باللغتين

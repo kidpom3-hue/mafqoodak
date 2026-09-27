@@ -134,7 +134,7 @@ export function alertKeys(){
     if (isStale(r)){ keys.push(`s:${r.id}:${r.renewedAt || r.createdAt}`); continue; }   // هل ما زلت تبحث؟
     // ترشيح الموظف ينبّه فقط ما دام الغرض متاحاً أو محجوزاً
     const pi = r.staffPick && item(r.staffPick);
-    if (pi && ACTIVE.includes(pi.status)) keys.push(`p:${r.id}:${r.staffPick}`);
+    if (pi && ACTIVE.includes(pi.status) && r.pickRejected !== r.staffPick) keys.push(`p:${r.id}:${r.staffPick}`);
     if (maybeFor(r, 1).length) keys.push(`m:${r.id}`);
   }
   for (const c of myClaims()){
@@ -201,12 +201,25 @@ function onUser(user){
     subs.user.push(dbx.watchDoc('staffRequests/' + user.uid, d => { S.myReq = d; changed(); }, errH('staffRequests')));
     subs.user.push(dbx.watchDoc('users/' + user.uid + '/private/codes', d => { S.priv = d || {}; changed(); }, errH('codes')));
     // «طلباتي»: بلاغات المستخدم وطلباته في كل المكاتب (بالمستخدم فقط، دون تقييد بالمكتب)
-    subs.mine.push(dbx.watch('reports', [['uid', '==', user.uid]], l => { S.myReports = l; changed(); }, errH('my reports')));
-    subs.mine.push(dbx.watch('claims', [['uid', '==', user.uid]], l => { S.myClaims = l; changed(); }, errH('my claims')));
+    subs.mine.push(dbx.watch('reports', [['uid', '==', user.uid]], l => { S.myReports = l; autoClose(); changed(); }, errH('my reports')));
+    subs.mine.push(dbx.watch('claims', [['uid', '==', user.uid]], l => { S.myClaims = l; autoClose(); changed(); }, errH('my claims')));
     subs.mine.push(dbx.watch('foundReports', [['uid', '==', user.uid]], l => { S.myFound = l; changed(); }, errH('my found')));
   } else fixMode();
   ensureOfficeSubs();
   reset();
+}
+/* إغلاق البلاغ تلقائياً بعد استلام صاحبه الغرض من المكتب: لكل طلب «تم الاستلام»، يُغلق بلاغ المستخدم المفتوح
+   المرتبط به (reportId، أو الغرض المرشَّح له) بسبب office. مرة واحدة لكل بلاغ، والفشل يُتجاهل (يُعاد عند الفتح التالي) */
+const autoClosed = new Set();
+function autoClose(){
+  for (const c of S.myClaims){
+    if (c.status !== 'done') continue;
+    for (const r of S.myReports){
+      if (r.status !== 'open' || autoClosed.has(r.id) || !(r.id === c.reportId || (r.staffPick && r.staffPick === c.itemId))) continue;
+      autoClosed.add(r.id);
+      dbx.update('reports/' + r.id, {status: 'closed', closedAt: c.doneAt || Date.now(), closedReason: 'office'}).catch(e => console.warn('[auto close]', e?.code || e));
+    }
+  }
 }
 function startAdmin(){
   clear('admin');

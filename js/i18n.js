@@ -22,6 +22,8 @@ export function t(key, vars){
   if (s === undefined){ console.warn('[i18n] missing', key); return key; }
   return fill(s, vars);
 }
+// هل للمفتاح نص؟ (لتسميات اختيارية مثل df.<cat>.<k>)
+export const hasKey = key => key in DICTS[LANG] || key in AR;
 // نص بلغة محددة (مثل رسالة بريد بلغة المستلم، لا بلغة الموظف)
 export const tIn = (lang, key, vars) => fill((DICTS[lang] || AR)[key] ?? AR[key] ?? key, vars);
 // النص العربي دائماً: للقيم المخزّنة في قاعدة البيانات (ملاحظات النظام في الطلبات والسجل)

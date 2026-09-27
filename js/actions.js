@@ -1,9 +1,9 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
-import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, claimOf } from './constants.js';
+import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, claimOf, claimHasRequired, detailValue } from './constants.js';
 import { t, tp, tAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode } from './utils.js';
 import { loadStats, exportCsv } from './stats.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts, conflictOf, isStale, loadAudit } from './state.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut,
@@ -11,7 +11,7 @@ import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWith
 import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar } from './ui.js';
 import { updateBrowse } from './views/visitor.js';
 import { updateStaff, staffItems, claimChecks, keepLeft, catKeepNote, foundCardStaff } from './views/staff.js';
-import { FORM, subsPicker, pubPhoto, person, themePicker } from './views/common.js';
+import { FORM, subsPicker, pubPhoto, person, themePicker, catFields, dfLabel, detailReq } from './views/common.js';
 import { setTheme } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
 import { analyzePhoto, rankMatches, aiErrMsg, aiReady } from './ai.js';
@@ -25,6 +25,16 @@ function busy(form, on){ const b = form.querySelector('button[type=submit]'); if
 export function onCatChange(form, catId, sub){
   const sf = form.querySelector('#subs-field'), sc = form.querySelector('#subs');
   if (sc){ sc.innerHTML = subsPicker(catId, sub); sf.hidden = !cat(catId).subs.length; }
+  // أسئلة التصنيف: تُعاد حسب التصنيف الجديد، مع الإبقاء على ما كُتب في الخانات ذات المفتاح نفسه.
+  // ما كُتب يُحفظ في ذاكرة النموذج (catMemo)، فيعود إن رجع الموظف إلى تصنيف فيه الخانة نفسها (مثل الماركة بعد النقود)
+  const cf = form.querySelector('#cat-fields');
+  if (cf){
+    const memo = form.catMemo ||= {details: {}}, fd = new FormData(form);
+    if (form.querySelector('#cat-fields [name=color]')) memo.color = String(fd.get('color') || '');
+    if (form.querySelector('#cat-fields [name=brand]')) memo.brand = String(fd.get('brand') || '');
+    for (const el of cf.querySelectorAll('[name^=d_]')) memo.details[el.name.slice(2)] = el.value;
+    cf.innerHTML = catFields(catId, memo, cf.dataset.mode);
+  }
   const sens = cat(catId).sensitive;
   const note = form.querySelector('#sens-note'), pf = form.querySelector('#photo-field');
   if (note) note.hidden = !sens;
@@ -55,6 +65,18 @@ async function onPhoto(input){
     form.querySelector('#rm-photo').hidden = false;
     const ai = form.querySelector('#ai-btn'); if (ai){ ai.disabled = false; if (st) st.textContent = t('a.aiHint'); }
   } catch { toast(t('a.photoFail')); }
+}
+
+/* إجابات أسئلة التصنيف من النموذج: القيم غير الفارغة فقط (مُطبَّعة كما تُحفظ)، وأول سؤال إجباري ناقص.
+   mode: 'item' نموذج الموظف · 'claim' طلب الاستلام (بلا أسئلة as) · 'report' البلاغ (كلها اختيارية) */
+function readDetails(form, catId, mode){
+  const fd = new FormData(form), details = {}; let missing = '';
+  for (const d of claimOf(catId).details){
+    if (mode === 'claim' && d.as) continue;
+    const v = detailValue(d, fd.get('d_' + d.k));
+    if (v) details[d.k] = v; else if (!missing && detailReq(d, mode)) missing = dfLabel(catId, d.k);
+  }
+  return {details, missing};
 }
 
 /* ---------- الذكاء الاصطناعي ---------- */
@@ -168,7 +190,12 @@ async function submitForm(form){
     // هوية صاحب الطلب: الاسم كما في البطاقة وآخر 4 أرقام منها (يطابقها الموظف عند التسليم)
     if (val('claimantName').length < 3) return formErr(form, t('a.needClaimantName'));
     if (!/^\d{4}$/.test(val('idLast4'))) return formErr(form, t('a.needLast4'));
-    if (val('proof').length < 15) return formErr(form, t('a.proofShort'));
+    // أسئلة التصنيف: الإجبارية منها (مثل المبلغ للنقود)، والماركة للجوالات
+    const q = claimOf(i.cat), {details, missing} = readDetails(form, i.cat, 'claim');
+    if (q.req.includes('brand') && !val('brand')) return formErr(form, t('a.needDetail', {label: t('if.brand')}));
+    if (missing) return formErr(form, t('a.needDetail', {label: missing}));
+    // الإثبات الحر: إجباري إلا في التصنيفات التي فيها سؤال إجباري («تفاصيل أخرى تثبت أنه لك»)
+    if (!claimHasRequired(i.cat) && val('proof').length < 15) return formErr(form, t('a.proofShort'));
     if (!fd.get('pledge')) return formErr(form, t('a.needPledge'));
     // طلب واحد فقط لكل مستخدم على كل غرض: رقم الطلب ثابت = رقم الغرض_رقم المستخدم
     const id = `${i.id}_${S.uid}`;
@@ -180,9 +207,8 @@ async function submitForm(form){
     LS.set('codes', {...LS.get('codes', {}), [id]: code});
     await dbx.set('users/' + S.uid + '/private/codes', {codes: {[id]: code}}, {merge: true}).catch(e => console.warn(e));
     try {
-      // خانات التصنيف فقط (الوثائق والنقود بلا لون ولا ماركة)
-      const q = claimOf(i.cat);
-      await dbx.set('claims/' + id, {itemId: i.id, officeId: i.officeId, uid: S.uid, proof: val('proof').slice(0, 1200),
+      // خانات التصنيف فقط (الوثائق والنقود بلا لون ولا ماركة)، وإجابات أسئلته في details
+      await dbx.set('claims/' + id, {itemId: i.id, officeId: i.officeId, uid: S.uid, proof: val('proof').slice(0, 1200), details,
         color: q.fields.includes('color') ? val('color') : '', brand: q.fields.includes('brand') ? val('brand').slice(0, 40) : '',
         claimantName: val('claimantName').slice(0, 120), idLast4: val('idLast4'),
         lostSpot: val('spot'), bldg, room, lostDate: val('lostDate'),
@@ -202,6 +228,8 @@ async function submitForm(form){
     const catId = val('cat');
     if (!catId) return formErr(form, t('a.needCat'));
     if (!val('title')) return formErr(form, t('a.needTitle'));
+    // الموظف يسجّل إجابات الأسئلة الإجبارية للتصنيف (مثل المبلغ للنقود) ليقارنها بما يقوله صاحب الطلب
+    if (kind === 'item'){ const {missing} = readDetails(form, catId, 'item'); if (missing) return formErr(form, t('a.needDetail', {label: missing})); }
     const sens = cat(catId).sensitive;
     busy(form, true);
 
@@ -209,7 +237,10 @@ async function submitForm(form){
       if (!S.verified){ busy(form, false); return formErr(form, t('a.verifyFirst')); }
       const id = dbx.newId('reports');
       const withPhoto = !!FORM.photo && !sens;
-      const ok = await write(() => dbx.set('reports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), color: val('color'),
+      // إجابات أسئلة التصنيف (اختيارية) تُحفظ لتعبئة طلب الاستلام منها لاحقاً
+      const {details} = readDetails(form, catId, 'report');
+      const ok = await write(() => dbx.set('reports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), color: claimOf(catId).fields.includes('color') ? val('color') : '',
+        ...(Object.keys(details).length ? {details} : {}),
         title: val('title'), desc: val('desc'), spot: val('spot'), bldg, room, lostDate: val('lostDate') || today(), photo: false, status: 'open', createdAt: Date.now()}), t('a.reportSaved'));
       if (ok && withPhoto){
         cachePhoto('r_' + id, FORM.photo);
@@ -245,7 +276,10 @@ async function submitForm(form){
     // التعديل يعيد كتابة المستند كاملاً: نحافظ على الحقول التي لا يعرضها النموذج
     for (const k of ['fromReport', 'fromFound', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt']) if (existing?.[k] !== undefined) data[k] = existing[k];
     // التفاصيل السرية: لموظفي المكتب فقط
-    const secret = {officeId, title: val('title'), color: val('color'), brand: val('brand').slice(0, 40), desc: val('desc'), bldg, room, storage: val('storage')};
+    // اللون والماركة فارغان إن لم يكونا في التصنيف (حتى لا تبقى قيمة قديمة بعد تغيير التصنيف)، وإجابات أسئلته في details
+    const q = claimOf(catId), {details} = readDetails(form, catId, 'item');
+    const secret = {officeId, title: val('title'), color: q.fields.includes('color') ? val('color') : '', brand: q.fields.includes('brand') ? val('brand').slice(0, 40) : '',
+      desc: val('desc'), bldg, room, storage: val('storage'), ...(Object.keys(details).length ? {details} : {})};
     // من سلّم الغرض دون التطبيق (اسمه وآخر 4 أرقام): سري للموظفين، يقارنونه ببيانات صاحب الطلب
     if (val('finderNote')) secret.finderNote = val('finderNote').slice(0, 120);
     for (const k of ['handoverNote', 'disposalNote']) if (existing?.[k]) secret[k] = existing[k];
@@ -363,7 +397,7 @@ async function submitForm(form){
       for (const c of claims){
         // الاسم وآخر 4 أرقام وملاحظة التسليم تُمسح أيضاً (القواعد تسمح بذلك)
         if (['done', 'rejected', 'expired', 'cancelled'].includes(c.status)) await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '',
-          ...(c.answer ? {answer: ''} : {}), ...(c.claimantName ? {claimantName: ''} : {}), ...(c.idLast4 ? {idLast4: ''} : {}), ...(c.handoverNote ? {handoverNote: ''} : {}), anonymizedAt: Date.now()});
+          ...(c.answer ? {answer: ''} : {}), ...(c.claimantName ? {claimantName: ''} : {}), ...(c.idLast4 ? {idLast4: ''} : {}), ...(c.handoverNote ? {handoverNote: ''} : {}), ...(c.details ? {details: {}} : {}), anonymizedAt: Date.now()});
         else if (c.status === 'pending') await dbx.del('claims/' + c.id);
       }
       // إشعارات التسليم: المستلَم يبقى سجلاً للمكتب بلا بيانات صاحبه، والبقية تُحذف
@@ -595,7 +629,19 @@ const ACT = {
   setOffice(el){ setOffice(el.dataset.id); },
   mode(el){ const m = el.dataset.v; if (!modes().includes(m)) return; S.mode = m; LS.set('mode', m); S.hist = []; go(homeRoute(), {}, false); },
   openItem(el){ go('item', {id: el.dataset.id}); },
-  goClaim(el){ if (!needLogin()) go('claim', {id: el.dataset.id}); },
+  // «هذا غرضي — اطلب استلامه» من ترشيح البلاغ: يُعبّأ الطلب من البلاغ ويُربط به
+  goClaim(el){ if (!needLogin()) go('claim', {id: el.dataset.id, ...(el.dataset.report ? {report: el.dataset.report} : {})}); },
+  // «ليس غرضي»: يرفض صاحب البلاغ ترشيح الموظف الحالي، فيراه الموظف ويرشّح غيره
+  notMine(el){
+    const r = S.myReports.find(x => x.id === el.dataset.id); if (!r?.staffPick) return;
+    confirmSheet(t('rc.notMineQ'), t('rc.notMineBody'), t('rc.notMine'),
+      () => write(() => dbx.update('reports/' + r.id, {pickRejected: r.staffPick}), t('rc.notMineDone')), false);
+  },
+  // «افتح الطلب»: الانتقال إلى بطاقة الطلب في «طلباتي»
+  showClaim(el){
+    const box = document.getElementById('claim-' + el.dataset.id);
+    if (box){ box.scrollIntoView({behavior: 'smooth', block: 'center'}); box.focus({preventScroll: true}); box.classList.add('flash'); setTimeout(() => box.classList.remove('flash'), 1600); }
+  },
   fcat(el){ S.filter.cat = el.dataset.id; updateBrowse(); },
   catGo(el){ S.filter.cat = el.dataset.id; S.filter.q = ''; S.filter.status = 'available'; go('browse'); },
   fstatus(el){ S.filter.status = el.dataset.v; updateBrowse(); },
@@ -605,7 +651,15 @@ const ACT = {
   removePhoto(el){ clearPhoto(el.closest('form')); },
   aiFill(){ if (aiReady()) aiFill(); },
   aiMatch(el){ if (aiReady()) aiMatch(el.dataset.id); },
-  closeReport(el){ write(() => dbx.update('reports/' + el.dataset.id, {status: 'closed', closedAt: Date.now()}), t('a.reportClosed')); },
+  // «وجدته بنفسي»: تأكيد أولاً، وتنبيه إن كان المكتب رشّح غرضاً أو ظهر غرض مشابه (فيطلب استلامه بدل الإغلاق)
+  closeReport(el){
+    const r = S.myReports.find(x => x.id === el.dataset.id); if (!r) return;
+    const pickOn = r.staffPick && r.pickRejected !== r.staffPick && ACTIVE.includes(item(r.staffPick)?.status);
+    const warn = pickOn || maybeFor(r, 1).length ? `<div class="note warn">${icon('info')}<span>${t('rc.closeWarn')}</span></div>` : '';
+    PENDING_CONFIRM = () => write(() => dbx.update('reports/' + r.id, {status: 'closed', closedAt: Date.now(), closedReason: 'self'}), t('a.reportClosed'));
+    openSheet(`<h2>${t('rc.closeQ')}</h2><p class="muted">${t('rc.closeBody')}</p>${warn}
+      <div class="btn-row"><button class="btn" data-act="confirmYes">${icon('check')}${t('rc.foundIt')}</button><button class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>`);
+  },
   delReport(el){
     confirmSheet(t('a.delReportQ'), t('a.delReportBody'), t('a.delReportBtn'), async () => {
       const r = S.reports.find(x => x.id === el.dataset.id);
@@ -663,8 +717,9 @@ const ACT = {
       </form>`);
     const go2 = () => doApprove(c);
     // تطابق ضعيف: أقل من 2 من 3 في جدول المقارنة
-    const {hits} = claimChecks(c, full(i));
-    if (hits < 2) return confirmSheet(t('a.weakQ'), t('a.weakBody', {n: hits}), t('a.weakBtn'), go2, false);
+    // تطابق ضعيف: أقل من نصف الصفوف التي لها نتيجة في جدول المقارنة (أو لا شيء يمكن مقارنته)
+    const {hits, total} = claimChecks(c, full(i));
+    if (!total || hits / total < 0.5) return confirmSheet(t('a.weakQ'), t('a.weakBody', {n: hits, total}), t('a.weakBtn'), go2, false);
     go2();
   },
   // إعادة تفعيل طلب منتهٍ أو ملغى (من سجل الطلبات)
@@ -711,6 +766,8 @@ const ACT = {
     if (r.room) f.querySelector('[name=room]').value = r.room;
     if (r.lostDate){ const d = f.querySelector('[name=lostDate]'); d.value = r.lostDate; const h = d.parentElement.querySelector('.date-hint'); if (h) h.hidden = true; }
     if (r.desc) f.querySelector('[name=proof]').value = r.desc;
+    // إجابات أسئلة التصنيف من البلاغ
+    for (const [k, v] of Object.entries(r.details || {})){ const x = f.querySelector(`[name="d_${k}"]`); if (x) x.value = v; }
     f.querySelector('[name=reportId]').value = r.id;
     toast(t('a.filledFromReport'));
   },
@@ -870,6 +927,8 @@ export function bindEvents(){
     if (t.id === 'q'){ S.filter.q = t.value; clearTimeout(qTimer); qTimer = setTimeout(updateBrowse, 120); }
     if (t.id === 'sq'){ S.staffQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = staffItems(); hydrate(); }, 120); }
     if (t.name === 'code' && t.classList.contains('code-input')) t.value = t.value.replace(/\D/g, '').slice(0, 6);
+    // خانات الأرقام في أسئلة التصنيف: الأرقام الهندية إلى لاتينية، وحذف ما ليس رقماً
+    if (t.classList.contains('num-in')) t.value = detailValue({type: 'num'}, t.value).slice(0, Number(t.maxLength) > 0 ? t.maxLength : 9);
     if (t.classList.contains('code-in')) t.value = normCode(t.value);
     if (t.name === 'idLast4' || t.name === 'rlast4' || t.name === 'last4') t.value = t.value.replace(/\D/g, '').slice(0, 4);
   });
