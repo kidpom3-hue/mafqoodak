@@ -14,7 +14,7 @@ await env.withSecurityRulesDisabled(async c => {
   await setDoc(doc(d, 'config/app'), {ownerUid: 'owner'});
   await setDoc(doc(d, 'admins/owner'), {role: 'owner'});
   for (const s of ['staffA', 'staffB']) await setDoc(doc(d, 'staff/' + s), {offices: [O]});
-  for (const k of ['i1', 'i2', 'i3', 'i4', 'i5', 'i6']){ await setDoc(doc(d, 'items/' + k), pub(k)); await setDoc(doc(d, 'itemSecrets/' + k), sec); }
+  for (const k of ['i1', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7', 'i8', 'i9', 'i10']){ await setDoc(doc(d, 'items/' + k), pub(k)); await setDoc(doc(d, 'itemSecrets/' + k), sec); }
 });
 // الحساب الموثّق وغير الموثّق
 const as = (uid, verified = true) => env.authenticatedContext(uid, {email_verified: verified}).firestore();
@@ -44,7 +44,11 @@ await t('حالة طلب غير معروفة مرفوضة', updateDoc(doc(A, 'cl
 // ── 8) فصل المهام ──
 await t('موظف يرسل طلباً على غرض', setDoc(doc(A, 'claims/i2_staffA'), claim('i2', 'staffA')));
 await t('8) الموظف لا يقبل طلبه هو', updateDoc(doc(A, 'claims/i2_staffA'), {status: 'approved', decidedAt: now, decidedBy: 'staffA'}), false);
-await t('موظف آخر يقبل طلبه', updateDoc(doc(B, 'claims/i2_staffA'), {status: 'approved', decidedAt: now, decidedBy: 'staffB', pickupBy: now}));
+// القبول يحجز الغرض في الـ batch نفسه (المرحلة D: القواعد تشترط ذلك)
+await t('موظف آخر يقبل طلبه (مع حجز الغرض)', batch(B, (b, r) => {
+  b.update(r('claims/i2_staffA'), {status: 'approved', decidedAt: now, decidedBy: 'staffB', pickupBy: now});
+  b.update(r('items/i2'), {status: 'reserved', reservedFor: 'i2_staffA', updatedAt: now});
+}));
 
 // ── 3) التسليم: الطلب المحجوز له + إغلاق المنافس + السجل ──
 await t('التسليم في batch: done + returned + رفض المنافس + سجل', batch(B, (b, r) => {
@@ -140,6 +144,74 @@ await t('C: الزائر لا يقرأ التفاصيل السرية', q(alice, 
 await t('C: الموظف يقرأ بريد صاحب الطلب (EmailJS)', getDoc(doc(A, 'users/alice')));
 await t('C: رفض طلب i6 بعد الإجابة', updateDoc(doc(B, 'claims/i6_alice'), {status: 'rejected', note: 'لا يطابق', decidedAt: now, decidedBy: 'staffB'}));
 await t('C: «حذف حسابي» يمسح الإجابة مع بيانات الطلب المنتهي', updateDoc(doc(alice, 'claims/i6_alice'), {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', answer: '', anonymizedAt: now}));
+
+// ── المرحلة D4: حراسة سلسلة الحيازة على الخادم ──
+const approveB = (db, item, cid, by) => batch(db, (b, r) => {
+  b.update(r('claims/' + cid), {status: 'approved', decidedAt: now, decidedBy: by, pickupBy: now + 7 * 864e5});
+  b.update(r('items/' + item), {status: 'reserved', reservedFor: cid, updatedAt: now});
+  b.set(r('logs/' + lid()), logDoc(by, 'approve', {itemId: item, claimId: cid}));
+});
+await t('D: طلب بالاسم وآخر 4 أرقام', setDoc(doc(alice, 'claims/i7_alice'), claim('i7', 'alice', {claimantName: 'أليس محمد', idLast4: '1234'})));
+await t('D: آخر 4 أرقام غير صحيحة مرفوضة', setDoc(doc(carol, 'claims/i7_carol'), claim('i7', 'carol', {idLast4: '12a4'})), false);
+await t('D: طلب منافس', setDoc(doc(bob, 'claims/i7_bob'), claim('i7', 'bob')));
+await t('D: القبول الأول (batch)', approveB(A, 'i7', 'i7_alice', 'staffA'));
+await t('D: قبولان متتاليان من batchين: الثاني يُرفض', approveB(B, 'i7', 'i7_bob', 'staffB'), false);
+await t('D: قبول دون حجز الغرض مرفوض', updateDoc(doc(B, 'claims/i7_bob'), {status: 'approved', decidedAt: now, decidedBy: 'staffB'}), false);
+await t('D: طلب على i8', setDoc(doc(carol, 'claims/i8_carol'), claim('i8', 'carol')));
+await t('D: «محجوز» دون طلب مقبول مرفوض', updateDoc(doc(A, 'items/i8'), {status: 'reserved', reservedFor: 'i8_carol', updatedAt: now}), false);
+await t('D: «محجوز» لطلب غير موجود مرفوض', updateDoc(doc(A, 'items/i8'), {status: 'reserved', reservedFor: 'ghost', updatedAt: now}), false);
+await t('D: «سُلّم» دون طلب مكتمل ودون handoverNote مرفوض', updateDoc(doc(A, 'items/i8'), {status: 'returned', returnedAt: now, updatedAt: now}), false);
+await t('D: «مكتمل» دون حجز الغرض له مرفوض', batch(A, (b, r) => {
+  b.update(r('claims/i8_carol'), {status: 'done', doneAt: now, doneBy: 'staffA'});
+  b.update(r('items/i8'), {status: 'returned', returnedAt: now, updatedAt: now});
+}), false);
+await t('D: التسليم بالرمز (done + returned + handoverNote في الطلب) مقبول', batch(B, (b, r) => {
+  b.update(r('claims/i7_alice'), {status: 'done', doneAt: now, doneBy: 'staffB', handoverNote: 'استلمه: أليس محمد — آخر 4: 1234'});
+  b.update(r('items/i7'), {status: 'returned', returnedAt: now, updatedAt: now});
+  b.update(r('claims/i7_bob'), {status: 'rejected', note: 'x', decidedAt: now, decidedBy: 'staffB'});
+  b.set(r('logs/' + lid()), logDoc('staffB', 'handover', {itemId: 'i7', claimId: 'i7_alice'}));
+}));
+await t('D: «حذف حسابي» يمسح الاسم وآخر 4 وملاحظة التسليم', updateDoc(doc(alice, 'claims/i7_alice'), {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', claimantName: '', idLast4: '', handoverNote: '', anonymizedAt: now}));
+await t('D: تسليم مباشر مع handoverNote في الـ batch نفسه مقبول', batch(A, (b, r) => {
+  b.set(r('itemSecrets/i8'), {...sec, handoverNote: 'سارة — آخر 4 أرقام: 4321', finderNote: 'خالد — 9876'});
+  b.update(r('claims/i8_carol'), {status: 'cancelled', note: 'x', decidedAt: now, decidedBy: 'staffA'});
+  b.update(r('items/i8'), {status: 'returned', returnedAt: now, updatedAt: now, reservedFor: ''});
+  b.set(r('logs/' + lid()), logDoc('staffA', 'status:returned', {itemId: 'i8'}));
+}));
+await t('D: finderNote طويل جداً مرفوض', updateDoc(doc(A, 'itemSecrets/i8'), {finderNote: 'x'.repeat(301)}), false);
+// إعادة التفعيل: قبول ← انتهت المهلة (الغرض متاح) ← يعود مقبولاً ويُحجز له
+await t('D: طلب على i9', setDoc(doc(bob, 'claims/i9_bob'), claim('i9', 'bob')));
+await t('D: قبول i9', approveB(A, 'i9', 'i9_bob', 'staffA'));
+await t('D: انتهاء المهلة i9', batch(A, (b, r) => {
+  b.update(r('claims/i9_bob'), {status: 'expired', note: 'انتهت مهلة الاستلام', decidedAt: now, decidedBy: 'staffA'});
+  b.update(r('items/i9'), {status: 'available', reservedFor: '', updatedAt: now});
+}));
+await t('D: إعادة تفعيل طلب منتهٍ (expired ← approved) بعد إتاحة الغرض', batch(B, (b, r) => {
+  b.update(r('claims/i9_bob'), {status: 'approved', note: '', decidedAt: now, decidedBy: 'staffB', pickupBy: now + 7 * 864e5});
+  b.update(r('items/i9'), {status: 'reserved', reservedFor: 'i9_bob', updatedAt: now});
+  b.set(r('logs/' + lid()), logDoc('staffB', 'reactivate', {itemId: 'i9', claimId: 'i9_bob'}));
+}));
+await t('D: إعادة تفعيل طلب ملغى إلى «قيد المراجعة»', batch(A, (b, r) => {
+  b.update(r('claims/i8_carol'), {status: 'pending', note: '', decidedAt: now, decidedBy: 'staffA'});
+  b.set(r('logs/' + lid()), logDoc('staffA', 'reactivate', {itemId: 'i8', claimId: 'i8_carol'}));
+}));
+// «محجوز» قديم دون طلب مقبول فعلي: batch يعيده متاحاً، ثم batch القبول
+await env.withSecurityRulesDisabled(async c => { await updateDoc(doc(c.firestore(), 'items/i10'), {status: 'reserved', reservedFor: 'ghost'}); });
+await t('D: طلب على i10 المحجوز', setDoc(doc(carol, 'claims/i10_carol'), claim('i10', 'carol')));
+await t('D: قبول مباشر على «محجوز» يتيم مرفوض', approveB(A, 'i10', 'i10_carol', 'staffA'), false);
+await t('D: إتاحة الغرض أولاً', batch(A, (b, r) => { b.update(r('items/i10'), {status: 'available', reservedFor: '', updatedAt: now}); b.set(r('logs/' + lid()), logDoc('staffA', 'status:available', {itemId: 'i10'})); }));
+await t('D: ثم القبول', approveB(A, 'i10', 'i10_carol', 'staffA'));
+// إشعار التسليم بكود
+await t('D: إشعار تسليم بكود', setDoc(doc(bob, 'foundReports/f6'), {officeId: O, uid: 'bob', cat: 'cash', sub: '', spot: '', bldg: '', room: '', foundDate: '2026-09-26', note: '', code: 'K7M3TX', status: 'pending', createdAt: now}));
+await t('D: الموظف يبحث بالكود (استعلام)', q(A, 'foundReports', ['officeId', '==', O], ['status', '==', 'pending']));
+// إدارة الموظفين والسجل
+const owner = as('owner');
+await t('D: المالك يمنح إدارة لموظف', setDoc(doc(owner, 'admins/staffA'), {role: 'admin', addedAt: now, addedBy: 'owner'}));
+await t('D: قيد صلاحية في السجل (itemId فارغ)', setDoc(doc(owner, 'logs/' + lid()), logDoc('owner', 'perm:admin', {note: 'staffA'})));
+await t('D: المالك يزيل الإدارة', deleteDoc(doc(owner, 'admins/staffA')));
+await t('D: لا يمكن إزالة المالك', deleteDoc(doc(owner, 'admins/owner')), false);
+await t('D: سجل العمليات للمالك (officeId + action in)', q(owner, 'logs', ['officeId', '==', O], ['action', 'in', ['status:returned', 'delete', 'dispose', 'perm:grant', 'perm:revoke', 'perm:admin', 'perm:unadmin']]));
+await t('D: المالك يقرأ بريد صاحب طلب الصلاحية', getDoc(doc(owner, 'users/alice')));
 
 // ── لغة المستخدم (للجزء B) ──
 await t('lang = en مسموح', setDoc(doc(alice, 'users/alice'), {name: 'A', email: 'a@x.com', photo: '', lastSeen: now, lang: 'en'}));

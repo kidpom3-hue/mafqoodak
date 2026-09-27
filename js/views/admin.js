@@ -21,7 +21,11 @@ export function adminOverview(){
   const C = S.counts.admin, samples = S.counts.samples || 0;
   const sum = k => C ? Object.values(C).reduce((a, x) => a + (x[k] || 0), 0) : '…';
   const pendReq = S.staffReqs.filter(r => r.status === 'pending').length;
+  // مكاتب نشطة بلا أسماء إنجليزية: الزائر الإنجليزي يرى النص العربي
+  const noEn = S.offices.filter(o => o.active !== false && (!o.nameEn || !o.placeEn || !o.hoursEn || ((o.spots || []).length && !(o.spotsEn || []).some(Boolean))));
   return `
+    ${noEn.map(o => `<div class="note warn en-warn">${icon('globe')}<span>${t('adm.enMissing', {office: esc(oName(o))})}</span>
+      <button class="btn sm" data-act="editOffice" data-id="${esc(o.id)}" data-en="1">${icon('edit')}${t('adm.enFix')}</button></div>`).join('')}
     ${samples ? `<div class="note warn">${icon('sample')}<span>${t('adm.samples', {n: samples})}</span></div>
       <button class="btn sm danger" data-act="delSamples" style="align-self:flex-start">${icon('trash')}${t('adm.delSamples')}</button>` : ''}
     <div class="stats">
@@ -36,7 +40,8 @@ export function adminOverview(){
       ${S.offices.map(o => { const x = C?.[o.id]; const a = x?.available ?? '…', r = x?.reserved ?? '…', d = x?.returned ?? '…'; const tot = x ? x.available + x.reserved + x.returned + x.disposed : 0;
         return `<tr><td><button class="link" data-act="stats" data-id="${esc(o.id)}">${esc(oName(o))}</button>${o.active === false ? ` <span class="pill mute">${t('adm.off')}</span>` : ''}</td><td class="n">${a}</td><td class="n">${r}</td><td class="n">${d}</td><td class="n">${tot ? Math.round(100 * x.returned / tot) + '%' : '—'}</td></tr>`; }).join('')}
       </tbody></table></div>
-      <button class="btn sm ghost" data-act="adminRefresh" style="align-self:flex-start">${icon('swap')}${t('adm.refresh')}</button>
+      <div class="btn-row"><button class="btn sm ghost" data-act="adminRefresh">${icon('swap')}${t('adm.refresh')}</button>
+        <button class="btn sm ghost" data-act="audit">${icon('clock')}${t('au.btn')}</button></div>
     </div>`;
 }
 export function adminOffices(){
@@ -53,25 +58,38 @@ export function adminOffices(){
           <button class="link" data-act="editOffice" data-id="${esc(o.id)}">${icon('edit')}${t('c.edit')}</button>
           <button class="link" data-act="stats" data-id="${esc(o.id)}">${icon('chart')}${t('sx.btn')}</button>
           <button class="link" data-act="poster" data-id="${esc(o.id)}">${icon('print')}${t('po.btn')}</button>
+          <button class="link" data-act="audit" data-id="${esc(o.id)}">${icon('clock')}${t('au.btn')}</button>
         </span>
       </div>`; }).join('') || `<div class="empty">${icon('pin')}<b>${t('adm.noOffices')}</b></div>`}</div>`;
 }
 export function adminPeople(){
   const reqs = S.staffReqs.filter(r => r.status === 'pending');
   const oname = id => oName(S.offices.find(o => o.id === id)) || id;
+  const owner = S.config?.ownerUid, isAdm = uid => S.adminList.some(a => a.id === uid);
+  // بريد صاحب الحساب (يقرؤه المالك من users)، مع تحذير إن كان خارج نطاق الموظفين (SETTINGS.staffEmailDomain)
+  const email = uid => `<span class="meta" dir="ltr" data-uemail="${esc(uid)}"></span>`;
+  const adminBtn = uid => uid === owner ? `<span class="pill info">${t('adm.owner')}</span>`
+    : isAdm(uid) ? `<button class="btn sm ghost" data-act="unAdmin" data-id="${esc(uid)}">${icon('x')}${t('adm.unAdmin')}</button>`
+    : `<button class="btn sm ghost" data-act="makeAdmin" data-id="${esc(uid)}">${icon('shield')}${t('adm.makeAdmin')}</button>`;
+  // مديرون ليست لهم صلاحية موظف في مكتب محدد
+  const admOnly = S.adminList.filter(a => !S.staffList.some(s => s.id === a.id));
   return `
     <div class="section-title">${t('adm.reqs')} ${reqs.length ? `<span class="count">${reqs.length}</span>` : ''}</div>
     ${reqs.length ? `<div class="list">${reqs.map(r => `<div class="box">
-      <div class="box-head"><div>${person(r.id)}<span class="meta">${esc(r.note || '')}</span></div><span class="meta">${relTime(r.createdAt)}</span></div>
+      <div class="box-head"><div>${person(r.id)}${email(r.id)}<span class="meta">${esc(r.note || '')}</span></div><span class="meta">${relTime(r.createdAt)}</span></div>
       <div class="tags">${(r.offices || []).map(id => `<span class="tagchip">${esc(oname(id))}</span>`).join('')}</div>
       <div class="btn-row"><button class="btn sm" data-act="approveReq" data-id="${esc(r.id)}">${icon('check')}${t('adm.grant')}</button><button class="btn sm danger" data-act="rejectReq" data-id="${esc(r.id)}">${icon('x')}${t('c.reject')}</button></div>
     </div>`).join('')}</div>` : `<div class="note">${icon('info')}<span>${t('adm.reqHow')}</span></div>`}
     <div class="section-title">${t('adm.current')}</div>
     <div class="note">${icon('shield')}<span>${t('adm.ownerNote')}</span></div>
     ${S.staffList.length ? `<div class="list">${S.staffList.map(s => `<div class="box">
-      <div class="box-head"><div>${person(s.id)}<span class="meta">${esc(s.note || '')}</span></div><button class="btn sm danger" data-act="revoke" data-id="${esc(s.id)}">${icon('x')}${t('adm.revoke')}</button></div>
+      <div class="box-head"><div>${person(s.id)}${email(s.id)}<span class="meta">${esc(s.note || '')}</span></div>${isAdm(s.id) ? `<span class="pill ok">${t('adm.isAdmin')}</span>` : ''}</div>
       <div class="tags">${(s.offices || []).map(id => `<span class="tagchip">${esc(oname(id))}</span>`).join('')}</div>
-    </div>`).join('')}</div>` : `<p class="muted">${t('adm.noStaff')}</p>`}`;
+      <div class="btn-row">${adminBtn(s.id)}<button class="btn sm danger" data-act="revoke" data-id="${esc(s.id)}">${icon('x')}${t('adm.revoke')}</button></div>
+    </div>`).join('')}</div>` : `<p class="muted">${t('adm.noStaff')}</p>`}
+    <div class="section-title">${t('adm.admins')}</div>
+    <p class="muted">${t('adm.adminsHint')}</p>
+    <div class="list">${admOnly.map(a => `<div class="box"><div class="box-head"><div>${person(a.id)}${email(a.id)}</div>${adminBtn(a.id)}</div></div>`).join('')}</div>`;
 }
 export function vOfficeForm(){
   const o = S.route.params.id ? S.offices.find(x => x.id === S.route.params.id) : null;
@@ -93,7 +111,7 @@ export function vOfficeForm(){
         <div class="field"><label for="o-pick">${t('of.pick')}</label><input id="o-pick" name="pickupDays" type="number" min="1" max="60" class="input" value="${esc(o?.pickupDays || 7)}"><span class="hint">${t('of.pickHint')}</span></div>
       </div>
       <div class="field"><label for="o-spots">${t('of.spots')}</label><textarea id="o-spots" name="spots" class="input" placeholder="${t('of.spotsPh')}">${esc((o?.spots || []).join('\n'))}</textarea><span class="hint">${t('of.spotsHint')}</span></div>
-      <details class="en-fields" ${o?.nameEn ? 'open' : ''}>
+      <details class="en-fields" ${o?.nameEn || S.route.params.en ? 'open' : ''}>
         <summary>${icon('globe')}${t('of.enTitle')}</summary>
         <p class="hint">${t('of.enHint')}</p>
         <div class="two" dir="ltr" lang="en">

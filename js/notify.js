@@ -5,7 +5,7 @@
 import { S, alertKeys, isStaffHere, answered } from './state.js';
 import { dbx } from './firebase.js';
 import { SETTINGS } from './config.js';
-import { t, tIn, LANG } from './i18n.js';
+import { t, LANG } from './i18n.js';
 import { LS } from './utils.js';
 
 /* ---------- إشعارات المتصفح ---------- */
@@ -31,8 +31,8 @@ async function show(body, tag){
 // نص الإشعار لكل نوع تنبيه (مفاتيح alertKeys في state.js، ومفاتيح الموظف بالأسفل)
 export function msgOf(k){
   const [type, , st] = k.split(':');
-  return ({p: 'nt.pick', m: 'nt.match', q: 'nt.question', d: 'nt.pickupSoon', sc: 'nt.newClaim', sa: 'nt.answer', sf: 'nt.found'})[type]
-    || (type === 'f' ? (st === 'ret' ? 'nt.foundReturned' : 'nt.foundReceived') : '')
+  return ({p: 'nt.pick', m: 'nt.match', q: 'nt.question', d: 'nt.pickupSoon', s: 'nt.stale', sc: 'nt.newClaim', sa: 'nt.answer', sf: 'nt.found'})[type]
+    || (type === 'f' ? (st === 'ret' ? 'nt.foundReturned' : st === 'fin' ? 'nt.foundYours' : 'nt.foundReceived') : '')
     || (type === 'c' ? (st === 'approved' ? 'nt.approved' : st === 'rejected' ? 'nt.rejected' : 'nt.claimChanged') : 'nt.update');
 }
 function currentKeys(){
@@ -67,9 +67,12 @@ export function checkNotify(){
 }
 
 /* ---------- البريد عبر EmailJS (اختياري) ---------- */
-export const emailReady = () => { const e = SETTINGS.emailNotify || {}; return !!(e.enabled && e.publicKey && e.serviceId && e.templateId); };
-// رسالة عامة فقط بلغة المستلم (users.lang): «تحدّث حالة طلبك، افتح مفقودك». لا رقم غرض ولا سبب ولا أي تفصيل
-export async function emailUser(uid, kind, vars = {}){
+// قالب ثابت لكل لغة (templateIdAr / templateIdEn)، وtemplateId القديم احتياطاً
+const templateFor = (e, lang) => (lang === 'en' ? e.templateIdEn : e.templateIdAr) || e.templateId || e.templateIdAr || e.templateIdEn || '';
+export const emailReady = () => { const e = SETTINGS.emailNotify || {}; return !!(e.enabled && e.publicKey && e.serviceId && templateFor(e, 'ar')); };
+// رسالة عامة فقط بلغة المستلم (users.lang). نصها مكتوب في قالب EmailJS نفسه؛ التطبيق لا يرسل عنواناً ولا نصاً،
+// حتى لا يستطيع أحد استخدام المفتاح العام (الموجود في مستودع عام) لإرسال نص يختاره. لا رقم غرض ولا سبب ولا أي تفصيل
+export async function emailUser(uid){
   if (!emailReady() || !uid || uid === 'deleted') return;
   try {
     const u = await dbx.get('users/' + uid);   // الموظف يقرأ ملف صاحب الطلب (القواعد تسمح بذلك)
@@ -77,9 +80,9 @@ export async function emailUser(uid, kind, vars = {}){
     const lang = u.lang === 'en' ? 'en' : 'ar', e = SETTINGS.emailNotify;
     const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({service_id: e.serviceId, template_id: e.templateId, user_id: e.publicKey,
-        // رابط التطبيق مكتوب في القالب نفسه على EmailJS (لا يُرسل من هنا)، حتى لا يستطيع أحد تغييره
-        template_params: {to_email: u.email, to_name: u.name || '', subject: tIn(lang, 'em.s'), message: tIn(lang, 'em.b'), app_name: tIn(lang, 'app.name')}}),
+      body: JSON.stringify({service_id: e.serviceId, template_id: templateFor(e, lang), user_id: e.publicKey,
+        // المتغيران الوحيدان: البريد والاسم. رابط التطبيق ونص الرسالة مكتوبان في القالب نفسه على EmailJS
+        template_params: {to_email: u.email, to_name: u.name || ''}}),
     });
     if (!res.ok) console.warn('[emailjs]', res.status);
   } catch (err){ console.warn('[emailjs]', err); }
@@ -87,5 +90,5 @@ export async function emailUser(uid, kind, vars = {}){
 // من وجد الغرض (إشعار التسليم المرتبط به) يُبلَّغ حين يعود الغرض لصاحبه
 export async function emailFinder(i){
   if (!emailReady() || !i?.fromFound) return;
-  try { const f = await dbx.get('foundReports/' + i.fromFound); if (f?.uid) await emailUser(f.uid, 'returned', {ref: i.ref}); } catch (err){ console.warn(err); }
+  try { const f = await dbx.get('foundReports/' + i.fromFound); if (f?.uid) await emailUser(f.uid); } catch (err){ console.warn(err); }
 }

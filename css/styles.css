@@ -589,8 +589,8 @@ html[dir=ltr] svg.i.dir{transform:scaleX(-1)}
 /* ملصقات QR وملصق المكتب */
 .qr-bg{fill:var(--qr-bg)} .qr-ink{fill:var(--qr-ink)}
 .labels{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
-.label{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:10px;break-inside:avoid;page-break-inside:avoid}
-.label .qr{width:104px;height:104px;flex:none}
+.labels>.label{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:10px;break-inside:avoid;page-break-inside:avoid}
+.labels>.label .qr{width:104px;height:104px;flex:none}
 .lb-text{display:flex;flex-direction:column;gap:2px;min-width:0;font-size:12.5px;overflow-wrap:anywhere}
 .lb-text svg{width:14px;height:14px;vertical-align:-2px;margin-inline-end:4px}
 .lb-ref{font-family:var(--f-mono);font-size:18px;letter-spacing:.04em;text-align:start;white-space:nowrap}
@@ -648,7 +648,7 @@ html[dir=ltr] svg.i.dir{transform:scaleX(-1)}
   #app{max-width:none;padding:0}
   .wrap{padding:0}
   .labels{grid-template-columns:repeat(auto-fill,minmax(85mm,1fr));gap:4mm}
-  .label .qr{width:28mm;height:28mm}
+  .labels>.label .qr{width:28mm;height:28mm}
   .poster{border:0;max-width:none;min-height:92vh;justify-content:center}
   @page{margin:10mm}
 }
@@ -676,3 +676,23 @@ html[dir=ltr] svg.i.dir{transform:scaleX(-1)}
 .alerts li{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px}
 .alerts li svg{width:18px;height:18px;color:var(--primary);flex:none}
 .cmp-q{font-weight:500}
+
+/* ---------- المرحلة D: التحقق والتسليم ---------- */
+/* تنبيه تضارب المصالح: أحمر واضح في بطاقة الطلب وجدول المقارنة */
+.note.bad{background:var(--bad-soft);color:var(--bad)}
+.note.bad b{font-weight:700}
+.cmp.cmp-conflict{border-color:var(--bad);border-width:2px}
+.cmp-alert{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;background:var(--bad-soft);color:var(--bad);font-weight:700}
+.cmp-alert .i{flex:none;margin-block-start:2px}
+/* هوية صاحب الطلب في نموذج الاستلام */
+.id-box{border:1px solid var(--line);border-radius:12px;padding:10px 12px 12px;gap:10px}
+.id-box .hint .i{inline-size:14px;block-size:14px;vertical-align:-2px;margin-inline-end:4px}
+.id-facts dd b{font-family:var(--f-mono);letter-spacing:.12em}
+/* البحث بكود إشعار التسليم */
+.code-find .code-in{font-family:var(--f-mono);letter-spacing:.18em;text-transform:uppercase}
+.note.en-warn{align-items:center;flex-wrap:wrap}
+.note.en-warn>span{flex:1;min-width:180px}
+.note.stale{align-items:flex-start}
+.sheet-panel .hint .i,.list>.hint .i{inline-size:14px;block-size:14px;vertical-align:-2px;margin-inline-end:4px}
+.id-box>.label{display:flex;align-items:center;gap:6px}
+.id-box>.label .i{inline-size:18px;block-size:18px}

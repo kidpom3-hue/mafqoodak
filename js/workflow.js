@@ -3,6 +3,7 @@
 // فإما ينجح كله أو لا يُكتب منه شيء، حتى لا تبقى البيانات ناقصة إذا انقطع الاتصال.
 import { dbx } from './firebase.js';
 import { S, full } from './state.js';
+import { SETTINGS } from './config.js';
 import { pubPhoto } from './views/common.js';
 import { t, tAr } from './i18n.js';
 // ملاحظات النظام تُخزَّن بالعربية (قيم في قاعدة البيانات) عبر tAr، وتُترجم عند العرض بـ noteText
@@ -25,9 +26,12 @@ function log(b, officeId, action, x = {}){
   b.set(dbx.ref('logs/' + id), e);
   PENDING_LOGS.set(b, [...(PENDING_LOGS.get(b) || []), {id, ...e}]);
 }
-// تنفيذ الـbatch، ثم إضافة قيوده إلى سجل الحيازة المعروض (إن كان محمّلاً) دون قراءة جديدة
-async function commit(b){
-  await b.commit();
+// تنفيذ الـbatch، ثم إضافة قيوده إلى سجل الحيازة المعروض (إن كان محمّلاً) دون قراءة جديدة.
+// guarded: عملية تحرسها القواعد على الخادم (القبول، والتسليم بالرمز، وإعادة التفعيل). رفضها بعد تزامن
+// يعني أن موظفاً آخر سبق بقرار على الغرض نفسه، فنعرض ذلك بوضوح بدل «ليست لديك صلاحية».
+async function commit(b, guarded = false){
+  try { await b.commit(); }
+  catch (e){ if (guarded && String(e?.code || '').includes('permission-denied')) fail(t('wf.race')); throw e; }
   for (const e of PENDING_LOGS.get(b) || []) if (Array.isArray(S.logs[e.itemId])) S.logs[e.itemId] = [...S.logs[e.itemId], e];
 }
 // التفاصيل السرية كما هي في itemSecrets (دون حقل id الذي يضيفه الاشتراك)
@@ -51,20 +55,52 @@ function closeOthers(b, itemId, exceptId, status, note){
   return skippedOwn;
 }
 
-/* قبول طلب: الغرض متاح، أو محجوز دون طلب مقبول فعلي */
-export async function approveClaim(c){
+/* قبول طلب: الغرض متاح، أو محجوز دون طلب مقبول فعلي.
+   القواعد تشترط أن يكون الغرض «متاحاً» قبل القبول، وأن يُحجز لهذا الطلب في العملية نفسها (approveOk)،
+   فلا يُقبل طلبان معاً من جهازين. «المحجوز» دون طلب مقبول (بيانات قديمة) يُعاد متاحاً أولاً في batch مستقل.
+   reason: سبب القبول، إلزامي إذا كان صاحب الطلب هو من سلّم الغرض أو سجّله (تضارب مصالح)؛ يُحفظ في note والسجل */
+export async function approveClaim(c, {reason = ''} = {}){
   notMine(c);
   if (c.status !== 'pending') fail(t('wf.notPending'));
   const i = await freshItem(c.itemId);
   const holder = i.status === 'reserved' && S.claims.find(x => x.id === i.reservedFor && x.status === 'approved');
   if (!(i.status === 'available' || (i.status === 'reserved' && !holder))) fail(t('wf.notAvailable'));
+  if (i.status === 'reserved'){
+    const b0 = dbx.batch();
+    b0.update(dbx.ref('items/' + i.id), {status: 'available', reservedFor: '', updatedAt: Date.now()});
+    log(b0, i.officeId, 'status:available', {itemId: i.id, note: tAr('sys.orphanReserved')});
+    await commit(b0, true);
+  }
   const o = S.offices.find(x => x.id === i.officeId);
   const pickupBy = Date.now() + pickupDays(o) * 864e5;
+  const note = String(reason || '').trim().slice(0, 600);
   const b = dbx.batch();
-  b.update(dbx.ref('claims/' + c.id), {status: 'approved', decidedAt: Date.now(), decidedBy: S.uid, pickupBy});
+  b.update(dbx.ref('claims/' + c.id), {status: 'approved', decidedAt: Date.now(), decidedBy: S.uid, pickupBy, ...(note ? {note} : {})});
   b.update(dbx.ref('items/' + i.id), {status: 'reserved', reservedFor: c.id, updatedAt: Date.now()});
-  log(b, i.officeId, 'approve', {itemId: i.id, claimId: c.id});
-  await commit(b);
+  log(b, i.officeId, 'approve', {itemId: i.id, claimId: c.id, note});
+  await commit(b, true);
+}
+
+/* إعادة تفعيل طلب منتهٍ أو ملغى (من سجل الطلبات عند الموظف):
+   الغرض متاح ← يعود الطلب مقبولاً بمهلة استلام جديدة ويُحجز له الغرض في العملية نفسها.
+   الغرض محجوز لطلب آخر ← يعود الطلب «قيد المراجعة». غير ذلك (سُلّم، أو حُذف...) لا يمكن. */
+export async function reactivateClaim(c){
+  notMine(c);
+  if (!['expired', 'cancelled'].includes(c.status)) fail(t('wf.cantReactivate'));
+  const i = await freshItem(c.itemId);
+  if (!['available', 'reserved'].includes(i.status)) fail(t('wf.cantReactivate'));
+  const now = Date.now(), b = dbx.batch();
+  let to = 'pending';
+  if (i.status === 'available'){
+    to = 'approved';
+    const o = S.offices.find(x => x.id === i.officeId);
+    b.update(dbx.ref('claims/' + c.id), {status: 'approved', note: '', decidedAt: now, decidedBy: S.uid, pickupBy: now + pickupDays(o) * 864e5});
+    b.update(dbx.ref('items/' + i.id), {status: 'reserved', reservedFor: c.id, updatedAt: now});
+  } else b.update(dbx.ref('claims/' + c.id), {status: 'pending', note: '', decidedAt: now, decidedBy: S.uid});
+  log(b, i.officeId, 'reactivate', {itemId: i.id, claimId: c.id, note: tAr(to === 'approved' ? 'sys.reactivatedApproved' : 'sys.reactivatedPending')});
+  await commit(b, true);
+  if (Array.isArray(S.claimHist)) S.claimHist = S.claimHist.filter(x => x.id !== c.id);   // انتقل إلى الطلبات المفتوحة
+  return to;
 }
 
 /* رفض طلب: إن كان مقبولاً والغرض محجوزاً له يعود الغرض متاحاً */
@@ -91,17 +127,20 @@ export async function askQuestion(c, q){
   await commit(b);
 }
 
-/* التسليم بعد التحقق من الرمز: فقط للطلب المقبول الذي حُجز له الغرض */
-export async function verifyHandover(c){
+/* التسليم بعد التحقق من الرمز: فقط للطلب المقبول الذي حُجز له الغرض.
+   receiver: {name, last4} من طابق الموظف بطاقته (المستلم الفعلي، وقد يكون مفوّضاً)، تُحفظ في handoverNote بالطلب */
+export async function verifyHandover(c, receiver = {}){
   notMine(c);
   const i = await freshItem(c.itemId);
   if (c.status !== 'approved' || i.status !== 'reserved' || i.reservedFor !== c.id) fail(t('wf.notReserved'));
+  const name = String(receiver.name || '').trim().slice(0, 120), last4 = String(receiver.last4 || '').trim();
+  if (name.length < 3 || !/^\d{4}$/.test(last4)) fail(t('wf.needReceiver'));
   const b = dbx.batch();
-  b.update(dbx.ref('claims/' + c.id), {status: 'done', doneAt: Date.now(), doneBy: S.uid});
+  b.update(dbx.ref('claims/' + c.id), {status: 'done', doneAt: Date.now(), doneBy: S.uid, handoverNote: tAr('sys.receivedBy', {name, last4})});
   b.update(dbx.ref('items/' + i.id), {status: 'returned', returnedAt: Date.now(), updatedAt: Date.now()});
   const skippedOwn = closeOthers(b, i.id, c.id, 'rejected', tAr('sys.handedVerified'));
-  log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id});
-  await commit(b);
+  log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id, note: tAr('sys.receivedBy', {name, last4})});
+  await commit(b, true);
   return {skippedOwn};
 }
 
@@ -163,10 +202,15 @@ export async function dropFound(f){
 }
 
 /* التصرّف في الأغراض بعد انتهاء مدة الحفظ (تبرّع، إتلاف، تسليم للجهة المختصة، أخرى) */
-// طرق التصرّف (أسماؤها في القاموس: disposal.<key>)
-export const DISPOSAL = {donated: 1, destroyed: 1, authority: 1, other: 1};
+// طرق التصرّف (أسماؤها في القاموس: disposal.<key>).
+// finder «أُعيد لمن وجده»: فقط لغرض له إشعار تسليم (fromFound)، وإذا فعّلها المالك في config.js (allowReturnToFinder)
+export const DISPOSAL = {donated: 1, destroyed: 1, authority: 1, finder: 1, other: 1};
+export const finderOk = i => !!(SETTINGS.allowReturnToFinder && i?.fromFound);
+// الطرق المتاحة لمجموعة أغراض
+export const disposalsFor = items => Object.keys(DISPOSAL).filter(k => k !== 'finder' || (items.length && items.every(finderOk)));
 export async function disposeItems(items, method, note = ''){
   if (!DISPOSAL[method]) fail(t('wf.pickMethod'));
+  if (method === 'finder' && !items.every(finderOk)) fail(t('wf.noFinder'));
   let n = 0;
   // دفعات صغيرة: حد writeBatch في Firestore 500 عملية
   for (let k = 0; k < items.length; k += 60){
@@ -196,4 +240,36 @@ export async function deleteItem(i){
   log(b, i.officeId, 'delete', {itemId: i.id, note: full(i).title || i.ref});
   await commit(b);
   return {skippedOwn};
+}
+
+/* ---------- صلاحيات الموظفين (للإدارة) ----------
+   كل تغيير في batch واحد مع قيد في السجل لكل مكتب معني (itemId فارغ، ورقم المستخدم في note).
+   السجل يظهر في صفحة «سجل العمليات» (route: audit). */
+const permLog = (b, offices, action, uid) => { for (const o of new Set(offices)) log(b, o, action, {note: uid}); };
+const allOffices = () => S.offices.map(o => o.id);
+// منح الصلاحية من طلب موظف: وثيقة staff + حالة الطلب
+export async function grantStaff(req){
+  const cur = S.staffList.find(s => s.id === req.id);
+  const offices = [...new Set([...(cur?.offices || []), ...(req.offices || [])])];
+  const b = dbx.batch(); const now = Date.now();
+  b.set(dbx.ref('staff/' + req.id), {offices, note: req.note || '', approvedAt: now, approvedBy: S.uid});
+  b.update(dbx.ref('staffRequests/' + req.id), {status: 'approved', decidedAt: now});
+  permLog(b, req.offices || [], 'perm:grant', req.id);
+  await commit(b);
+}
+export async function revokeStaff(uid){
+  const cur = S.staffList.find(s => s.id === uid);
+  const b = dbx.batch();
+  b.delete(dbx.ref('staff/' + uid));
+  permLog(b, cur?.offices?.length ? cur.offices : allOffices(), 'perm:revoke', uid);
+  await commit(b);
+}
+// الإدارة (admins): «اجعله مديراً» و«أزل الإدارة». المالك لا يُزال (القواعد تمنع ذلك أيضاً)
+export async function setAdmin(uid, on){
+  if (!on && uid === S.config?.ownerUid) fail(t('wf.ownerStays'));
+  const b = dbx.batch();
+  if (on) b.set(dbx.ref('admins/' + uid), {role: 'admin', addedAt: Date.now(), addedBy: S.uid});
+  else b.delete(dbx.ref('admins/' + uid));
+  permLog(b, allOffices(), on ? 'perm:admin' : 'perm:unadmin', uid);
+  await commit(b);
 }

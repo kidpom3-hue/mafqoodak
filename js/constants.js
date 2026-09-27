@@ -57,6 +57,8 @@ export const P = {
   info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
   swap:'<path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/>',
   sample:'<path d="M4 4h16v16H4z" stroke-dasharray="3 3"/>',
+  cash:'<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.8"/><path d="M6 9.5v5M18 9.5v5"/>',
+  alert:'<path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4.5M12 17.2v.3"/>',
 };
 // أسهم الاتجاه (رجوع/تقدّم) تنقلب في الإنجليزية (من اليسار لليمين) عبر الصنف dir في CSS
 const DIR_ICONS = new Set(['back', 'fwd']);
@@ -65,21 +67,39 @@ export const LOGO = `<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><p
 
 /* ---------- reference data ---------- */
 // name وsubs: القيم العربية المخزّنة (لا تتغيّر). en وsubsEn: للعرض بالإنجليزية فقط، بنفس الترتيب.
+// أسئلة طلب الاستلام حسب التصنيف (المرحلة D):
+//   claim.fields: خانات إضافية في نموذج الاستلام من ['color', 'brand'] (الوثائق والنقود بلا لون ولا ماركة)
+//   claim.hint: مفتاح تلميح خانة «ماذا بداخله» في القاموسين (cl.h.<id>)، وstaffCheck: مفتاح نصيحة الموظف (sc.<id>)
+// retentionDays: مدة حفظ خاصة بالتصنيف، تُطبَّق إن كانت أقصر من مدة المكتب. disposal: طريقة التصرّف المقترحة.
+// publicName/publicEn: الاسم في الإعلان العام بدل اسم النوع (النقود: «مبلغ مالي» دون المبلغ)
+const CLAIM_STD = {fields: ['color', 'brand']};
 export const CATS = [
-  {id:'ids', name:'بطاقات ووثائق', en:'Cards & documents', icon:'idcard', sensitive:true, subs:['هوية وطنية','هوية مقيم','بطاقة متدرب','رخصة قيادة','بطاقة بنكية','جواز سفر','وثيقة أخرى'], subsEn:['National ID','Resident ID (Iqama)','Trainee card','Driving licence','Bank card','Passport','Other document']},
-  {id:'wallets', name:'محافظ', en:'Wallets', icon:'wallet', subs:['محفظة رجالية','محفظة نسائية','حافظة بطاقات','محفظة جوال'], subsEn:["Men's wallet","Women's wallet",'Card holder','Phone wallet']},
-  {id:'phones', name:'جوالات وأجهزة', en:'Phones & devices', icon:'phone', subs:['جوال','جهاز لوحي','لابتوب','ساعة ذكية'], subsEn:['Phone','Tablet','Laptop','Smartwatch']},
+  {id:'ids', name:'بطاقات ووثائق', en:'Cards & documents', icon:'idcard', sensitive:true, subs:['هوية وطنية','هوية مقيم','بطاقة متدرب','رخصة قيادة','بطاقة بنكية','جواز سفر','وثيقة أخرى'], subsEn:['National ID','Resident ID (Iqama)','Trainee card','Driving licence','Bank card','Passport','Other document'],
+    claim:{fields: [], hint: 'cl.h.ids'}, staffCheck: 'sc.ids', retentionDays: 30, disposal: 'authority'},
+  {id:'cash', name:'نقود', en:'Cash', icon:'cash', sensitive:true, publicName:'مبلغ مالي', publicEn:'Sum of money', subs:['نقود ورقية','عملات','ظرف نقود'], subsEn:['Banknotes','Coins','Envelope of money'],
+    claim:{fields: [], hint: 'cl.h.cash'}, staffCheck: 'sc.cash'},
+  {id:'wallets', name:'محافظ', en:'Wallets', icon:'wallet', subs:['محفظة رجالية','محفظة نسائية','حافظة بطاقات','محفظة جوال'], subsEn:["Men's wallet","Women's wallet",'Card holder','Phone wallet'],
+    claim:{...CLAIM_STD, hint: 'cl.h.wallets'}},
+  {id:'phones', name:'جوالات وأجهزة', en:'Phones & devices', icon:'phone', subs:['جوال','جهاز لوحي','لابتوب','ساعة ذكية'], subsEn:['Phone','Tablet','Laptop','Smartwatch'],
+    claim:{...CLAIM_STD, hint: 'cl.h.phones'}, staffCheck: 'sc.phones'},
   {id:'acc', name:'ملحقات إلكترونية', en:'Electronic accessories', icon:'plug', subs:['سماعات','شاحن','كيبل','باور بانك','فلاش USB','آلة حاسبة'], subsEn:['Headphones','Charger','Cable','Power bank','USB flash drive','Calculator']},
-  {id:'keys', name:'مفاتيح', en:'Keys', icon:'key', subs:['مفتاح سيارة','مفاتيح منزل','ميدالية','بطاقة دخول'], subsEn:['Car key','House keys','Keyring','Access card']},
-  {id:'jewelry', name:'مجوهرات وساعات', en:'Jewellery & watches', icon:'ring', subs:['خاتم','سلسال','أسورة','ساعة يد','أقراط'], subsEn:['Ring','Necklace','Bracelet','Wristwatch','Earrings']},
-  {id:'glasses', name:'نظارات', en:'Glasses', icon:'glasses', subs:['نظارة طبية','نظارة شمسية','علبة نظارة'], subsEn:['Prescription glasses','Sunglasses','Glasses case']},
+  {id:'keys', name:'مفاتيح', en:'Keys', icon:'key', subs:['مفتاح سيارة','مفاتيح منزل','ميدالية','بطاقة دخول'], subsEn:['Car key','House keys','Keyring','Access card'],
+    claim:{...CLAIM_STD, hint: 'cl.h.keys'}},
+  {id:'jewelry', name:'مجوهرات وساعات', en:'Jewellery & watches', icon:'ring', subs:['خاتم','سلسال','أسورة','ساعة يد','أقراط'], subsEn:['Ring','Necklace','Bracelet','Wristwatch','Earrings'],
+    claim:{...CLAIM_STD, hint: 'cl.h.jewelry'}},
+  {id:'glasses', name:'نظارات', en:'Glasses', icon:'glasses', subs:['نظارة طبية','نظارة شمسية','علبة نظارة'], subsEn:['Prescription glasses','Sunglasses','Glasses case'],
+    claim:{...CLAIM_STD, hint: 'cl.h.glasses'}},
   {id:'bags', name:'حقائب', en:'Bags', icon:'bag', subs:['حقيبة ظهر','حقيبة لابتوب','حقيبة يد','حقيبة رياضية'], subsEn:['Backpack','Laptop bag','Handbag','Sports bag']},
   {id:'study', name:'كتب وأدوات دراسية', en:'Books & study supplies', icon:'book', subs:['كتاب','دفتر','ملف أوراق','مقلمة','أدوات هندسية'], subsEn:['Book','Notebook','Document folder','Pencil case','Geometry set']},
   {id:'clothes', name:'ملابس', en:'Clothing', icon:'shirt', subs:['شماغ أو غترة','عباية','جاكيت','قبعة','حذاء'], subsEn:['Shemagh or ghutra','Abaya','Jacket','Cap','Shoes']},
   {id:'tools', name:'عُدد وأدوات ورش', en:'Workshop tools', icon:'wrench', subs:['عدة يدوية','جهاز قياس','خوذة سلامة','نظارة سلامة','قفازات'], subsEn:['Hand tools','Measuring device','Safety helmet','Safety glasses','Gloves']},
-  {id:'bottles', name:'قوارير وحافظات', en:'Bottles & flasks', icon:'bottle', subs:['قارورة ماء','حافظة قهوة (ترمس)','علبة طعام'], subsEn:['Water bottle','Coffee flask (thermos)','Food container']},
+  {id:'bottles', name:'قوارير وحافظات', en:'Bottles & flasks', icon:'bottle', subs:['قارورة ماء','حافظة قهوة (ترمس)','علبة طعام'], subsEn:['Water bottle','Coffee flask (thermos)','Food container'], retentionDays: 14},
   {id:'other', name:'أخرى', en:'Other', icon:'box', subs:[], subsEn:[]},
 ];
+// أسئلة الاستلام للتصنيف (الافتراضي: اللون والماركة، وتلميح عام)
+export const claimOf = id => cat(id).claim || {...CLAIM_STD, hint: 'cl.proofHint'};
+// مدة الحفظ الفعلية للغرض: مدة التصنيف إن كانت أقصر من مدة المكتب
+export const keepDaysOf = (catId, office) => { const o = Number(office?.retentionDays) || 90, c = cat(catId).retentionDays; return c && c < o ? c : o; };
 // alt/altEn: كلمات إضافية للبحث باللغتين
 export const COLORS = [
   {id:'black',name:'أسود',en:'Black',hex:'#1c1c1c',alt:'اسود سوداء سودا',altEn:'black dark'},
@@ -128,6 +148,7 @@ export const CLAIM_STATUS = {
 export const FOUND_STATUS = {
   pending:{l:'بانتظار تسليمه للمكتب',en:'Awaiting hand-in',c:'warn'}, received:{l:'استلمه المكتب',en:'Received by office',c:'info'},
   returned:{l:'عاد لصاحبه',en:'Back with its owner',c:'ok'}, cancelled:{l:'مُلغى',en:'Cancelled',c:'mute'},
+  yours:{l:'أصبح لك',en:'Now yours',c:'ok'},   // انتهت مدة حفظه فأُعيد لمن وجده (disposal: finder)
 };
 export const REPORT_STATUS = { open:{l:'بلاغ مفتوح',en:'Open report',c:'warn'}, closed:{l:'مغلق',en:'Closed',c:'mute'} };
 export const MODE_LABEL = {visitor:{l:'زائر',en:'Visitor'}, staff:{l:'موظف المكتب',en:'Office staff'}, admin:{l:'الإدارة',en:'Admin'}};

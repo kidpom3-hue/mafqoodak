@@ -1,10 +1,10 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
-import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS } from '../constants.js';
-import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, spotName, showTitle, isoDay, LS } from '../utils.js';
+import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf } from '../constants.js';
+import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, spotName, showTitle, isoDay, LS, disposalLabel } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer } from '../state.js';
+import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale } from '../state.js';
 import { backBtn, thumbHtml, miniItem, catPicker, colorPicker, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView } from './common.js';
-import { claimCardStaff, rivals, dateOf, qaBox, timeline } from './staff.js';
+import { claimCardStaff, rivals, dateOf, qaBox, timeline, catKeepNote } from './staff.js';
 import { aiReady } from '../ai.js';
 import { hydrate } from '../ui.js';
 import { msgOf } from '../notify.js';
@@ -107,7 +107,7 @@ export function vItem(){
   const c = cat(i.cat); const o = S.offices.find(x => x.id === i.officeId) || curOffice();
   // الموظف يرى التفاصيل السرية (full)، والزائر يرى الإعلان العام فقط
   const staffMode = staffView(); const f = staffMode ? full(i) : i;
-  const keepDays = (o?.retentionDays || 90) - daysAgo(i.foundDate);
+  const keepDays = keepDaysOf(i.cat, o) - daysAgo(i.foundDate);   // مدة التصنيف إن كانت أقصر من مدة المكتب
   const mine = S.myClaims.find(cl => cl.itemId === i.id);   // طلب سابق (بأي حالة)
   const claimBtn = S.uid ? `<button class="btn block" data-act="goClaim" data-id="${esc(i.id)}">${icon('shield')}${t('it.claim')}</button>
       <p class="hint">${t('it.claimHint')}</p>`
@@ -125,6 +125,10 @@ export function vItem(){
       ${cls.length ? `<div class="section-title">${t('it.claims')}</div><div class="list">${cls.map(claimCardStaff).join('')}</div>` : ''}`;
   } else if (i.status === 'disposed'){
     actions = `<div class="note">${icon('clock')}<span>${t('it.disposed')}</span></div>`;
+  } else if (mine && ['expired', 'cancelled'].includes(mine.status)){
+    // طلبه انتهت مهلته أو أُلغي: رقم الطلب ثابت فلا يُرسل طلباً جديداً؛ يراجع المكتب فيعيد الموظف تفعيل طلبه
+    actions = `<div class="note warn">${icon('clock')}<span>${t(mine.status === 'expired' ? 'it.mineExpired' : 'it.mineCancelled')}</span></div>
+      ${o ? `<dl class="facts">${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}${o.phone ? `<dt>${t('found.contact')}</dt><dd><span dir="ltr">${esc(o.phone)}</span></dd>` : ''}</dl>` : ''}`;
   } else if (mine?.status === 'rejected'){
     actions = `<div class="note warn">${icon('info')}<span>${t('it.rejected')}</span></div>`;
   } else if (mine){
@@ -161,10 +165,11 @@ export function vItem(){
           <dt>${t('if.spot')}</dt><dd>${esc((staffMode ? spotText(f) : spotName(i.spot, i.officeId)) || t('it.unknown'))}</dd>
           <dt>${t('if.date')}</dt><dd>${fmtDate(i.foundDate)} <span class="muted">(${relDay(i.foundDate)})</span></dd>
           ${staffMode && f.storage ? `<dt>${t('if.storage')}</dt><dd>${esc(f.storage)}</dd>` : ''}
-          ${i.status === 'disposed' && i.disposal ? `<dt>${t('a.method')}</dt><dd>${t('disposal.' + (['donated', 'destroyed', 'authority'].includes(i.disposal) ? i.disposal : 'other'))}${i.disposedAt ? ` <span class="muted">(${fmtDate(isoDay(i.disposedAt))})</span>` : ''}</dd>` : ''}
+          ${i.status === 'disposed' && i.disposal ? `<dt>${t('a.method')}</dt><dd>${disposalLabel(i.disposal)}${i.disposedAt ? ` <span class="muted">(${fmtDate(isoDay(i.disposedAt))})</span>` : ''}</dd>` : ''}
           ${staffMode && f.disposalNote ? `<dt>${t('it.disposalNote')}</dt><dd>${esc(f.disposalNote)}</dd>` : ''}
           ${staffMode && f.handoverNote ? `<dt>${t('it.handoverNote')}</dt><dd>${esc(noteText(f.handoverNote))}</dd>` : ''}
-          ${i.status === 'available' || i.status === 'reserved' ? `<dt>${t('setup.keep')}</dt><dd>${keepDays > 0 ? t('it.keepLeft', {days: daysWord(keepDays, true)}) : `<span class="flag">${t('it.keepOver')}</span>`}</dd>` : ''}
+          ${i.status === 'available' || i.status === 'reserved' ? `<dt>${t('setup.keep')}</dt><dd>${keepDays > 0 ? t('it.keepLeft', {days: daysWord(keepDays, true)}) : `<span class="flag">${t('it.keepOver')}</span>`}${staffMode && catKeepNote(i) ? ` <span class="muted">(${catKeepNote(i)})</span>` : ''}</dd>` : ''}
+          ${staffMode && f.finderNote ? `<dt>${t('if.finder')}</dt><dd>${esc(f.finderNote)}</dd>` : ''}
         </dl>
         ${actions}
         <button class="btn ghost" data-act="share" data-id="${esc(i.id)}">${icon('share')}${t('it.share')}</button>
@@ -187,17 +192,23 @@ export function vClaimForm(){
     <button class="btn soft" data-act="nav" data-r="mine">${t('it.follow')}</button></div>`;
   // بلاغ مفتوح من التصنيف نفسه: نعرض تعبئة الطلب منه
   const rep = myReports().find(r => r.status === 'open' && r.cat === i.cat && r.officeId === i.officeId);
+  // أسئلة الاستلام حسب التصنيف (constants.js): الوثائق والنقود بلا لون ولا ماركة
+  const q = claimOf(i.cat), ids = i.cat === 'ids';
   return `<div class="wrap" data-view="claim">${backBtn()}
     <section class="hero"><div class="hero-kicker">${icon('shield')}${t('cl.kicker')}</div><h1 class="hero-title">${t('cl.title')}</h1></section>
     ${miniItem(i)}
     <form data-form="claim" data-id="${esc(i.id)}" class="panel" novalidate>
       ${rep ? `<div class="note info">${icon('bell')}<span>${t('cl.hasReport', {title: esc(rep.title)})}</span><button type="button" class="btn sm soft" data-act="useReport" data-id="${esc(rep.id)}">${t('cl.useReport')}</button></div>` : ''}
       <input type="hidden" name="reportId" value="">
-      <div class="field"><span class="label">${t('cl.color')}</span>${colorPicker('', true)}</div>
-      <div class="field"><label for="c-brand">${t('if.brand')} <span class="hint">${t('c.optional')}</span></label><input id="c-brand" name="brand" class="input" maxlength="40" autocomplete="off"></div>
-      <div class="field"><label for="proof">${t('cl.proof')}</label>
+      <div class="field id-box" role="group" aria-labelledby="c-idt"><span class="label" id="c-idt">${icon('idcard')}${t('cl.idTitle')}</span>
+        <div class="field"><label for="c-name">${t(ids ? 'cl.nameIds' : 'cl.name')}</label><input id="c-name" name="claimantName" class="input" maxlength="120" autocomplete="name" required></div>
+        <div class="field"><label for="c-last4">${t(ids ? 'cl.last4Ids' : 'cl.last4')}</label><input id="c-last4" name="idLast4" class="input" inputmode="numeric" maxlength="4" dir="ltr" autocomplete="off" required></div>
+        <span class="hint">${icon('lock')}${t('cl.idPrivate')}</span></div>
+      ${q.fields.includes('color') ? `<div class="field"><span class="label">${t('cl.color')}</span>${colorPicker('', true)}</div>` : ''}
+      ${q.fields.includes('brand') ? `<div class="field"><label for="c-brand">${t('if.brand')} <span class="hint">${t('c.optional')}</span></label><input id="c-brand" name="brand" class="input" maxlength="40" autocomplete="off"></div>` : ''}
+      <div class="field"><label for="proof">${t(i.cat === 'cash' ? 'cl.proofCash' : 'cl.proof')}</label>
         <textarea id="proof" name="proof" class="input" required></textarea>
-        <span class="hint">${t('cl.proofHint')}</span></div>
+        <span class="hint">${t(q.hint)}</span></div>
       <div class="field"><label for="c-spot">${t('cl.where')}</label><select id="c-spot" name="spot" class="input">${spotOptions(o, '')}</select></div>
       ${spotExtra(null)}
       <div class="field"><label for="c-date">${t('cl.when')} <span class="hint">${t('c.optional')}</span></label><input id="c-date" name="lostDate" type="date" class="input" max="${today()}">
@@ -265,10 +276,14 @@ export function vMine(){
 export function foundCardMine(f, focus){
   const it = f.itemId ? item(f.itemId) : null; if (f.itemId && !it) ensureItem(f.itemId);
   const o = S.offices.find(x => x.id === f.officeId);
-  const st = f.status === 'received' && it?.status === 'returned' ? 'returned' : f.status;
-  const body = st === 'pending' ? `<div class="note info">${icon('building')}<span>${t('hi.pendingNote', {place: esc(oPlace(o) || oName(o))})}</span></div>
+  const yours = f.status === 'received' && it?.status === 'disposed' && it.disposal === 'finder';   // أُعيد لمن وجده
+  const st = yours ? 'yours' : f.status === 'received' && it?.status === 'returned' ? 'returned' : f.status;
+  const body = st === 'pending' ? `${f.code ? `<div class="code-tag"><small>${t('hi.code')}</small><span class="digits" dir="ltr">${esc(f.code)}</span><small>${t('hi.codeHint')}</small></div>` : ''}
+      <div class="note info">${icon('building')}<span>${t('hi.pendingNote', {place: esc(oPlace(o) || oName(o))})}</span></div>
       <div class="btn-row"><button class="btn sm ghost" data-act="cancelFound" data-id="${esc(f.id)}">${icon('x')}${t('hi.cancel')}</button></div>`
     : st === 'returned' ? `<div class="note ok">${icon('check')}<span>${t('hi.returned')}</span></div>`
+    : st === 'yours' ? `<div class="note ok">${icon('check')}<span>${t('hi.yours')}${it ? ` (<b dir="ltr">${esc(it.ref)}</b>)` : ''}</span></div>
+      ${o ? `<dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>` : ''}`
     : st === 'received' ? `<div class="note ok">${icon('check')}<span>${it ? t('hi.receivedRef', {ref: `<b>${esc(it.ref)}</b>`}) : t('hi.received')}</span></div>`
     : `<div class="btn-row"><button class="btn sm ghost" data-act="delFound" data-id="${esc(f.id)}">${icon('trash')}${t('c.delete')}</button></div>`;
   return `<div class="box" ${focus ? 'style="border-color:var(--primary)"' : ''}>
@@ -318,7 +333,10 @@ export function reportCardMine(r, focus){
   const ai = r.ai?.matches || [];
   return `<div class="box" ${focus ? 'style="border-color:var(--primary)"' : ''}>
     <div class="box-head"><div><h3>${esc(r.title)}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''} · ${t('st.lostOn', {date: relDay(r.lostDate)})}</span><span class="meta">${icon('building')}${esc(officeName(r.officeId))}</span></div>${pill(REPORT_STATUS, r.status)}</div>
-    ${r.status === 'open' ? `
+    ${r.status === 'open' && isStale(r) ? `<div class="note warn stale">${icon('clock')}<span><b>${t('rc.stillQ')}</b> ${t('rc.stillHint')}</span></div>
+      <div class="btn-row"><button class="btn sm" data-act="renewReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.stillYes')}</button>
+        <button class="btn sm ghost" data-act="closeReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.stillFound')}</button></div>`
+    : r.status === 'open' ? `
       ${pick ? `<div class="pick-box"><span class="t">${icon('shield')}${t('rc.staffPick')}</span>${miniItem(pick)}</div>` : ''}
       ${cands.length ? `<span class="label">${t('rc.maybe')}</span><div class="list">${cands.map(i => miniItem(i)).join('')}</div>
         <p class="hint">${t('rc.maybeHint')}</p>`
