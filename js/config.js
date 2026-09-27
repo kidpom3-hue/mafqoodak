@@ -29,9 +29,18 @@ export const SETTINGS = {
   // اسم النموذج — راجع القائمة الحالية: https://firebase.google.com/docs/ai-logic/models
   aiModel: 'gemini-3.5-flash-lite',
 
-  // التنبيهات بالبريد عبر EmailJS (اختيارية؛ خطتهم المجانية تكفي نحو 200 رسالة شهرياً وقت كتابة هذا): emailjs.com
-  // اتركها فارغة لإيقافها. خطوات إنشاء الحساب والقالب في README.md (قسم «التنبيهات بالبريد»)
-  emailNotify: {enabled: false, serviceId: '', templateId: '', publicKey: ''},
+  // التنبيهات بالبريد عبر EmailJS (اختيارية؛ خطتهم المجانية 200 رسالة شهرياً وقت كتابة هذا): emailjs.com
+  // اتركها فارغة لإيقافها. خطوات إنشاء الحساب والقالبين في README.md (قسم «التنبيهات بالبريد»)
+  // templateIdAr / templateIdEn: قالب ثابت لكل لغة، نصه مكتوب في EmailJS نفسه (التطبيق يرسل to_email وto_name فقط).
+  // templateId: قديم، يُستخدم إن كان قالب اللغة فارغاً.
+  emailNotify: {enabled: false, serviceId: '', templateIdAr: '', templateIdEn: '', templateId: '', publicKey: ''},
+
+  // نطاق بريد الموظفين (اختياري)، مثل 'tvtc.gov.sa': تظهر علامة تحذير على طلب صلاحية ببريد من خارجه
+  staffEmailDomain: '',
+
+  // «أُعيد لمن وجده»: طريقة تصرّف في الغرض بعد انتهاء مدة حفظه، لما سلّمه واجد عبر التطبيق.
+  // معطّلة افتراضياً؛ فعّلها فقط إن كانت أنظمة المنشأة تسمح بإعطاء الغرض لمن وجده.
+  allowReturnToFinder: false,
 
   // بيانات أول موقع تُنشأ عند الإعداد الأول (يمكن تعديلها لاحقاً من لوحة الإدارة)
   firstOffice: {

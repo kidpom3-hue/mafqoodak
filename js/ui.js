@@ -11,6 +11,8 @@ import { vHome, updateHome, vFound, vHandin } from './views/home.js';
 import { vPrivacy } from './views/privacy.js';
 import { vLabels, vPoster } from './views/print.js';
 import { vStats } from './views/stats.js';
+import { vAudit } from './views/audit.js';
+import { SETTINGS } from './config.js';
 import { cat } from './constants.js';
 
 /* live: تُعاد رسمها عند تغيّر البيانات. النماذج (live:false) لا تُعاد حتى لا يضيع ما كتبه المستخدم */
@@ -36,6 +38,7 @@ const ROUTES = {
   labels: {live: false, v: vLabels},
   poster: {live: false, v: vPoster},
   stats: {live: true, v: vStats},
+  audit: {live: true, v: vAudit},
 };
 
 export function initForm(){
@@ -108,7 +111,7 @@ function renderMain(){
   if (S.route.name === 'login' && S.uid) S.route = S.route.params.next || {name: homeRoute(), params: {}};
   if (!S.config){ main.innerHTML = S.route.name === 'login' ? vLogin() : S.route.name === 'privacy' ? vPrivacy() : vSetup(); return; }
   // لا مكان مختار (أو لم يصل بعد من قاعدة البيانات): نعرض قائمة الأماكن دون تغيير الصفحة المطلوبة
-  if (!curOffice() && !['pick', 'admin', 'officeForm', 'join', 'login', 'privacy'].includes(S.route.name)){ main.innerHTML = vPick(); return; }
+  if (!curOffice() && !['pick', 'admin', 'officeForm', 'audit', 'join', 'login', 'privacy'].includes(S.route.name)){ main.innerHTML = vPick(); return; }
   const r = ROUTES[S.route.name] || ROUTES.home;
   main.innerHTML = r.v();
   if (r.update) r.update();
@@ -227,5 +230,19 @@ export function hydrate(){
     el.textContent = p.name;
     const img = el.parentElement?.querySelector('img[data-avatar]');
     if (img && safeAvatar(p.photo)){ img.referrerPolicy = 'no-referrer'; img.src = p.photo; img.hidden = false; }
+  });
+  // بريد صاحب الحساب (للإدارة)، وتحذير إن كان خارج نطاق الموظفين المضبوط في config.js
+  $$('[data-uemail]').forEach(async el => {
+    if (el.dataset.loaded) return; el.dataset.loaded = '1';
+    const p = await getName(el.dataset.uemail);
+    if (!el.isConnected || !p.email) return;
+    el.textContent = p.email;
+    const dom = String(SETTINGS.staffEmailDomain || '').trim().toLowerCase().replace(/^@/, '');
+    const host = p.email.toLowerCase().split('@')[1] || '';
+    if (dom && host !== dom && !host.endsWith('.' + dom)){
+      const w = document.createElement('span'); w.className = 'pill bad';
+      w.textContent = t('adm.outDomain', {domain: dom});
+      el.after(w);
+    }
   });
 }

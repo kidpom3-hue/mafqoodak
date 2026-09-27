@@ -2,9 +2,9 @@
 // لا اشتراك دائم، حفاظاً على حصة القراءة اليومية في الخطة المجانية.
 import { dbx } from './firebase.js';
 import { S, touch } from './state.js';
-import { catName, subLabel, statusLabel, ITEM_STATUS, oName } from './constants.js';
+import { catName, subLabel, statusLabel, ITEM_STATUS, oName, keepDaysOf } from './constants.js';
 import { t, locale } from './i18n.js';
-import { dayNum, daysAgo, isoDay, spotName, today, toast } from './utils.js';
+import { dayNum, daysAgo, isoDay, spotName, today, toast, disposalLabel } from './utils.js';
 
 const loading = new Set();
 // كل أغراض المكتب بكل حالاتها (مرة واحدة، و«تحديث» يعيد الجلب)
@@ -25,7 +25,6 @@ export function computeStats(items, office, reports = []){
   const returned = real.filter(i => i.status === 'returned');
   const base = n('available') + n('reserved') + returned.length + n('disposed');
   const days = returned.filter(i => i.returnedAt && i.foundDate).map(i => Math.max(0, Math.round(i.returnedAt / 864e5 - dayNum(i.foundDate))));
-  const keep = office?.retentionDays || 90;
   // حسب التصنيف: الأكثر أولاً، وما بعد السابع يُجمع في «أخرى»
   const byCat = Object.values(real.reduce((m, i) => { const k = i.cat || 'other'; (m[k] ||= {id: k, n: 0, ret: 0}).n++; if (i.status === 'returned') m[k].ret++; return m; }, {}))
     .sort((a, b) => b.n - a.n);
@@ -43,7 +42,7 @@ export function computeStats(items, office, reports = []){
     .map(([s, c]) => ({s, n: c})).sort((a, b) => b.n - a.n).slice(0, 5);
   return {
     total: real.length, returned: returned.length, held: n('available') + n('reserved'), disposed: n('disposed'),
-    over: real.filter(i => i.status === 'available' && daysAgo(i.foundDate) > keep).length,
+    over: real.filter(i => i.status === 'available' && daysAgo(i.foundDate) > keepDaysOf(i.cat, office)).length,   // مدة التصنيف إن كانت أقصر
     rate: base ? Math.round(100 * returned.length / base) : null,
     avgDays: days.length ? Math.round(10 * days.reduce((a, b) => a + b, 0) / days.length) / 10 : null,
     cats, months, spots,
@@ -65,7 +64,7 @@ export async function exportCsv(officeId){
   const cols = ['ref', 'category', 'type', 'place', 'foundDate', 'status', 'returnedDate', 'disposal', 'createdAt', 'sample'];
   const rows = items.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).map(i => [
     i.ref, catName(i.cat), subLabel(i.sub), spotName(i.spot, officeId), i.foundDate,
-    statusLabel(ITEM_STATUS[i.status]) || i.status, isoDay(i.returnedAt), i.disposal ? t('disposal.' + (['donated', 'destroyed', 'authority'].includes(i.disposal) ? i.disposal : 'other')) : '',
+    statusLabel(ITEM_STATUS[i.status]) || i.status, isoDay(i.returnedAt), i.disposal ? disposalLabel(i.disposal) : '',
     isoDay(i.createdAt), i.sample ? t('c.sample') : '']);
   const csv = '\uFEFF' + [cols.map(c => t('csv.' + c)), ...rows].map(r => r.map(cell).join(',')).join('\r\n');
   const url = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'}));

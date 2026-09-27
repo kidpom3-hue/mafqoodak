@@ -30,6 +30,10 @@ export const S = {
   counts: {},                    // أعداد من الخادم (getCountFromServer)
   stats: {},                     // الإحصاءات: رقم المكتب ← {items} (تُجلب عند فتح صفحتها فقط)
   logs: {},                      // للموظف: سجل الحيازة لكل غرض فُتح (رقم الغرض ← قائمة أو 'loading')
+  finders: {},                   // للموظف: صاحب إشعار التسليم المرتبط بالغرض (رقم الإشعار ← uid)، لتنبيه تضارب المصالح
+  showStale: false,              // للموظف: إظهار البلاغات القديمة (أكثر من 60 يوماً دون تجديد)
+  adminList: [],                 // للإدارة: حسابات المديرين (admins)
+  audit: {},                     // للإدارة: «سجل العمليات» (مكتب|فلتر ← قائمة أو 'loading')
   verified: false,               // البريد موثّق؟
   secrets: {},   // تفاصيل المفقودات السرية (للموظف فقط): رقم الغرض ← {title, color, brand, desc, bldg, room, storage}
   staffDoc: null, staffLoaded: false, staffList: [], staffReqs: [], myReq: null, priv: {},
@@ -84,11 +88,28 @@ setSpotHook((s, officeId) => spotLabel(S.offices.find(o => o.id === (officeId ||
 // سؤال التحقق: هل أجاب صاحب الطلب عن آخر سؤال؟ (الإجابة الأقدم من السؤال لا تُحسب)
 export const answered = c => !!c?.answer && (c.answeredAt || 0) >= (c.askedAt || 0);
 export const awaitingAnswer = c => c?.status === 'pending' && !!c.question && !answered(c);
+/* تضارب المصالح: صاحب الطلب هو من سلّم الغرض (إشعار التسليم المرتبط به) أو الموظف الذي سجّله.
+   صاحب الإشعار يُجلب مرة واحدة لكل غرض (get) */
+export function ensureFinder(i){
+  const f = i?.fromFound; if (!f || !db || f in S.finders) return;
+  S.finders[f] = null;
+  dbx.get('foundReports/' + f).then(d => { S.finders[f] = d?.uid || ''; }).catch(() => { S.finders[f] = ''; }).finally(changed);
+}
+export function conflictOf(c, i){
+  if (!c || !i || !c.uid || c.uid === 'deleted') return '';
+  if (i.fromFound){ ensureFinder(i); if (S.finders[i.fromFound] === c.uid) return 'finder'; }
+  return i.createdBy === c.uid ? 'recorder' : '';
+}
+/* صلاحية البلاغ: المفتوح الذي مضى على إنشائه أو تجديده (renewedAt) أكثر من 60 يوماً يُسأل صاحبه «هل ما زلت تبحث؟»،
+   ويُخفى عند الموظف افتراضياً ولا يدخل في مطابقة الأغراض الجديدة */
+export const STALE_DAYS = 60;
+export const isStale = r => r?.status === 'open' && Date.now() - (r.renewedAt || r.createdAt || 0) > STALE_DAYS * 864e5;
 export const myCode = id => S.priv?.codes?.[id] || LS.get('codes', {})[id] || null;
 export const MATCH_MIN = SETTINGS.matchThreshold;
 
 // المرشحون لبلاغ: الزائر يقارن بالبيانات العامة فقط، والموظف يمرّر full ليقارن بالتفاصيل السرية أيضاً
 export function candidatesFor(r, n = 3, view = x => x){
+  if (isStale(r)) return [];
   return S.items.filter(i => i.status === 'available' || i.status === 'reserved')
     .map(i => ({i: view(i), s: matchScore(r, view(i))})).filter(x => x.s >= MATCH_MIN)
     .sort((a, b) => b.s - a.s).slice(0, n);
@@ -110,6 +131,7 @@ export function alertKeys(){
   const keys = [];
   for (const r of myReports()){
     if (r.status !== 'open') continue;
+    if (isStale(r)){ keys.push(`s:${r.id}:${r.renewedAt || r.createdAt}`); continue; }   // هل ما زلت تبحث؟
     // ترشيح الموظف ينبّه فقط ما دام الغرض متاحاً أو محجوزاً
     const pi = r.staffPick && item(r.staffPick);
     if (pi && ACTIVE.includes(pi.status)) keys.push(`p:${r.id}:${r.staffPick}`);
@@ -127,6 +149,7 @@ export function alertKeys(){
     keys.push(`f:${f.id}:r`);
     const it = f.itemId && item(f.itemId); if (f.itemId && !it) ensureItem(f.itemId);
     if (it?.status === 'returned') keys.push(`f:${f.id}:ret`);
+    if (it?.status === 'disposed' && it.disposal === 'finder') keys.push(`f:${f.id}:fin`);   // أصبح الغرض لمن وجده
   }
   return keys;
 }
@@ -159,7 +182,7 @@ function onUser(user){
   S.uid = user?.uid || null;
   S.me = user ? {name: user.displayName || (user.email || '').split('@')[0] || t('user.anon'), email: user.email || '', photo: user.photoURL || ''} : null;
   S.isAdmin = false; S.adminLoaded = !user; S.staffDoc = null; S.staffLoaded = !user;
-  S.myReq = null; S.priv = {}; S.staffList = []; S.staffReqs = []; S.allItems = [];
+  S.myReq = null; S.priv = {}; S.staffList = []; S.staffReqs = []; S.allItems = []; S.adminList = []; S.audit = {};
   S.verified = !!user?.emailVerified;   // حسابات Google موثّقة تلقائياً
   clear('mine'); S.myReports = []; S.myClaims = []; S.myFound = [];
   S.authReady = true;
@@ -189,6 +212,7 @@ function startAdmin(){
   clear('admin');
   subs.admin.push(dbx.watch('staff', [], l => { S.staffList = l; changed(); }, errH('staff list')));
   subs.admin.push(dbx.watch('staffRequests', [], l => { S.staffReqs = l; changed(); }, errH('requests')));
+  subs.admin.push(dbx.watch('admins', [], l => { S.adminList = l; changed(); }, errH('admins list')));
   // لا اشتراك في كل أغراض كل المكاتب: الأرقام تُجلب بـ getCountFromServer عند فتح «نظرة عامة»
 }
 
@@ -274,6 +298,19 @@ export async function ensureLogs(i){
   catch (e){ errH('logs')(e); S.logs[i.id] = []; }
   changed();
 }
+// للإدارة: «سجل العمليات» لمكتب مختار، عند الطلب فقط (officeId == و action in)
+export const AUDIT = {
+  handover: ['status:returned'], delete: ['delete'], dispose: ['dispose'],
+  perms: ['perm:grant', 'perm:revoke', 'perm:admin', 'perm:unadmin'],
+};
+export async function loadAudit(officeId, filter, force = false){
+  const k = officeId + '|' + filter; if (!db || !officeId || (S.audit[k] && !force)) return;
+  const actions = filter === 'all' ? Object.values(AUDIT).flat() : AUDIT[filter] || [];
+  S.audit[k] = 'loading'; changed();
+  try { S.audit[k] = (await dbx.list('logs', [['officeId', '==', officeId], ['action', 'in', actions]])).sort((a, b) => b.at - a.at); }
+  catch (e){ errH('audit')(e); S.audit[k] = []; }
+  changed();
+}
 // للموظف: سجل الطلبات المنتهية عند الطلب
 export async function loadClaimHistory(){
   try { S.claimHist = await dbx.list('claims', [['officeId', '==', S.officeId], ['status', 'in', ['done', 'rejected', 'expired', 'cancelled']]]); }
@@ -294,7 +331,7 @@ export function fixMode(){
   if (!S.authReady || !S.officesLoaded || (S.uid && (!S.staffLoaded || !S.adminLoaded))) return;
   if (!modes().includes(S.mode)){
     S.mode = 'visitor'; LS.set('mode', 'visitor');
-    if (['staff', 'add', 'admin', 'officeForm'].includes(S.route.name)) S.route = {name: 'home', params: {}};
+    if (['staff', 'add', 'admin', 'officeForm', 'audit'].includes(S.route.name)) S.route = {name: 'home', params: {}};
   }
 }
 
@@ -317,7 +354,8 @@ export function getName(uid){
   if (NAMES.has(uid)) return NAMES.get(uid);
   // صورة الحساب تُقبل من صور حسابات Google فقط (لا روابط تتبّع)
   const okPhoto = v => typeof v === 'string' && /^https:\/\/[a-z0-9.-]+\.googleusercontent\.com\//.test(v);
-  const p = dbx.get('users/' + uid).then(d => ({name: d?.name || t('user.anon'), photo: okPhoto(d?.photo) ? d.photo : ''})).catch(() => ({name: t('user.anon'), photo: ''}));
+  // البريد يُقرأ للإدارة فقط (بطاقة طلب الصلاحية)
+  const p = dbx.get('users/' + uid).then(d => ({name: d?.name || t('user.anon'), photo: okPhoto(d?.photo) ? d.photo : '', email: typeof d?.email === 'string' ? d.email : ''})).catch(() => ({name: t('user.anon'), photo: '', email: ''}));
   NAMES.set(uid, p); return p;
 }
 

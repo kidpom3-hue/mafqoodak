@@ -66,12 +66,13 @@ export const spotName = (s, officeId) => s ? spotHook(s, officeId) : '';
 
 // الاسم العام للغرض في الإعلان: اسم النوع إن وُجد، وإلا اسم التصنيف (الاسم التفصيلي سري للموظفين)
 // يُخزَّن بالعربية دائماً (قيمة في قاعدة البيانات)، ويُترجم عند العرض عبر showTitle
-export const publicTitle = (catId, sub) => subName(sub) || cat(catId).name;
+// النقود: «مبلغ مالي» دائماً (publicName)، فلا يظهر للعامة نوعها ولا مبلغها
+export const publicTitle = (catId, sub) => cat(catId).publicName || subName(sub) || cat(catId).name;
 // النوع بصيغة للمقارنة: الاسم الحالي حتى لو خُزّن بالاسم القديم
 export const subKey = s => subName(s);
 // العنوان العام للعرض (الأغراض القديمة خُزّن عنوانها باسم النوع القديم)
 // وبالإنجليزية: اسم النوع أو التصنيف المقابل
-export const showTitle = i => { const v = subName(i?.title); if (!isEn() || !v) return v; return v === cat(i.cat).name ? catName(i.cat) : subLabel(v); };
+export const showTitle = i => { const v = subName(i?.title); if (!isEn() || !v) return v; const c = cat(i.cat); return v === c.publicName ? c.publicEn : v === c.name ? catName(i.cat) : subLabel(v); };
 
 // نص البحث: أسماء التصنيف والنوع واللون باللغتين، فكلمة إنجليزية (wallet، keys) تجد الأغراض العربية
 export const itemText = i => [subName(i.title), i.desc, i.sub, searchWords(i.cat, i.sub, i.color), i.brand, i.spot, spotName(i.spot, i.officeId), i.bldg, i.room, i.ref].join(' ');
@@ -127,10 +128,16 @@ function sha256Fallback(str){
   return h.map(v => (v >>> 0).toString(16).padStart(8, '0')).join('');
 }
 export const genCode = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, '0');
+// حروف رقم القيد والأكواد القصيرة: بلا أحرف متشابهة (O/0، I/1، B/8...)
+const REF_CHARS = 'ACDEFHJKMNPRTUVWXY34679';
+export const refCode = (n = 4) => [...crypto.getRandomValues(new Uint8Array(n))].map(x => REF_CHARS[x % REF_CHARS.length]).join('');
 export function makeRef(office){
-  const A = 'ACDEFHJKMNPRTUVWXY34679'; const r = crypto.getRandomValues(new Uint8Array(4));
-  return `${(office?.code || 'MFQ').toUpperCase()}-${[...r].map(x => A[x % A.length]).join('')}`;
+  return `${(office?.code || 'MFQ').toUpperCase()}-${refCode(4)}`;
 }
+// كود إشعار التسليم كما يكتبه الموظف: أحرف كبيرة وأرقام فقط
+export const normCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+// اسم طريقة التصرّف في الغرض (القيمة المخزّنة ← نص بلغة الواجهة)
+export const disposalLabel = d => t('disposal.' + (['donated', 'destroyed', 'authority', 'finder'].includes(d) ? d : 'other'));
 export function dataUrlToBlob(u){
   const [h, b] = u.split(','); const mime = (h.match(/:(.*?);/) || [])[1] || 'image/jpeg';
   const bin = atob(b); const arr = new Uint8Array(bin.length);

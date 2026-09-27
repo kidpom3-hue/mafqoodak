@@ -26,6 +26,18 @@ service cloud.firestore {
     function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
     // بريد موثّق: حساب Google موثّق تلقائياً، وحساب البريد وكلمة المرور بعد الضغط على رابط التحقق
     function verified() { return signedIn() && request.auth.token.email_verified == true; }
+
+    // ── حراسة سلسلة الحيازة على الخادم ──
+    // قبول طلب: الغرض متاح قبل العملية، ويصبح محجوزاً لهذا الطلب في العملية نفسها (يمنع قبول طلبين معاً من جهازين)
+    function approveOk(claimId, itemId) {
+      return get(/databases/$(database)/documents/items/$(itemId)).data.status == 'available'
+        && getAfter(/databases/$(database)/documents/items/$(itemId)).data.reservedFor == claimId;
+    }
+    // التسليم بالرمز: الغرض محجوز لهذا الطلب قبل العملية، ويصبح «سُلّم» في العملية نفسها
+    function doneOk(claimId, itemId) {
+      return get(/databases/$(database)/documents/items/$(itemId)).data.reservedFor == claimId
+        && getAfter(/databases/$(database)/documents/items/$(itemId)).data.status == 'returned';
+    }
     function smallImage() { return request.resource.data.data is string && request.resource.data.data.size() < 350000; }
 
     // ── حدود البيانات: تمنع كتابة حقول غريبة أو نصوص ضخمة تستهلك حصة الخطة المجانية ──
@@ -35,11 +47,11 @@ service cloud.firestore {
     // تفاصيل الغرض السرية: لا تُكتب أبداً في items (المقروءة للجميع)، مكانها itemSecrets
     function secretKeys() { return ['color', 'brand', 'desc', 'bldg', 'room', 'storage']; }
     function validSecret(d) {
-      return d.keys().hasOnly(['officeId', 'title', 'color', 'brand', 'desc', 'bldg', 'room', 'storage', 'handoverNote', 'disposalNote'])
+      return d.keys().hasOnly(['officeId', 'title', 'color', 'brand', 'desc', 'bldg', 'room', 'storage', 'handoverNote', 'disposalNote', 'finderNote'])
         && d.officeId is string
         && strMax(d, 'title', 400) && strMax(d, 'color', 60) && strMax(d, 'brand', 200) && strMax(d, 'desc', 4000)
         && strMax(d, 'bldg', 40) && strMax(d, 'room', 60) && strMax(d, 'storage', 200)
-        && strMax(d, 'handoverNote', 600) && strMax(d, 'disposalNote', 600);
+        && strMax(d, 'handoverNote', 600) && strMax(d, 'disposalNote', 600) && strMax(d, 'finderNote', 300);
     }
 
     function validUser(d) {
@@ -111,7 +123,14 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(secretKeys());
       allow update: if isStaffOf(resource.data.officeId)
         && request.resource.data.officeId == resource.data.officeId
-        && !request.resource.data.keys().hasAny(secretKeys());
+        && !request.resource.data.keys().hasAny(secretKeys())
+        // «محجوز» فقط لطلب مقبول في العملية نفسها
+        && (request.resource.data.status != 'reserved' || resource.data.status == 'reserved'
+            || getAfter(/databases/$(database)/documents/claims/$(request.resource.data.reservedFor)).data.status == 'approved')
+        // «سُلّم» فقط بطلب اكتمل بالرمز، أو بتسليم مباشر موثّق باسم المستلم في التفاصيل السرية
+        && (request.resource.data.status != 'returned' || resource.data.status == 'returned'
+            || getAfter(/databases/$(database)/documents/claims/$(resource.data.get('reservedFor', '-'))).data.status == 'done'
+            || getAfter(/databases/$(database)/documents/itemSecrets/$(itemId)).data.get('handoverNote', '') != '');
       allow delete: if isStaffOf(resource.data.officeId);
     }
 
@@ -175,7 +194,10 @@ service cloud.firestore {
     match /claims/{claimId} {
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
       allow create: if verified()
-        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'status', 'codeHash', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'status', 'codeHash', 'createdAt'])
+        // الاسم كما في البطاقة وآخر 4 أرقام منها: يطابقها الموظف مع البطاقة عند التسليم
+        && strMax(request.resource.data, 'claimantName', 120)
+        && (!('idLast4' in request.resource.data) || request.resource.data.idLast4.matches('[0-9]{4}'))
         && request.resource.data.uid == me()
         // طلب واحد فقط لكل مستخدم على كل غرض: رقم الطلب = رقم الغرض_رقم المستخدم
         && claimId == request.resource.data.itemId + '_' + me()
@@ -194,6 +216,8 @@ service cloud.firestore {
           && resource.data.uid != me()
           && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote'])
           && request.resource.data.status in ['pending', 'approved', 'done', 'rejected', 'expired', 'cancelled']
+          && (request.resource.data.status != 'approved' || resource.data.status == 'approved' || approveOk(claimId, resource.data.itemId))
+          && (request.resource.data.status != 'done' || resource.data.status == 'done' || doneOk(claimId, resource.data.itemId))
           && strMax(request.resource.data, 'note', 600) && strMax(request.resource.data, 'question', 600)
           && strMax(request.resource.data, 'handoverNote', 600))
         // صاحب الطلب يجيب عن سؤال الموظف ما دام طلبه قيد المراجعة
@@ -204,7 +228,7 @@ service cloud.firestore {
         // (المرفوض يبقى حتى لا يُحذف ويُعاد إرساله لتخمين التفاصيل من جديد)
         || (signedIn() && resource.data.uid == me() && resource.data.status in ['done', 'rejected', 'expired', 'cancelled']
           && request.resource.data.uid == 'deleted' && request.resource.data.proof == ''
-          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'anonymizedAt']));
+          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'claimantName', 'idLast4', 'handoverNote', 'anonymizedAt']));
       // يحذف المستخدم طلبه ما دام قيد المراجعة فقط
       allow delete: if isAdmin()
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending');
@@ -216,7 +240,8 @@ service cloud.firestore {
       allow create: if verified()
         && request.resource.data.uid == me()
         && request.resource.data.status == 'pending'
-        && request.resource.data.keys().hasOnly(['officeId', 'uid', 'cat', 'sub', 'spot', 'bldg', 'room', 'foundDate', 'note', 'status', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['officeId', 'uid', 'cat', 'sub', 'spot', 'bldg', 'room', 'foundDate', 'note', 'code', 'status', 'createdAt'])
+        && strMax(request.resource.data, 'code', 12)
         && request.resource.data.officeId is string
         && strMax(request.resource.data, 'cat', 40) && strMax(request.resource.data, 'sub', 200)
         && strMax(request.resource.data, 'spot', 400) && strMax(request.resource.data, 'bldg', 40)

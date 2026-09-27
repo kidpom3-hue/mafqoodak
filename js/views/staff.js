@@ -1,8 +1,8 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
-import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS } from '../constants.js';
+import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, claimOf, keepDaysOf } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, candidatesFor, answered, ensureLogs } from '../state.js';
+import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale } from '../state.js';
 import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, colorPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm } from './common.js';
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry } from '../migrate.js';
@@ -25,9 +25,10 @@ export function vStaff(){
   </div>`;
 }
 let toolsTab = null;
-const keepOf = () => curOffice()?.retentionDays || 90;
-// أيام متبقية على نهاية مدة الحفظ (سالبة = تجاوزها)
-export const keepLeft = i => keepOf() - daysAgo(i.foundDate);
+// أيام متبقية على نهاية مدة الحفظ (سالبة = تجاوزها). مدة التصنيف تتقدم على مدة المكتب إن كانت أقصر
+export const keepLeft = i => keepDaysOf(i.cat, curOffice()) - daysAgo(i.foundDate);
+// مدة حفظ خاصة بالتصنيف (أقصر من مدة المكتب)؟ نص قصير يوضحها
+export const catKeepNote = i => { const d = keepDaysOf(i.cat, curOffice()); return d < (Number(curOffice()?.retentionDays) || 90) ? t('st.catKeep', {days: daysWord(d)}) : ''; };
 // طلبات منافسة: طلبات قيد المراجعة على غرض محجوز لطلب آخر
 export const rivals = i => i?.status === 'reserved' ? S.claims.filter(c => c.itemId === i.id && c.status === 'pending' && c.id !== i.reservedFor) : [];
 // انتهت مهلة الاستلام للطلب المقبول؟
@@ -108,7 +109,8 @@ export function staffItems(){
 }
 /* سجل الحيازة (للموظف): كل ما حدث للغرض من تسجيله إلى تسليمه، من قيود logs.
    الأغراض الأقدم من السجل تبدأ بتاريخ تسجيلها. */
-const LOG_ACTIONS = ['claim', 'create', 'edit', 'receive', 'ask', 'approve', 'reject', 'release', 'handover', 'status:available', 'status:returned', 'status:archived', 'dispose', 'delete'];
+export const LOG_ACTIONS = ['claim', 'create', 'edit', 'receive', 'ask', 'approve', 'reject', 'release', 'reactivate', 'handover', 'status:available', 'status:returned', 'status:archived', 'dispose', 'delete',
+  'perm:grant', 'perm:revoke', 'perm:admin', 'perm:unadmin'];
 export function timeline(i){
   ensureLogs(i);
   const L = S.logs[i.id];
@@ -132,25 +134,34 @@ export function timeline(i){
 /* مقارنة إجابات صاحب الطلب بالحقيقة (من itemSecrets) */
 const OK = '<span class="v ok">✓</span>', OK2 = '<span class="v ok">✓✓</span>', NO = '<span class="v bad">✗</span>', NA = () => `<span class="v mute">${t('st.na')}</span>`;
 // نتيجة المقارنة الآلية: اللون والمكان والتاريخ (تُستخدم في الجدول وفي تحذير القبول)
+// التصنيفات بلا لون في نموذج الاستلام (الوثائق والنقود) لا تُحسب فيها المقارنة باللون
 export function claimChecks(c, f){
-  const color = !c.color ? NA() : !f?.color ? '' : c.color === f.color ? OK : NO;
+  const color = !claimOf(f?.cat).fields.includes('color') ? '' : !c.color ? NA() : !f?.color ? '' : c.color === f.color ? OK : NO;
   const place = !c.lostSpot ? NA() : !f?.spot ? '' : c.lostSpot !== f.spot ? NO : (c.bldg && c.bldg === f.bldg ? OK2 : OK);
   const gap = c.lostDate && f?.foundDate ? dayNum(f.foundDate) - dayNum(c.lostDate) : null;
   const date = !c.lostDate ? NA() : gap === null ? '' : gap >= 0 && gap <= 14 ? OK : NO;
   return {color, place, date, hits: [color, place, date].filter(v => v === OK || v === OK2).length};
 }
+// تنبيه تضارب المصالح: صاحب الطلب هو من سلّم الغرض للمكتب، أو الموظف الذي سجّله
+export const conflictNote = kind => kind ? `<div class="note bad conflict" role="alert">${icon('alert')}<span><b>${t(kind === 'finder' ? 'st.conflictFinder' : 'st.conflictRecorder')}</b></span></div>` : '';
 function claimCompare(c, f){
   if (!f) return '';
   const said = x => x ? esc(x) : `<span class="muted">${t('st.notSaid')}</span>`, truth = x => x ? esc(x) : '<span class="muted">—</span>';
   // اللون: مطابقة تلقائية · المكان: ✓ المنطقة نفسها، ✓✓ والمبنى نفسه · التاريخ: فُقد قبل العثور أو في يومه، بفارق 14 يوماً على الأكثر
   const {color, place, date, hits} = claimChecks(c, f);
+  const fields = claimOf(f.cat).fields, kind = conflictOf(c, f);
   const row = (k, a, b, v = '') => `<div class="cmp-row"><b>${k}</b><span>${a}</span><span>${b}</span>${v || '<span class="v"></span>'}</div>`;
-  return `<div class="cmp">
+  const card = `<span class="muted">${t('st.onCard')}</span>`;
+  return `<div class="cmp${kind ? ' cmp-conflict' : ''}">
+    ${kind ? `<div class="cmp-alert">${icon('alert')}<span>${t(kind === 'finder' ? 'st.conflictShortF' : 'st.conflictShortR')}</span></div>` : ''}
     <div class="cmp-row cmp-head"><b></b><span>${t('st.cmpSaid')}</span><span>${t('st.cmpTruth')}</span><span class="v"></span></div>
-    ${row(t('c.color'), said(colorName(c.color)), truth(colorName(f.color)), color)}
+    ${row(t(f.cat === 'ids' ? 'cl.nameIds' : 'st.cmpName'), said(c.claimantName), card)}
+    ${row(t('st.cmpLast4'), c.idLast4 ? `<span dir="ltr">${esc(c.idLast4)}</span>` : said(''), card)}
+    ${f.finderNote ? row(t('st.cmpFinder'), '<span class="muted">—</span>', esc(f.finderNote)) : ''}
+    ${fields.includes('color') ? row(t('c.color'), said(colorName(c.color)), truth(colorName(f.color)), color) : ''}
     ${row(t('st.cmpPlace'), said(spotText({spot: c.lostSpot, bldg: c.bldg, room: c.room})), truth(spotText(f)), place)}
     ${row(t('st.cmpDate'), said(c.lostDate && fmtDate(c.lostDate)), truth(f.foundDate && t('st.foundOn', {date: fmtDate(f.foundDate)})), date)}
-    ${row(t('st.cmpBrand'), said(c.brand), truth(f.brand))}
+    ${fields.includes('brand') ? row(t('st.cmpBrand'), said(c.brand), truth(f.brand)) : ''}
     ${row(t('st.cmpProof'), said(c.proof), truth(f.desc))}
     ${c.question ? row(`${t('st.cmpQA')}: <span class="cmp-q">${esc(c.question)}</span>`, answered(c) ? esc(c.answer) : `<span class="muted">${t(c.status === 'pending' ? 'qa.waiting' : 'qa.none')}</span>`, '<span class="muted">—</span>') : ''}
     <div class="cmp-sum">${t('st.cmpSum', {n: hits})}</div>
@@ -173,6 +184,10 @@ export function claimCardStaff(c){
   const own = c.uid === S.uid;   // فصل المهام: لا يقرر الموظف في طلب أرسله هو
   const late = pickupOver(c);
   const rv = c.status === 'approved' && i ? rivals(i).length : 0;
+  const kind = i && ['pending', 'approved'].includes(c.status) ? conflictOf(c, full(i)) : '';
+  const tip = i && ['pending', 'approved'].includes(c.status) && cat(i.cat).staffCheck ? `<div class="note info">${icon('shield')}<span>${t(cat(i.cat).staffCheck)}</span></div>` : '';
+  // الطلب المنتهي أو الملغى يُعاد تفعيله من سجل الطلبات (الغرض متاح ← مقبول ومحجوز له، وإلا ← قيد المراجعة)
+  const again = !own && ['expired', 'cancelled'].includes(c.status) && c.uid !== 'deleted' ? `<div class="btn-row"><button class="btn sm soft" data-act="reactivate" data-id="${esc(c.id)}">${icon('swap')}${t('st.reactivate')}</button></div>` : '';
   const actions = own && ['pending', 'approved'].includes(c.status) ? `<div class="note">${icon('info')}<span>${t('st.ownClaim')}</span></div>`
     : c.status === 'pending' ? `<div class="btn-row">
       <button class="btn sm" data-act="approve" data-id="${esc(c.id)}">${icon('check')}${t('st.approve')}</button>
@@ -186,11 +201,15 @@ export function claimCardStaff(c){
     <div class="box-head"><div class="claim-who">${person(c.uid)}<span class="meta">${relTime(c.createdAt)}</span>${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div>${pill(CLAIM_STATUS, c.status)}</div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
     ${c.status === 'approved' && c.pickupBy ? `<div class="meta ${late ? 'flag' : ''}">${t(late ? 'st.pickupEnded' : 'st.pickupUntil', {date: dateOf(c.pickupBy)})}</div>` : ''}
+    ${conflictNote(kind)}
     ${rv ? `<div class="note warn">${icon('info')}<span>${t('st.rivalNote')}</span></div>` : ''}
+    ${tip}
     ${i ? claimCompare(c, full(i)) : `<div class="proof">${esc(c.proof)}</div>`}
     ${i ? '' : qaBox(c)}
     ${['rejected', 'expired', 'cancelled'].includes(c.status) && c.note ? `<div class="meta">${t(c.status === 'rejected' ? 'st.rejectReason' : 'st.note')}: ${esc(noteText(c.note))}</div>` : ''}
-    ${actions}
+    ${c.status === 'approved' && c.note ? `<div class="meta">${t('st.approveReason')}: ${esc(c.note)}</div>` : ''}
+    ${c.status === 'done' && c.handoverNote ? `<div class="meta">${icon('idcard')}${esc(noteText(c.handoverNote))}</div>` : ''}
+    ${actions}${again}
   </div>`;
 }
 export function staffClaims(){
@@ -213,7 +232,7 @@ export function staffClaims(){
 export function foundCardStaff(f){
   const done = S.items.find(i => i.fromFound === f.id);   // سُجّل غرضه ولم يُحدَّث الإشعار (نادر)
   return `<div class="box">
-    <div class="box-head"><div class="claim-who">${person(f.uid)}<span class="meta">${relTime(f.createdAt)}</span></div>${pill(FOUND_STATUS, f.status)}</div>
+    <div class="box-head"><div class="claim-who">${person(f.uid)}<span class="meta">${relTime(f.createdAt)}</span>${f.code ? `<span class="pill info" dir="ltr">${esc(f.code)}</span>` : ''}</div>${pill(FOUND_STATUS, f.status)}</div>
     <div class="meta">${icon(cat(f.cat).icon)}${esc(catName(f.cat))}${f.sub ? ' — ' + esc(subLabel(f.sub)) : ''}</div>
     <div class="meta">${t('hi.foundAt', {place: esc(spotText(f) || t('it.unknown')), date: fmtDate(f.foundDate)})}</div>
     ${f.note ? `<div class="proof">${esc(f.note)}</div>` : ''}
@@ -223,16 +242,23 @@ export function foundCardStaff(f){
 }
 export function staffReports(){
   const fs = S.found.slice().sort((a, b) => b.createdAt - a.createdAt);
+  // البحث بكود إشعار التسليم: الواجد يُري الموظف الكود فيفتح إشعاره مباشرة
+  const codeBox = `<form class="filters code-find" data-form="findCode" novalidate>
+      <label class="searchbar" style="flex:1;min-width:180px">${icon('tag')}<input name="code" class="code-in" dir="ltr" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="${t('hi.codePh')}" aria-label="${t('hi.codeAria')}"></label>
+      <button class="btn sm" type="submit">${icon('search')}${t('hi.codeOpen')}</button></form>`;
   // إشعارات التسليم أولاً (أغراض في الطريق إلى المكتب)، ثم بلاغات المفقودين
-  const found = fs.length ? `<div class="section-title">${icon('tag')}${t('hi.staffTitle')} <span class="count">${fs.length}</span></div>
+  const found = codeBox + (fs.length ? `<div class="section-title">${icon('tag')}${t('hi.staffTitle')} <span class="count">${fs.length}</span></div>
     <p class="muted">${t('hi.staffHint')}</p><div class="list">${fs.map(foundCardStaff).join('')}</div>
-    <div class="section-title">${icon('bell')}${t('hi.lostTitle')}</div>` : '';
-  const rs = S.reports.filter(r => r.status === 'open').sort((a,b) => b.createdAt - a.createdAt);
-  if (!rs.length) return found + `<div class="empty">${icon('bell')}<b>${t('st.noReports')}</b><span>${t('st.noReportsSub')}</span></div>`;
-  return found + `<div class="list">${rs.map(r => {
+    <div class="section-title">${icon('bell')}${t('hi.lostTitle')}</div>` : '');
+  // البلاغات القديمة (أكثر من 60 يوماً دون تجديد) مخفية افتراضياً
+  const open = S.reports.filter(r => r.status === 'open'), old = open.filter(isStale);
+  const rs = open.filter(r => S.showStale || !isStale(r)).sort((a,b) => b.createdAt - a.createdAt);
+  const oldBtn = old.length ? `<div class="btn-row"><button class="btn sm ghost" data-act="toggleStale" aria-pressed="${S.showStale}">${icon('clock')}${t(S.showStale ? 'st.hideOld' : 'st.showOld', {n: old.length})}</button></div>` : '';
+  if (!rs.length) return found + oldBtn + `<div class="empty">${icon('bell')}<b>${t('st.noReports')}</b><span>${t('st.noReportsSub')}</span></div>`;
+  return found + oldBtn + `<div class="list">${rs.map(r => {
     const cands = candidatesFor(r, 3, full);   // الموظف يقارن بالتفاصيل السرية أيضاً
     return `<div class="box">
-      <div class="box-head"><div><h3>${esc(r.title)}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(subLabel(r.sub)) : ''}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''}</span></div><span class="meta">${relTime(r.createdAt)}</span></div>
+      <div class="box-head"><div><h3>${esc(r.title)}${isStale(r) ? ` <span class="pill mute">${t('st.oldReport')}</span>` : ''}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(subLabel(r.sub)) : ''}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''}</span></div><span class="meta">${relTime(r.createdAt)}</span></div>
       ${r.photo ? `<div class="row-thumb" style="width:84px;height:84px">${icon('camera')}<img data-photo="r_${esc(r.id)}" alt="" hidden></div>` : ''}
       ${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}
       <div class="meta">${person(r.uid)} · ${r.spot ? t('st.lostAt', {place: esc(spotText(r)), date: fmtDate(r.lostDate)}) : t('st.lostOn', {date: fmtDate(r.lostDate)})}</div>
@@ -283,6 +309,8 @@ export function vItemForm(){
       </div>
       ${spotExtra(src)}
       <div class="field"><label for="f-storage">${t('if.storage')} <span class="hint">${t('if.staffOnly')}</span></label><input id="f-storage" name="storage" class="input" maxlength="40" value="${esc(i?.storage || '')}" placeholder="${t('if.storagePh')}"></div>
+      <div class="field"><label for="f-finder">${t('if.finder')} <span class="hint">${t('c.optional')} · ${t('if.staffOnly')}</span></label><input id="f-finder" name="finderNote" class="input" maxlength="80" autocomplete="off" value="${esc(i?.finderNote || '')}" placeholder="${t('if.finderPh')}">
+        <span class="hint">${t('if.finderHint')}</span></div>
       <div class="form-err" hidden></div>
       <button class="btn block" type="submit">${icon('check')}${t(i ? 'if.saveEdit' : 'if.save')}</button>
     </form>

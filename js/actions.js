@@ -1,16 +1,16 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
-import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS } from './constants.js';
+import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, claimOf } from './constants.js';
 import { t, tp, tAr, LANG, setLang } from './i18n.js';
-import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay } from './utils.js';
+import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode } from './utils.js';
 import { loadStats, exportCsv } from './stats.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts } from './state.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts, conflictOf, isStale, loadAudit } from './state.js';
 import * as wf from './workflow.js';
-import { auth, dbx, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
+import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut,
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification } from './firebase.js';
 import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar } from './ui.js';
 import { updateBrowse } from './views/visitor.js';
-import { updateStaff, staffItems, claimChecks, keepLeft } from './views/staff.js';
+import { updateStaff, staffItems, claimChecks, keepLeft, catKeepNote, foundCardStaff } from './views/staff.js';
 import { FORM, subsPicker, pubPhoto, person, themePicker } from './views/common.js';
 import { setTheme } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
@@ -165,6 +165,9 @@ async function submitForm(form){
     // المتاح والمحجوز يقبلان الطلب (المحجوز: طلب منافس يراجعه المكتب قبل التسليم)
     if (!i || !ACTIVE.includes(i.status)) return formErr(form, t('cl.unavailable'));
     if (!S.verified) return formErr(form, t('a.verifyFirst'));
+    // هوية صاحب الطلب: الاسم كما في البطاقة وآخر 4 أرقام منها (يطابقها الموظف عند التسليم)
+    if (val('claimantName').length < 3) return formErr(form, t('a.needClaimantName'));
+    if (!/^\d{4}$/.test(val('idLast4'))) return formErr(form, t('a.needLast4'));
     if (val('proof').length < 15) return formErr(form, t('a.proofShort'));
     if (!fd.get('pledge')) return formErr(form, t('a.needPledge'));
     // طلب واحد فقط لكل مستخدم على كل غرض: رقم الطلب ثابت = رقم الغرض_رقم المستخدم
@@ -177,8 +180,12 @@ async function submitForm(form){
     LS.set('codes', {...LS.get('codes', {}), [id]: code});
     await dbx.set('users/' + S.uid + '/private/codes', {codes: {[id]: code}}, {merge: true}).catch(e => console.warn(e));
     try {
+      // خانات التصنيف فقط (الوثائق والنقود بلا لون ولا ماركة)
+      const q = claimOf(i.cat);
       await dbx.set('claims/' + id, {itemId: i.id, officeId: i.officeId, uid: S.uid, proof: val('proof').slice(0, 1200),
-        color: val('color'), brand: val('brand').slice(0, 40), lostSpot: val('spot'), bldg, room, lostDate: val('lostDate'),
+        color: q.fields.includes('color') ? val('color') : '', brand: q.fields.includes('brand') ? val('brand').slice(0, 40) : '',
+        claimantName: val('claimantName').slice(0, 120), idLast4: val('idLast4'),
+        lostSpot: val('spot'), bldg, room, lostDate: val('lostDate'),
         ...(val('reportId') ? {reportId: val('reportId').slice(0, 100)} : {}),
         status: 'pending', codeHash, createdAt: Date.now()});
     } catch (e){
@@ -239,6 +246,8 @@ async function submitForm(form){
     for (const k of ['fromReport', 'fromFound', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt']) if (existing?.[k] !== undefined) data[k] = existing[k];
     // التفاصيل السرية: لموظفي المكتب فقط
     const secret = {officeId, title: val('title'), color: val('color'), brand: val('brand').slice(0, 40), desc: val('desc'), bldg, room, storage: val('storage')};
+    // من سلّم الغرض دون التطبيق (اسمه وآخر 4 أرقام): سري للموظفين، يقارنونه ببيانات صاحب الطلب
+    if (val('finderNote')) secret.finderNote = val('finderNote').slice(0, 120);
     for (const k of ['handoverNote', 'disposalNote']) if (existing?.[k]) secret[k] = existing[k];
     // حذف الصورة عند الحاجة يسبق حفظ الغرض
     if (removing){
@@ -271,11 +280,12 @@ async function submitForm(form){
     const linked = await write(() => wf.itemSaved({...data, id}, {created: !existing, fromReport, fromFound}),
       fromReport ? t('a.reportAccepted') : fromFound ? t('hi.receivedToast') : '');
     // بريد اختياري (EmailJS): لصاحب البلاغ بأن المكتب رشّح له غرضاً، وللواجد بأن المكتب استلم ما وجده
-    if (linked && fromReport) emailUser(S.reports.find(r => r.id === fromReport)?.uid, 'pick', {ref: data.ref});
-    if (linked && fromFound) emailUser(S.found.find(f => f.id === fromFound)?.uid, 'received', {ref: data.ref});
+    if (linked && fromReport) emailUser(S.reports.find(r => r.id === fromReport)?.uid);
+    if (linked && fromFound) emailUser(S.found.find(f => f.id === fromFound)?.uid);
     if (existing){ back(); return; }
     // المطابقة على جهة الموظف تشمل التفاصيل السرية
-    const matches = S.reports.filter(r => r.status === 'open' && r.id !== fromReport && matchScore(r, {...data, ...secret, id}) >= MATCH_MIN);
+    // البلاغات القديمة (أكثر من 60 يوماً دون تجديد) لا تدخل في المطابقة
+    const matches = S.reports.filter(r => r.status === 'open' && !isStale(r) && r.id !== fromReport && matchScore(r, {...data, ...secret, id}) >= MATCH_MIN);
     S.hist = []; S.staffTab = fromReport || fromFound ? 'reports' : 'items'; go('staff', {}, false);
     if (matches.length) openSheet(`<h2>${icon('bell')} ${t('a.matchesTitle', {reports: tp('n.matchReports', matches.length)})}</h2>
       <div class="list">${matches.map(r => `<div class="box"><b>${esc(r.title)}</b><span class="meta">${esc(catName(r.cat))} · ${esc(colorName(r.color))} · ${t('st.lostOn', {date: relDay(r.lostDate)})}</span>${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}</div>`).join('')}</div>
@@ -318,11 +328,14 @@ async function submitForm(form){
     const c = S.claims.find(x => x.id === form.dataset.id); const code = val('code').replace(/\D/g, '');
     if (!c) return;
     if (code.length !== 6) return formErr(form, t('a.code6'));
+    // هوية المستلم الفعلي: «طابقتُ البطاقة» إلزامية، والاسم وآخر 4 أرقام (قد يكون مفوّضاً عن صاحب الطلب)
+    if (!fd.get('matched')) return formErr(form, t('a.needMatched'));
+    if (val('rname').length < 3 || !/^\d{4}$/.test(val('rlast4'))) return formErr(form, t('wf.needReceiver'));
     if (await sha(c.id + ':' + code) !== c.codeHash) return formErr(form, t('a.codeWrong'));
     busy(form, true);
     // التسليم فقط للطلب الذي حُجز له الغرض، وتُغلق بقية طلباته في العملية نفسها
     let res = null; const it = item(c.itemId);   // قبل التسليم: الغرض المُسلَّم يخرج من قائمة النشطة
-    const ok = await write(async () => { res = await wf.verifyHandover(c); }, t('a.handedOver'));
+    const ok = await write(async () => { res = await wf.verifyHandover(c, {name: val('rname'), last4: val('rlast4')}); }, t('a.handedOver'));
     busy(form, false); if (!ok) return;
     emailFinder(it);
     closeSheet(); refreshCounts(); ownNotice(res); return;
@@ -348,7 +361,9 @@ async function submitForm(form){
       for (const r of reports){ if (r.photo) await dbx.del('reportPhotos/' + r.id).catch(() => {}); await dbx.del('reports/' + r.id); }
       // الطلبات المنتهية تبقى سجلاً للمكتب بلا بيانات شخصية، وقيد المراجعة يُحذف
       for (const c of claims){
-        if (['done', 'rejected', 'expired', 'cancelled'].includes(c.status)) await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', ...(c.answer ? {answer: ''} : {}), anonymizedAt: Date.now()});
+        // الاسم وآخر 4 أرقام وملاحظة التسليم تُمسح أيضاً (القواعد تسمح بذلك)
+        if (['done', 'rejected', 'expired', 'cancelled'].includes(c.status)) await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '',
+          ...(c.answer ? {answer: ''} : {}), ...(c.claimantName ? {claimantName: ''} : {}), ...(c.idLast4 ? {idLast4: ''} : {}), ...(c.handoverNote ? {handoverNote: ''} : {}), anonymizedAt: Date.now()});
         else if (c.status === 'pending') await dbx.del('claims/' + c.id);
       }
       // إشعارات التسليم: المستلَم يبقى سجلاً للمكتب بلا بيانات صاحبه، والبقية تُحذف
@@ -366,7 +381,7 @@ async function submitForm(form){
       console.warn(e); busy(form, false);
       return formErr(form, String(e?.code || '').includes('permission-denied') ? t('a.delDenied') : t('a.delFail'));
     }
-    LS.set('codes', {}); LS.set('seen', []); LS.set('mode', 'visitor');
+    LS.set('codes', {}); LS.set('seen', []); LS.set('notify', false); LS.set('mode', 'visitor');
     S.mode = 'visitor'; S.hist = []; S.route = {name: 'home', params: {}};
     closeSheet(); renderAll(); toast(t('a.deleted'));
     return;
@@ -379,9 +394,29 @@ async function submitForm(form){
     if (!S.verified) return formErr(form, t('a.verifyFirst'));
     busy(form, true);
     const id = dbx.newId('foundReports');
+    // كود قصير يُريه الواجد لموظف المكتب فيفتح إشعاره مباشرة (بحروف رقم القيد نفسها)
+    const code = refCode(6);
     const ok = await write(() => dbx.set('foundReports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), spot: val('spot'), bldg, room,
-      foundDate: val('foundDate') || today(), note: val('note').slice(0, 500), status: 'pending', createdAt: Date.now()}), t('hi.sent'));
+      foundDate: val('foundDate') || today(), note: val('note').slice(0, 500), code, status: 'pending', createdAt: Date.now()}), t('hi.sent'));
     busy(form, false); if (ok){ S.hist = []; go('mine', {focus: id}, false); }
+    return;
+  }
+  // قبول طلب فيه تضارب مصالح: السبب إلزامي، ويُحفظ في note والسجل
+  if (kind === 'approveWhy'){
+    const c = S.claims.find(x => x.id === form.dataset.id); if (!c) return;
+    if (val('reason').length < 10) return formErr(form, t('a.needReason'));
+    busy(form, true);
+    const ok = await doApprove(c, val('reason'));
+    busy(form, false); if (ok) closeSheet();
+    return;
+  }
+  // البحث بكود إشعار التسليم (تبويب البلاغات عند الموظف)
+  if (kind === 'findCode'){
+    const code = normCode(val('code'));
+    if (code.length !== 6) return toast(t('hi.codeBad'));
+    const f = S.found.find(x => normCode(x.code) === code);
+    if (!f) return toast(t('hi.codeNone'));
+    openSheet(`<h2>${icon('tag')} ${t('hi.codeFound')}</h2><div class="list">${foundCardStaff(f)}</div><button class="btn ghost" data-act="closeSheet">${t('c.close')}</button>`);
     return;
   }
   // سؤال تحقق يرسله الموظف لصاحب طلب قيد المراجعة
@@ -389,7 +424,7 @@ async function submitForm(form){
     const c = S.claims.find(x => x.id === form.dataset.id); if (!c) return;
     busy(form, true);
     const ok = await write(() => wf.askQuestion(c, val('question')), t('qa.sent'));
-    busy(form, false); if (ok){ closeSheet(); emailUser(c.uid, 'question', {ref: item(c.itemId)?.ref || ''}); }
+    busy(form, false); if (ok){ closeSheet(); emailUser(c.uid); }
     return;
   }
   // إجابة صاحب الطلب عن سؤال التحقق (القواعد تسمح بها ما دام الطلب قيد المراجعة)
@@ -407,7 +442,7 @@ async function submitForm(form){
     busy(form, true);
     // إن كان مقبولاً والغرض محجوزاً له، يعود الغرض متاحاً في العملية نفسها
     const ok = await write(() => wf.rejectClaim(c, val('note')), t('a.claimRejected'));
-    busy(form, false); if (ok){ closeSheet(); emailUser(c.uid, 'rejected', {ref: item(c.itemId)?.ref || '', note: val('note') || '—'}); } return;
+    busy(form, false); if (ok){ closeSheet(); emailUser(c.uid); } return;
   }
 
   // تسليم مباشر في المكتب دون طلب: ملاحظة التسليم تُحفظ في التفاصيل السرية
@@ -455,6 +490,15 @@ async function delItemParts(i){
   cachePhoto(i.id, null); cachePhoto('p_' + i.id, null);
 }
 const needLogin = () => { if (S.uid) return false; go('login', {next: S.route}); return true; };
+// القبول ثم بريد اختياري لصاحب الطلب. reason: سبب القبول (تضارب المصالح)
+async function doApprove(c, reason = ''){
+  const ok = await write(() => wf.approveClaim(c, {reason}), t('a.approved'));
+  if (ok) emailUser(c.uid);
+  return ok;
+}
+// تسجيل الخروج على جهاز مشترك: نمسح رموز الاستلام والتنبيهات المقروءة وتفعيل الإشعارات من المتصفح،
+// ونسخة Firestore المحفوظة (IndexedDB)، ثم نعيد تحميل الصفحة حتى لا يبقى شيء من بيانات الحساب في الذاكرة
+function wipeDevice(){ ['codes', 'seen', 'notify'].forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} }); }
 
 const ACT = {
   nav(el){
@@ -492,6 +536,7 @@ const ACT = {
           ${notifyDenied() ? `<p class="hint">${t('nt.deniedHint')}</p>` : ''}` : ''}
         <div class="opt-row"><span class="label">${icon('contrast')}${t('th.label')}</span>${themePicker()}</div>
         <button class="opt" data-act="signOut">${icon('x')}${t('acc.signOut')}</button>
+        <p class="hint">${icon('info')}${t('acc.shared')}</p>
         <button class="opt" data-act="nav" data-r="privacy">${icon('lock')}${t('acc.privacy')}</button>
         <button class="opt" data-act="deleteAccount" style="color:var(--bad)">${icon('trash')}${t('acc.delete')}</button>
       </div>`);
@@ -518,7 +563,15 @@ const ACT = {
     try { await navigator.clipboard.writeText(url); toast(t('share.copied')); }
     catch { openSheet(`<h2>${icon('share')} ${t('share.link')}</h2><input class="input" dir="ltr" readonly value="${esc(url)}" onfocus="this.select()"><button class="btn ghost" data-act="closeSheet">${t('c.close')}</button>`); }
   },
-  async signOut(){ closeSheet(); S.mode = 'visitor'; LS.set('mode', 'visitor'); S.hist = []; S.route = {name: 'home', params: {}}; await signOut(auth); toast(t('a.signedOut')); },
+  async signOut(){
+    closeSheet(); S.mode = 'visitor'; LS.set('mode', 'visitor'); S.hist = []; S.route = {name: 'home', params: {}};
+    wipeDevice();
+    try { await signOut(auth); } catch (e){ console.warn(e); }
+    await wipeLocalDb();   // إن فشل (تبويب آخر مفتوح) يكفي مسح localStorage
+    wipeDevice();          // مرة ثانية: قد يكتب مستمع قبل إيقاف Firestore
+    try { sessionStorage.setItem('mfq:signedOut', '1'); } catch {}
+    location.reload();
+  },
   pickOffice(){ go('pick'); },
   // المظهر: يُطبَّق فوراً ويُحدَّث الزر المختار دون إعادة رسم
   theme(el){
@@ -599,13 +652,32 @@ const ACT = {
     const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return;
     const i = item(c.itemId);
     if (!i){ toast(t('it.gone')); return; }
-    const o = S.offices.find(x => x.id === i.officeId);
-    const go2 = async () => { if (await write(() => wf.approveClaim(c), t('a.approved'))) emailUser(c.uid, 'approved', {ref: i.ref, date: isoDay(Date.now() + wf.pickupDays(o) * 864e5)}); };
+    // تضارب مصالح (صاحب الطلب سلّم الغرض أو سجّله): القبول يحتاج سبباً مكتوباً يُحفظ في الطلب والسجل
+    const kind = conflictOf(c, full(i));
+    if (kind) return openSheet(`<h2>${icon('alert')} ${t('a.conflictTitle')}</h2>
+      <div class="note bad">${icon('alert')}<span><b>${t(kind === 'finder' ? 'st.conflictFinder' : 'st.conflictRecorder')}</b></span></div>
+      <form data-form="approveWhy" data-id="${esc(c.id)}" novalidate>
+        <div class="field"><label for="ap-why">${t('a.conflictWhy')}</label><textarea id="ap-why" name="reason" class="input" maxlength="300" required placeholder="${t('a.conflictPh')}"></textarea></div>
+        <div class="form-err" hidden></div>
+        <div class="btn-row"><button class="btn" type="submit">${icon('check')}${t('a.weakBtn')}</button><button type="button" class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>
+      </form>`);
+    const go2 = () => doApprove(c);
     // تطابق ضعيف: أقل من 2 من 3 في جدول المقارنة
     const {hits} = claimChecks(c, full(i));
     if (hits < 2) return confirmSheet(t('a.weakQ'), t('a.weakBody', {n: hits}), t('a.weakBtn'), go2, false);
     go2();
   },
+  // إعادة تفعيل طلب منتهٍ أو ملغى (من سجل الطلبات)
+  reactivate(el){
+    const c = (S.claimHist || []).find(x => x.id === el.dataset.id); if (!c) return;
+    confirmSheet(t('a.reactQ'), t('a.reactBody'), t('st.reactivate'), async () => {
+      let to = '';
+      if (await write(async () => { to = await wf.reactivateClaim(c); }, t('a.reactDone'))){ if (to === 'approved') emailUser(c.uid); }
+    }, false);
+  },
+  // البلاغ القديم: «نعم، ما زلت أبحث» يجدّد تاريخه (renewedAt)
+  renewReport(el){ write(() => dbx.update('reports/' + el.dataset.id, {renewedAt: Date.now()}), t('rc.renewed')); },
+  toggleStale(){ S.showStale = !S.showStale; updateStaff(); },
   release(el){
     const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return;
     confirmSheet(t('a.reopenQ'), t('a.releaseBody'), t('st.release'),
@@ -615,11 +687,14 @@ const ACT = {
   dispose(){
     const over = S.items.filter(i => i.status === 'available' && keepLeft(i) < 0).map(full);
     if (!over.length) return toast(t('a.noneOver'));
+    // الطريقة المقترحة: إن اتفقت كل الأغراض عليها (مثل الوثائق ← تسليم للجهة المختصة)
+    const sug = new Set(over.map(i => cat(i.cat).disposal || '')); const pre = sug.size === 1 ? [...sug][0] : '';
     openSheet(`<h2>${icon('clock')} ${t('a.disposeTitle', {items: tp('n.itemGen', over.length)})}</h2>
       <form data-form="dispose" novalidate>
-        <div class="list">${over.map(i => `<label class="check"><input type="checkbox" name="ids" value="${esc(i.id)}" checked><span><b>${esc(i.ref)}</b> ${esc(showTitle(i))} <span class="muted">· ${relDay(i.foundDate)}</span></span></label>`).join('')}</div>
+        <div class="list">${over.map(i => `<label class="check"><input type="checkbox" name="ids" value="${esc(i.id)}" checked><span><b>${esc(i.ref)}</b> ${esc(showTitle(i))} <span class="muted">· ${relDay(i.foundDate)}${catKeepNote(i) ? ' · ' + catKeepNote(i) : ''}${cat(i.cat).disposal ? ' · ' + t('a.suggested', {method: t('disposal.' + cat(i.cat).disposal)}) : ''}</span></span></label>`).join('')}</div>
         <div class="field"><span class="label">${t('a.method')}</span>
-          ${Object.keys(wf.DISPOSAL).map(k => `<label class="check"><input type="radio" name="method" value="${k}"><span>${t('disposal.' + k)}</span></label>`).join('')}</div>
+          ${wf.disposalsFor(over).map(k => `<label class="check"><input type="radio" name="method" value="${k}" ${k === pre ? 'checked' : ''}><span>${t('disposal.' + k)}</span></label>`).join('')}
+          ${wf.disposalsFor(over).includes('finder') ? `<span class="hint">${t('a.finderHint')}</span>` : ''}</div>
         <div class="field"><label for="dp-note">${t('a.noteStaff')}</label><input id="dp-note" name="note" class="input" maxlength="300" placeholder="${t('a.disposePh')}"></div>
         <div class="form-err" hidden></div>
         <div class="btn-row"><button class="btn" type="submit">${icon('check')}${t('a.disposeBtn')}</button><button type="button" class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>
@@ -684,11 +759,21 @@ const ACT = {
   },
   verify(el){
     const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return; const i = item(c.itemId);
+    // هوية المستلم: الاسم وآخر 4 أرقام كما كتبهما صاحب الطلب، والموظف يطابقهما مع البطاقة نفسها
+    const tip = i && cat(i.cat).staffCheck ? `<div class="note info">${icon('shield')}<span>${t(cat(i.cat).staffCheck)}</span></div>` : '';
     openSheet(`<h2>${icon('shield')} ${t('a.handTitle', {ref: i ? esc(i.ref) : ''})}</h2>
       <p class="muted">${t('a.askCode', {who: person(c.uid)})}</p>
-      <div class="note warn">${icon('idcard')}<span>${t('a.matchId')}</span></div>
+      <dl class="facts id-facts"><dt>${t('st.cmpName')}</dt><dd>${c.claimantName ? esc(c.claimantName) : `<span class="muted">${t('st.notSaid')}</span>`}</dd>
+        <dt>${t('st.cmpLast4')}</dt><dd>${c.idLast4 ? `<b dir="ltr">${esc(c.idLast4)}</b>` : `<span class="muted">${t('st.notSaid')}</span>`}</dd></dl>
+      <div class="note warn">${icon('idcard')}<span>${t('a.matchId')}</span></div>${tip}
       <form data-form="verify" data-id="${esc(c.id)}" novalidate>
         <input name="code" class="input code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" aria-label="${t('mine.code')}">
+        <div class="two">
+          <div class="field"><label for="vf-name">${t('a.receiverName')}</label><input id="vf-name" name="rname" class="input" maxlength="120" autocomplete="off" value="${esc(c.claimantName || '')}"></div>
+          <div class="field"><label for="vf-4">${t('a.last4')}</label><input id="vf-4" name="rlast4" class="input" inputmode="numeric" maxlength="4" dir="ltr" autocomplete="off" value="${esc(c.idLast4 || '')}"></div>
+        </div>
+        <span class="hint">${t('a.receiverHint')}</span>
+        <label class="check"><input type="checkbox" name="matched" required><span><b>${t('a.matched')}</b></span></label>
         <div class="form-err" hidden></div>
         <div class="btn-row"><button class="btn" type="submit">${icon('check')}${t('a.verifyBtn')}</button><button type="button" class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>
       </form>`);
@@ -713,7 +798,7 @@ const ACT = {
   async receiveFound(el){
     const f = S.found.find(x => x.id === el.dataset.id); if (!f) return;
     const done = S.items.find(i => i.fromFound === f.id);
-    if (done){ if (await write(() => wf.itemSaved(done, {fromFound: f.id}), t('hi.receivedToast'))) emailUser(f.uid, 'received', {ref: done.ref}); return; }
+    if (done){ if (await write(() => wf.itemSaved(done, {fromFound: f.id}), t('hi.receivedToast'))) emailUser(f.uid); return; }
     go('add', {fromFound: f.id});
   },
   dropFound(el){
@@ -728,26 +813,28 @@ const ACT = {
   delFound(el){ write(() => dbx.del('foundReports/' + el.dataset.id), t('hi.deleted')); },
   async pickFor(el){
     if (await write(() => dbx.update('reports/' + el.dataset.r, {staffPick: el.dataset.i, pickedAt: Date.now()}), t('a.picked')))
-      emailUser(S.reports.find(r => r.id === el.dataset.r)?.uid, 'pick', {ref: item(el.dataset.i)?.ref || ''});
+      emailUser(S.reports.find(r => r.id === el.dataset.r)?.uid);
   },
   async pickAll(el){
     const rs = el.dataset.rs.split(',').filter(Boolean); closeSheet();
     for (const r of rs) if (await write(() => dbx.update('reports/' + r, {staffPick: el.dataset.i, pickedAt: Date.now()})))
-      emailUser(S.reports.find(x => x.id === r)?.uid, 'pick', {ref: item(el.dataset.i)?.ref || ''});
+      emailUser(S.reports.find(x => x.id === r)?.uid);
     toast(t('a.pickedAll'));
   },
   newOffice(){ go('officeForm', {}); },
-  editOffice(el){ go('officeForm', {id: el.dataset.id}); },
+  editOffice(el){ go('officeForm', {id: el.dataset.id, en: el.dataset.en === '1'}); },
   async toggleOffice(el){ const o = S.offices.find(x => x.id === el.dataset.id); if (o) await write(() => dbx.update('offices/' + o.id, {active: o.active === false})); },
+  // منح الصلاحية وسحبها والإدارة: batch واحد مع قيد في السجل لكل مكتب معني (workflow.js)
   async approveReq(el){
     const r = S.staffReqs.find(x => x.id === el.dataset.id); if (!r) return;
-    const cur = S.staffList.find(s => s.id === r.id);
-    const offices = [...new Set([...(cur?.offices || []), ...(r.offices || [])])];
-    const ok = await write(() => dbx.set('staff/' + r.id, {offices, note: r.note || '', approvedAt: Date.now(), approvedBy: S.uid}));
-    if (ok) await write(() => dbx.update('staffRequests/' + r.id, {status: 'approved', decidedAt: Date.now()}), t('a.granted'));
+    await write(() => wf.grantStaff(r), t('a.granted'));
   },
+  makeAdmin(el){ confirmSheet(t('a.makeAdminQ'), t('a.makeAdminBody'), t('adm.makeAdmin'), () => write(() => wf.setAdmin(el.dataset.id, true), t('a.adminAdded')), false); },
+  unAdmin(el){ confirmSheet(t('a.unAdminQ'), t('a.unAdminBody'), t('adm.unAdmin'), () => write(() => wf.setAdmin(el.dataset.id, false), t('a.adminRemoved'))); },
+  audit(el){ go('audit', {office: el.dataset.id || S.offices[0]?.id || ''}); },
+  auditRefresh(){ const p = S.route.params; loadAudit(p.office, p.filter || 'all', true); },
   async rejectReq(el){ await write(() => dbx.update('staffRequests/' + el.dataset.id, {status: 'rejected', decidedAt: Date.now()}), t('a.reqRejected')); },
-  revoke(el){ confirmSheet(t('a.revokeQ'), t('a.revokeBody'), t('a.revokeBtn'), () => write(() => dbx.del('staff/' + el.dataset.id), t('a.revoked'))); },
+  revoke(el){ confirmSheet(t('a.revokeQ'), t('a.revokeBody'), t('a.revokeBtn'), () => write(() => wf.revokeStaff(el.dataset.id), t('a.revoked'))); },
   async delSamples(){
     // تُجلب الأمثلة عند الطلب فقط (لا اشتراك دائم في كل الأغراض)
     const s = await dbx.list('items', [['sample', '==', true]]).catch(() => []);
@@ -783,6 +870,8 @@ export function bindEvents(){
     if (t.id === 'q'){ S.filter.q = t.value; clearTimeout(qTimer); qTimer = setTimeout(updateBrowse, 120); }
     if (t.id === 'sq'){ S.staffQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = staffItems(); hydrate(); }, 120); }
     if (t.name === 'code' && t.classList.contains('code-input')) t.value = t.value.replace(/\D/g, '').slice(0, 6);
+    if (t.classList.contains('code-in')) t.value = normCode(t.value);
+    if (t.name === 'idLast4' || t.name === 'rlast4' || t.name === 'last4') t.value = t.value.replace(/\D/g, '').slice(0, 4);
   });
   app.addEventListener('change', e => {
     const t = e.target;
@@ -793,6 +882,8 @@ export function bindEvents(){
       if (t.value !== 'active') loadExtraItems(t.value);
     }
     if (t.id === 'photo-in') onPhoto(t);
+    // «سجل العمليات»: تغيير المكتب أو الفلتر يجلب القيود المطلوبة فقط
+    if (t.id === 'au-office' || t.id === 'au-filter'){ const p = {office: $('#au-office').value, filter: $('#au-filter').value}; S.route.params = p; renderAll(); }
     // تلميح خانة التاريخ الاختيارية يظهر فقط وهي فارغة
     if (t.type === 'date'){ const h = t.parentElement.querySelector('.date-hint'); if (h) h.hidden = !!t.value; }
     if (t.name === 'spot' && t.closest('form')) onSpotChange(t.closest('form'), t.value);

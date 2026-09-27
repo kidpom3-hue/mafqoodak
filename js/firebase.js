@@ -7,7 +7,7 @@ import {
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import {
-  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence,
   collection, doc, query, where, onSnapshot, getDoc, getDocs, getCountFromServer, setDoc, updateDoc, deleteDoc, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import { firebaseConfig } from './config.js';
@@ -25,6 +25,14 @@ if (app){
   catch { _db = initializeFirestore(app, {}); }
 }
 export const db = _db;
+
+// تسجيل الخروج على جهاز مشترك: إيقاف Firestore ثم مسح نسخته المحفوظة في المتصفح (IndexedDB).
+// المسح يفشل إن كان التطبيق مفتوحاً في تبويب آخر؛ عندها يكفي مسح localStorage (يتولاه المستدعي).
+export async function wipeLocalDb(){
+  if (!db) return false;
+  try { await terminate(db); await clearIndexedDbPersistence(db); return true; }
+  catch (e){ console.warn('[firestore] clear cache', e?.code || e); return false; }
+}
 
 /* اختصارات للقراءة والكتابة بمسار نصي مثل 'items/abc' */
 export const dbx = {
