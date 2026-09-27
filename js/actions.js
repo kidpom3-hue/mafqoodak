@@ -98,7 +98,7 @@ async function aiFill(){
 async function aiMatch(reportId){
   const r = S.myReports.find(x => x.id === reportId); const st = $('#ai-' + reportId); if (!r) return;
   const pool = S.items.filter(i => i.status === 'available' || i.status === 'reserved')
-    .map(i => ({i, s: matchScore(r, i)})).sort((a, b) => b.s - a.s).slice(0, 40).map(x => x.i);
+    .map(i => ({i, s: matchScore(r, {...i, spot: ''})})).sort((a, b) => b.s - a.s).slice(0, 40).map(x => x.i);   // بلا مكان العثور (سري)
   if (!pool.length){ if (st) st.textContent = t('a.aiNoPool'); return; }
   if (st) st.innerHTML = `<span class="spin" style="width:14px;height:14px"></span> ${t('a.aiComparing')}`;
   const images = [], imgIds = [];
@@ -263,10 +263,11 @@ async function submitForm(form){
     const photo = !sens && (original || (had && !removing)) ? mode : false;
     // النسخة العامة تُعاد عند صورة جديدة أو تغيير طريقة الظهور (أو ترقية القيمة القديمة true)
     const redo = !!photo && (!!original || existing?.photo !== mode);
-    // المستند العام: لا لون ولا وصف ولا مبنى ولا قاعة ولا موضع حفظ (القواعد ترفضها)
+    // المستند العام: لا لون ولا وصف ولا مكان عثور ولا مبنى ولا قاعة ولا موضع حفظ (القواعد ترفضها)
+    // مكان العثور سري (المرحلة E5): هو جواب «أين فقدته؟» في طلب الاستلام، فلا يراه الزائر
     const data = {
       officeId, ref: existing?.ref || makeRef(curOffice()),
-      cat: catId, sub: val('sub'), title: publicTitle(catId, val('sub')), spot: val('spot'),
+      cat: catId, sub: val('sub'), title: publicTitle(catId, val('sub')),
       foundDate: val('foundDate') || today(), photo: redo ? false : photo,
       status: existing?.status || 'available', createdBy: existing?.createdBy || S.uid, createdAt: existing?.createdAt || Date.now(), updatedAt: Date.now(),
       sample: !!existing?.sample,
@@ -279,7 +280,7 @@ async function submitForm(form){
     // اللون والماركة فارغان إن لم يكونا في التصنيف (حتى لا تبقى قيمة قديمة بعد تغيير التصنيف)، وإجابات أسئلته في details
     const q = claimOf(catId), {details} = readDetails(form, catId, 'item');
     const secret = {officeId, title: val('title'), color: q.fields.includes('color') ? val('color') : '', brand: q.fields.includes('brand') ? val('brand').slice(0, 40) : '',
-      desc: val('desc'), bldg, room, storage: val('storage'), ...(Object.keys(details).length ? {details} : {})};
+      desc: val('desc'), spot: val('spot'), bldg, room, storage: val('storage'), ...(Object.keys(details).length ? {details} : {})};
     // من سلّم الغرض دون التطبيق (اسمه وآخر 4 أرقام): سري للموظفين، يقارنونه ببيانات صاحب الطلب
     if (val('finderNote')) secret.finderNote = val('finderNote').slice(0, 120);
     for (const k of ['handoverNote', 'disposalNote']) if (existing?.[k]) secret[k] = existing[k];

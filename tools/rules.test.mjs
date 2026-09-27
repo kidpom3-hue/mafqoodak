@@ -1,20 +1,26 @@
 // اختبارات قواعد Firestore على المحاكي (للمطوّر فقط؛ لا يحمّلها التطبيق)
 // التشغيل: cd tools && npm install && npm run test:rules   (يحتاج Java)
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, writeBatch, collection, query, where } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, writeBatch, collection, query, where, deleteField } from 'firebase/firestore';
 import fs from 'fs';
 
 const env = await initializeTestEnvironment({projectId: 'demo-mafqoodak',
   firestore: {rules: fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8'), host: '127.0.0.1', port: 8085}});
 const now = Date.now(), O = 'tc';
-const pub = x => ({officeId: O, ref: 'TCA-' + x, cat: 'phones', sub: 'جوال', title: 'جوال', spot: 'المكتبة', foundDate: '2026-09-20', photo: false, status: 'available', createdBy: 'staffA', createdAt: now, updatedAt: now, sample: false});
-const sec = {officeId: O, title: 'جوال أسود', color: 'black', brand: '', desc: 'غلاف أحمر', bldg: '', room: '', storage: 'الخزانة 1'};
+// مكان العثور (spot) سري منذ المرحلة E5: في itemSecrets لا في items
+const pub = x => ({officeId: O, ref: 'TCA-' + x, cat: 'phones', sub: 'جوال', title: 'جوال', foundDate: '2026-09-20', photo: false, status: 'available', createdBy: 'staffA', createdAt: now, updatedAt: now, sample: false});
+const sec = {officeId: O, title: 'جوال أسود', color: 'black', brand: '', desc: 'غلاف أحمر', spot: 'المكتبة', bldg: '', room: '', storage: 'الخزانة 1'};
 await env.withSecurityRulesDisabled(async c => {
   const d = c.firestore();
   await setDoc(doc(d, 'config/app'), {ownerUid: 'owner'});
   await setDoc(doc(d, 'admins/owner'), {role: 'owner'});
   for (const s of ['staffA', 'staffB']) await setDoc(doc(d, 'staff/' + s), {offices: [O]});
   for (const k of ['i1', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7', 'i8', 'i9', 'i10', 'i11']){ await setDoc(doc(d, 'items/' + k), pub(k)); await setDoc(doc(d, 'itemSecrets/' + k), sec); }
+  // أغراض قديمة (قبل المرحلة E5): المكان ما زال في المستند العام. L2 بلا itemSecrets، وL1 فيه fromFound
+  const {spot, ...oldSec} = sec;
+  await setDoc(doc(d, 'items/L1'), {...pub('L1'), spot: 'المكتبة', fromFound: 'f9'}); await setDoc(doc(d, 'itemSecrets/L1'), oldSec);
+  await setDoc(doc(d, 'items/L2'), {...pub('L2'), spot: 'الكافتيريا'});
+  await setDoc(doc(d, 'items/L3'), {...pub('L3'), spot: 'المواقف'}); await setDoc(doc(d, 'itemSecrets/L3'), oldSec);
 });
 // الحساب الموثّق وغير الموثّق
 const as = (uid, verified = true) => env.authenticatedContext(uid, {email_verified: verified}).firestore();
@@ -237,6 +243,29 @@ await t('E: «ليس غرضي» (pickRejected = الترشيح الحالي)', u
 await t('E: closedReason = x مرفوض', updateDoc(doc(alice, 'reports/rE'), {status: 'closed', closedAt: now, closedReason: 'x'}), false);
 await t('E: closedReason = office', updateDoc(doc(alice, 'reports/rE'), {status: 'closed', closedAt: now, closedReason: 'office'}));
 await t('E: closedReason = self', updateDoc(doc(alice, 'reports/rE'), {closedReason: 'self'}));
+
+// ── المرحلة E5: مكان العثور سري ──
+await t('E5: إنشاء غرض فيه spot مرفوض', setDoc(doc(A, 'items/n1'), {...pub('n1'), spot: 'المكتبة'}), false);
+await t('E5: إنشاء غرض بلا spot', setDoc(doc(A, 'items/n1'), pub('n1')));
+await t('E5: itemSecrets فيه spot مقبول', setDoc(doc(A, 'itemSecrets/n1'), sec));
+await t('E5: تعديل غرض بإضافة spot مرفوض', updateDoc(doc(A, 'items/n1'), {spot: 'المكتبة'}), false);
+await t('E5: spot طويل جداً في itemSecrets مرفوض', updateDoc(doc(A, 'itemSecrets/n1'), {spot: 'x'.repeat(401)}), false);
+await t('E5: تغيير حالة غرض قديم دون نقل مكانه مرفوض', updateDoc(doc(A, 'items/L1'), {status: 'archived', updatedAt: now}), false);
+await t('E5: batch النقل (itemSecrets merge + deleteField) مقبول', batch(A, (b, r) => {
+  b.set(r('itemSecrets/L1'), {officeId: O, spot: 'المكتبة'}, {merge: true});
+  b.update(r('items/L1'), {spot: deleteField()});
+}));
+await t('E5: بعد النقل يبقى fromFound ويُقرأ المكان من itemSecrets', getDoc(doc(A, 'items/L1')).then(s => { if (s.data().fromFound !== 'f9' || 'spot' in s.data()) throw new Error('bad'); return getDoc(doc(A, 'itemSecrets/L1')); }).then(s => { if (s.data().spot !== 'المكتبة' || s.data().storage !== 'الخزانة 1') throw new Error('bad secret'); }));
+await t('E5: تغيير حالة غرض قديم بلا itemSecrets مع نقل مكانه في الـ batch نفسه', batch(A, (b, r) => {
+  b.set(r('itemSecrets/L2'), {officeId: O, spot: 'الكافتيريا'}, {merge: true});
+  b.update(r('items/L2'), {status: 'archived', reservedFor: '', updatedAt: now, spot: deleteField()});
+  b.set(r('logs/' + lid()), logDoc('staffA', 'status:archived', {itemId: 'L2'}));
+}));
+await t('E5: تسليم مباشر لغرض قديم (itemSecrets كاملاً مع spot وhandoverNote)', batch(A, (b, r) => {
+  b.set(r('itemSecrets/L3'), {...sec, spot: 'المواقف', handoverNote: 'علي — آخر 4 أرقام: 1234'});
+  b.update(r('items/L3'), {status: 'returned', returnedAt: now, updatedAt: now, reservedFor: '', spot: deleteField()});
+}));
+await t('E5: الموظف يجلب مكان أغراض مكتبه للإحصاءات (itemSecrets officeId ==)', q(A, 'itemSecrets', ['officeId', '==', O]));
 
 // ── لغة المستخدم (للجزء B) ──
 await t('lang = en مسموح', setDoc(doc(alice, 'users/alice'), {name: 'A', email: 'a@x.com', photo: '', lastSeen: now, lang: 'en'}));

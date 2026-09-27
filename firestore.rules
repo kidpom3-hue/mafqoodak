@@ -45,7 +45,8 @@ service cloud.firestore {
     function strMax(d, k, n) { return !(k in d) || (d[k] is string && d[k].size() <= n); }
     function photoDoc() { return request.resource.data.keys().hasOnly(['data']) && smallImage(); }
     // تفاصيل الغرض السرية: لا تُكتب أبداً في items (المقروءة للجميع)، مكانها itemSecrets
-    function secretKeys() { return ['color', 'brand', 'desc', 'bldg', 'room', 'storage', 'details']; }
+    // spot (مكان العثور) سري أيضاً: هو نفسه جواب «أين فقدته؟» في طلب الاستلام، فما يراه الزائر لا يُحسب دليلاً
+    function secretKeys() { return ['color', 'brand', 'desc', 'bldg', 'room', 'storage', 'details', 'spot']; }
     // إجابات أسئلة التصنيف (المبلغ، عدد المفاتيح، خلفية الشاشة…): خريطة نصوص قصيرة بمفاتيح معروفة فقط
     // (نفس القائمة في DETAIL_KEYS في js/constants.js — عدّلهما معاً)
     function detailKeys() {
@@ -60,11 +61,12 @@ service cloud.firestore {
         && d.details.values().join('').size() <= 1200);
     }
     function validSecret(d) {
-      return d.keys().hasOnly(['officeId', 'title', 'color', 'brand', 'desc', 'bldg', 'room', 'storage', 'handoverNote', 'disposalNote', 'finderNote', 'details'])
+      return d.keys().hasOnly(['officeId', 'title', 'color', 'brand', 'desc', 'bldg', 'room', 'storage', 'handoverNote', 'disposalNote', 'finderNote', 'details', 'spot'])
         && d.officeId is string && validDetails(d)
         && strMax(d, 'title', 400) && strMax(d, 'color', 60) && strMax(d, 'brand', 200) && strMax(d, 'desc', 4000)
         && strMax(d, 'bldg', 40) && strMax(d, 'room', 60) && strMax(d, 'storage', 200)
-        && strMax(d, 'handoverNote', 600) && strMax(d, 'disposalNote', 600) && strMax(d, 'finderNote', 300);
+        && strMax(d, 'handoverNote', 600) && strMax(d, 'disposalNote', 600) && strMax(d, 'finderNote', 300)
+        && strMax(d, 'spot', 400);
     }
 
     function validUser(d) {
@@ -152,7 +154,7 @@ service cloud.firestore {
       allow delete: if isStaffOf(resource.data.officeId);
     }
 
-    // التفاصيل السرية للغرض (اللون، الماركة، الوصف، المبنى والقاعة، موضع الحفظ): لموظفي مكتبه فقط
+    // التفاصيل السرية للغرض (اللون، الماركة، الوصف، مكان العثور والمبنى والقاعة، موضع الحفظ): لموظفي مكتبه فقط
     match /itemSecrets/{itemId} {
       allow read: if isStaffOf(resource.data.officeId);
       allow create: if isStaffOf(request.resource.data.officeId)

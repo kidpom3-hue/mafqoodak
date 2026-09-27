@@ -31,8 +31,10 @@ export function thumbHtml(i, cls = 'row-thumb'){
   const c = cat(i.cat);
   return `<div class="${cls}${isBlur(i) ? ' blurred' : ''}">${icon(c.icon)}${photoImg(i)}</div>`;
 }
-// الموظف يمرّر full(i) فيظهر اللون والمبنى والقاعة، والزائر يرى المنطقة العامة فقط
-export const miniItem = (i, extra = '') => `<button class="mini" data-act="openItem" data-id="${esc(i.id)}">${thumbHtml(i)}<span class="grow"><b>${esc(showTitle(i))}</b><span class="meta">${i.color ? colorDot(i.color) + esc(colorName(i.color)) + ' · ' : ''}${esc(spotText(i))} · ${relDay(i.foundDate)}</span></span>${extra}</button>`;
+// الموظف يمرّر full(i) فيظهر اللون ومكان العثور والمبنى والقاعة. الزائر يرى النوع والتاريخ فقط:
+// مكان العثور سري (المرحلة E5) لأنه جواب «أين فقدته؟» في طلب الاستلام
+export const miniItem = (i, extra = '') => { const place = staffView() ? spotText(i) : '';
+  return `<button class="mini" data-act="openItem" data-id="${esc(i.id)}">${thumbHtml(i)}<span class="grow"><b>${esc(showTitle(i))}</b><span class="meta">${i.color ? colorDot(i.color) + esc(colorName(i.color)) + ' · ' : ''}${place ? esc(place) + ' · ' : ''}${relDay(i.foundDate)}</span></span>${extra}</button>`; };
 export const person = uid => `<span class="person"><img data-avatar="${esc(uid)}" alt="" hidden><span data-uname="${esc(uid)}"></span></span>`;
 
 export function catPicker(sel){
@@ -84,7 +86,8 @@ export function photoModePicker(sel = 'blur'){
   const opts = ['clear', 'blur', 'none'];
   return `<div class="field" id="photo-mode"><span class="label">${t('c.photoMode')}</span>
     <div class="seg wide" role="radiogroup" aria-label="${t('c.photoModeAria')}">${opts.map(v => `<label class="seg-opt"><input type="radio" name="photoMode" value="${v}" ${sel === v ? 'checked' : ''}><span>${t('c.mode.' + v)}</span></label>`).join('')}</div>
-    <span class="hint">${t('c.photoModeHint')}</span></div>`;
+    <span class="hint">${t('c.photoModeHint')}</span>
+    <span class="hint">${t('c.blurColorHint')}</span></div>`;
 }
 export function photoField(existingKey, label, extra = ''){
   return `<div class="field" id="photo-field"><span class="label">${label}</span>

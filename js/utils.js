@@ -75,9 +75,11 @@ export const subKey = s => subName(s);
 export const showTitle = i => { const v = subName(i?.title); if (!isEn() || !v) return v; const c = cat(i.cat); return v === c.publicName ? c.publicEn : v === c.name ? catName(i.cat) : subLabel(v); };
 
 // نص البحث: أسماء التصنيف والنوع واللون باللغتين، فكلمة إنجليزية (wallet، keys) تجد الأغراض العربية
-export const itemText = i => [subName(i.title), i.desc, i.sub, searchWords(i.cat, i.sub, i.color), i.brand, i.spot, spotName(i.spot, i.officeId), i.bldg, i.room, i.ref].join(' ');
-export function textScore(q, i){
-  const t = tokens(itemText(i)); let s = 0;
+// withPlace=false للزائر: مكان العثور سري (المرحلة E5)، فلا يُبحث به في الإعلان العام (ولو بقي في غرض قديم لم يُنقل بعد)
+export const itemText = (i, withPlace = true) => [subName(i.title), i.desc, i.sub, searchWords(i.cat, i.sub, i.color), i.brand,
+  withPlace ? i.spot : '', withPlace ? spotName(i.spot, i.officeId) : '', i.bldg, i.room, i.ref].join(' ');
+export function textScore(q, i, withPlace = true){
+  const t = tokens(itemText(i, withPlace)); let s = 0;
   for (const w of q){
     if (t.includes(w)) s += 3;
     else if (t.some(x => (x.length > 2 && w.startsWith(x)) || (w.length > 2 && x.startsWith(w)))) s += 1;

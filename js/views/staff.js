@@ -5,13 +5,13 @@ import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale } from '../state.js';
 import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt } from './common.js';
 import { hydrate } from '../ui.js';
-import { migrateItems, allowMigrationRetry } from '../migrate.js';
+import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
 
 /* ---------- staff dashboard ---------- */
 export function vStaff(){
   const o = curOffice();
   if (S.route.params.tab) { S.staffTab = S.route.params.tab; }
-  allowMigrationRetry();
+  allowMigrationRetry(); allowSpotRetry();
   return `<div class="wrap" data-view="staff">
     <section class="hero"><div class="hero-kicker">${icon('shield')}${t('st.kicker')}</div><h1 class="hero-title">${esc(oName(o))}</h1></section>
     <div class="stats" id="s-stats"></div>
@@ -70,6 +70,7 @@ export function updateStaff(){
   $('#s-body').innerHTML = S.staffTab === 'claims' ? staffClaims() : S.staffTab === 'reports' ? staffReports() : staffItems();
   hydrate();
   migrateItems();   // نقل تفاصيل الأغراض القديمة إلى الملف السري (مرة واحدة)
+  migrateSpots();   // نقل مكان العثور من الإعلان العام إلى الملف السري (المرحلة E5)
 }
 // تنبيه مدة الحفظ: قائمة ما تجاوزها مع إجراء جماعي «تصرّف»، وما سينتهي خلال 7 أيام
 function retentionBox(){
@@ -149,16 +150,21 @@ export function detailCheck(d, said, truth){
 }
 // ما قاله صاحب الطلب في سؤال: من claims.details، أو من حقل موجود في الطلب (as: الاسم وآخر 4 أرقام)
 const saidOf = (c, d) => d.as ? c[d.as] || '' : c.details?.[d.k] || '';
-// نتيجة المقارنة الآلية: اللون والمكان والتاريخ وأسئلة التصنيف (تُستخدم في الجدول وفي تحذير القبول).
-// total = عدد الصفوف التي لها نتيجة (✓ أو ✗)، وhits = المتطابق منها
+// اللون ظاهر للعامة في الصورة الواضحة أو المموّهة (التمويه لا يخفي اللون)، فلا يُحسب دليلاً
+const SEEN = () => `<span class="v mute">${t('st.inPhoto')}</span>`;
+export const colorPublic = f => f?.photo === 'clear' || f?.photo === 'blur' || f?.photo === true;
+// نتيجة المقارنة الآلية (تُستخدم في الجدول وفي تحذير القبول). المبدأ: ما يراه الزائر لا يُحسب دليلاً.
+//   المكان: سري (المرحلة E5) فيُحسب · اللون: يُحسب فقط إن كانت الصورة العامة مخفية أو غير موجودة
+//   التاريخ: ظاهر للعامة، فلا ✓ أبداً ولا يدخل في total، و✗ فقط إن كان مستحيلاً (فُقد بعد العثور أو قبله بأكثر من 14 يوماً)
+// total = عدد الصفوف التي لها نتيجة (✓ أو ✗) دون التاريخ، وhits = المتطابق منها
 export function claimChecks(c, f){
   const q = claimOf(f?.cat);
-  const color = !q.fields.includes('color') ? '' : !c.color ? NA() : !f?.color ? '' : c.color === f.color ? OK : NO;
+  const color = !q.fields.includes('color') ? '' : colorPublic(f) ? SEEN() : !c.color ? NA() : !f?.color ? '' : c.color === f.color ? OK : NO;
   const place = !c.lostSpot ? NA() : !f?.spot ? '' : c.lostSpot !== f.spot ? NO : (c.bldg && c.bldg === f.bldg ? OK2 : OK);
   const gap = c.lostDate && f?.foundDate ? dayNum(f.foundDate) - dayNum(c.lostDate) : null;
-  const date = !c.lostDate ? NA() : gap === null ? '' : gap >= 0 && gap <= 14 ? OK : NO;
+  const date = !c.lostDate ? NA() : gap === null ? '' : gap < 0 || gap > 14 ? NO : '';
   const det = q.details.map(d => ({d, said: saidOf(c, d), truth: f?.details?.[d.k] || ''})).map(x => ({...x, v: detailCheck(x.d, x.said, x.truth)}));
-  const all = [color, place, date, ...det.map(x => x.v)];
+  const all = [color, place, ...det.map(x => x.v)];
   return {color, place, date, det, hits: all.filter(v => v === OK || v === OK2).length, total: all.filter(isRes).length};
 }
 // تنبيه تضارب المصالح: صاحب الطلب هو من سلّم الغرض للمكتب، أو الموظف الذي سجّله
@@ -166,7 +172,8 @@ export const conflictNote = kind => kind ? `<div class="note bad conflict" role=
 function claimCompare(c, f){
   if (!f) return '';
   const said = x => x ? esc(x) : `<span class="muted">${t('st.notSaid')}</span>`, truth = x => x ? esc(x) : '<span class="muted">—</span>';
-  // اللون: مطابقة تلقائية · المكان: ✓ المنطقة نفسها، ✓✓ والمبنى نفسه · التاريخ: فُقد قبل العثور أو في يومه، بفارق 14 يوماً على الأكثر
+  // اللون: مطابقة تلقائية إن لم تكن الصورة العامة تُظهره · المكان: ✓ المنطقة نفسها، ✓✓ والمبنى نفسه
+  // التاريخ: ظاهر للعامة، فلا ✓ له، و✗ فقط إن كان مستحيلاً
   // أسئلة التصنيف: إجابة صاحب الطلب بجانب ما سجّله الموظف (الغرض القديم بلا إجابات: «—» بلا نتيجة)
   const {color, place, date, det, hits, total} = claimChecks(c, f);
   const q = claimOf(f.cat), kind = conflictOf(c, f);
