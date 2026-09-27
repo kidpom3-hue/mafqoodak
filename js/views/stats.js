@@ -5,7 +5,7 @@ import { t, tp } from '../i18n.js';
 import { esc, spotName } from '../utils.js';
 import { S, staffOffices } from '../state.js';
 import { backBtn } from './common.js';
-import { loadStats, computeStats, monthName } from '../stats.js';
+import { loadStats, computeStats, monthName, ratingStats } from '../stats.js';
 
 // أعمدة أفقية (سلسلة واحدة): الطول يمثل العدد، والقيمة عند طرف العمود، والتلميح عند المرور أو التركيز
 function hbars(rows){
@@ -22,6 +22,18 @@ const table = (head, rows) => `<details class="viz-table"><summary>${t('sx.table
 // سقف مقرّب لمحور الأعمدة، ونصفه عدد صحيح دائماً: 2، 4، 6، 8، 10، ثم 20، 50، 100...
 const nice = v => { if (v <= 10) return Math.max(2, Math.ceil(v / 2) * 2); const p = 10 ** Math.floor(Math.log10(v)); return [2, 5, 10].map(k => k * p).find(k => k >= v); };
 
+// رضا المستفيدين: المتوسط والعدد، وتوزيع 1–5 بأعمدة من لون واحد مع جدول، وآخر 10 تعليقات
+function satisfaction(list){
+  const r = ratingStats(list || []);
+  if (!r.n) return `<section class="panel viz"><div class="section-title">${t('sx.rating')}</div><p class="muted">${t('sx.noRatings')}</p></section>`;
+  const rows = r.dist.slice().reverse().map(x => ({label: t('sx.starsN', {n: x.k}), n: x.n, tip: String(x.n)}));
+  return `<figure class="panel viz"><figcaption class="section-title">${t('sx.rating')}</figcaption>
+    <p class="kpi-line">${t('sx.ratingAvg', {avg: `<b>${r.avg}</b>`, n: tp('n.rating', r.n)})}</p>
+    ${hbars(rows)}
+    ${table([t('sx.stars'), t('sx.count')], rows.map(x => [x.label, x.n]))}
+    ${r.notes.length ? `<div class="section-title">${t('sx.ratingNotes')}</div><ul class="rating-notes">${r.notes.map(x => `<li><span class="stars-sm" aria-label="${t('rt.aria', {n: x.rating})}">${'★'.repeat(x.rating)}</span> ${esc(x.note)}</li>`).join('')}</ul>` : ''}
+  </figure>`;
+}
 export function vStats(){
   const id = S.route.params.office || S.officeId;
   const o = S.offices.find(x => x.id === id);
@@ -67,6 +79,7 @@ export function vStats(){
       ${table([t('if.spot'), t('sx.count')], spotRows.map(r => [r.label, r.n]))}</figure>
     ${s.lost.length ? `<figure class="panel viz"><figcaption class="section-title">${t('sx.byLost')}</figcaption>${hbars(s.lost.map(x => ({label: x.s ? spotName(x.s, id) : t('it.unknown'), n: x.n, tip: String(x.n)})))}
       ${table([t('if.spot'), t('sx.count')], s.lost.map(x => [x.s ? spotName(x.s, id) : t('it.unknown'), x.n]))}</figure>` : ''}
+    ${satisfaction(data.ratings)}
     ${s.closed.some(x => x.n) ? `<section class="panel viz"><div class="section-title">${t('sx.closed')}</div>
       <p class="kpi-line">${s.closed.map(x => `${t('sx.closed.' + x.k)} <b>${x.n}</b>`).join(' · ')}</p>
       ${table([t('sx.closedWhy'), t('sx.count')], s.closed.map(x => [t('sx.closed.' + x.k), x.n]))}</section>` : ''}

@@ -2,7 +2,7 @@
 import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, claimOf, keepDaysOf, detailValue } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale } from '../state.js';
+import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo } from '../state.js';
 import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt } from './common.js';
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
@@ -14,7 +14,7 @@ export function vStaff(){
   allowMigrationRetry(); allowSpotRetry();
   return `<div class="wrap" data-view="staff">
     <section class="hero"><div class="hero-kicker">${icon('shield')}${t('st.kicker')}</div><h1 class="hero-title">${esc(oName(o))}</h1></section>
-    <div class="stats" id="s-stats"></div>
+    <div class="stats" id="s-stats" tabindex="0" role="region" aria-label="${t('st.statsAria')}"></div>
     <div class="seg wide" id="s-tabs">
       <button data-act="sTab" data-v="items">${icon('box')}${t('nav.store')}</button>
       <button data-act="sTab" data-v="claims">${icon('inbox')}${t('st.tabClaims')}</button>
@@ -64,6 +64,8 @@ export function updateStaff(){
         <button class="btn sm ghost" data-act="labelsMenu">${icon('qr')}${t('lb.menu')}</button>
         <button class="btn sm ghost" data-act="poster">${icon('print')}${t('po.btn')}</button>
         <button class="btn sm ghost" data-act="stats">${icon('chart')}${t('sx.btn')}</button>
+      </div>` : S.staffTab === 'claims' ? `<div class="filters">
+        <label class="searchbar" style="flex:1;min-width:200px">${icon('search')}<input id="cq" type="search" dir="ltr" autocomplete="off" placeholder="REQ-7K3M" value="${esc(S.claimQ)}" aria-label="${t('st.claimSearch')}"></label>
       </div>` : '';
     const ss = $('#sstatus'); if (ss) ss.value = S.staffStatus;
   }
@@ -230,7 +232,7 @@ export function claimCardStaff(c){
       ${late ? `<button class="btn sm ghost" data-act="release" data-id="${esc(c.id)}">${icon('swap')}${t('st.release')}</button>` : ''}
       <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}${t('st.unapprove')}</button></div>` : '';
   return `<div class="box">
-    <div class="box-head"><div class="claim-who">${person(c.uid)}<span class="meta">${relTime(c.createdAt)}</span>${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div>${pill(CLAIM_STATUS, c.status)}</div>
+    <div class="box-head"><div class="claim-who">${person(c.uid)}<span class="meta"><span dir="ltr" class="req-no">${esc(claimNo(c))}</span> · ${relTime(c.createdAt)}</span>${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div>${pill(CLAIM_STATUS, c.status)}</div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
     ${c.status === 'approved' && c.pickupBy ? `<div class="meta ${late ? 'flag' : ''}">${t(late ? 'st.pickupEnded' : 'st.pickupUntil', {date: dateOf(c.pickupBy)})}</div>` : ''}
     ${conflictNote(kind)}
@@ -244,7 +246,17 @@ export function claimCardStaff(c){
     ${actions}${again}
   </div>`;
 }
+// البحث برقم الطلب (REQ-7K3M أو 7K3M فقط): يطابق الطلبات المفتوحة والسجل المحمّل
+const qNo = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 export function staffClaims(){
+  const q = qNo(S.claimQ);
+  if (q){
+    const all = [...S.claims, ...(S.claimHist || []).filter(h => !S.claims.some(c => c.id === h.id))];
+    const hits = all.filter(c => qNo(claimNo(c)).includes(q)).sort((a, b) => b.createdAt - a.createdAt);
+    return `<div class="section-title">${t('st.claimResults')} <span class="count">${hits.length}</span></div>
+      ${hits.length ? `<div class="list">${hits.map(claimCardStaff).join('')}</div>` : `<p class="muted">${t('st.noClaimNo')}</p>`}
+      ${S.claimHist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}${t('st.showHist')}</button>` : ''}`;
+  }
   const cs = S.claims.slice().sort((a,b) => b.createdAt - a.createdAt);
   const pend = cs.filter(c => c.status === 'pending'), appr = cs.filter(c => c.status === 'approved' && !pickupOver(c)), late = cs.filter(pickupOver);
   const hist = (S.claimHist || []).slice().sort((a,b) => (b.decidedAt || b.doneAt || b.createdAt) - (a.decidedAt || a.doneAt || a.createdAt)).slice(0, 50);

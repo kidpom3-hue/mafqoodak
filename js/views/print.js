@@ -1,9 +1,9 @@
 // صفحات الطباعة: ملصقات QR للأغراض (للمستودع) وملصق المكتب (يُعلَّق في المبنى)
 // الرمز يُولَّد داخل التطبيق (js/qr.js) فيعمل دون اتصال، والطباعة من زر «اطبع» في المتصفح.
 import { icon, LOGO, cat, catName, subLabel, oName, oShort, oPlace, oHours } from '../constants.js';
-import { t } from '../i18n.js';
-import { esc, fmtDate } from '../utils.js';
-import { S, item, full, curOffice } from '../state.js';
+import { t, locale, isEn } from '../i18n.js';
+import { esc, fmtDate, isoDay, $ } from '../utils.js';
+import { S, item, full, curOffice, ensureItem } from '../state.js';
 import { backBtn } from './common.js';
 import { qrSvg } from '../qr.js';
 
@@ -56,4 +56,38 @@ export function vPoster(){
       <small class="po-url" dir="ltr">${esc(url.replace(/^https?:\/\//, ''))}</small>
     </article>
   </div>`;
+}
+
+/* شهادة شكر الأمانة (route: thanks، param id = إشعار التسليم): للواجد الذي عاد ما سلّمه إلى صاحبه.
+   الاسم يُكتب قبل الطباعة (معبّأ من اسم الحساب) ولا يُحفظ. النوع العام فقط، بلا أي تفاصيل سرية، وبلا شعارات.
+   A4 أفقي بلغة الواجهة (@page thanks في css/styles.css) */
+// تاريخ كامل بالسنة (الشهادة وثيقة تُحفظ)
+const fullDate = ms => { try { return new Intl.DateTimeFormat(locale(), {day: 'numeric', month: 'long', year: 'numeric'}).format(new Date(ms)); } catch { return isoDay(ms); } };
+export function vThanks(){
+  const f = S.myFound.find(x => x.id === S.route.params.id);
+  const it = f?.itemId ? item(f.itemId) : null; if (f?.itemId && !it) ensureItem(f.itemId);
+  if (!f || it?.status !== 'returned') return `<div class="wrap">${backBtn()}<div class="empty">${icon('tag')}<b>${t(it || !f ? 'ty.notYet' : 'c.loadingDots')}</b></div></div>`;
+  const o = S.offices.find(x => x.id === f.officeId);
+  // النوع العام فقط (بحرف صغير داخل الجملة الإنجليزية: «the phone»)
+  const type0 = it.sub ? subLabel(it.sub) : catName(it.cat), type = isEn() ? type0.toLowerCase() : type0;
+  return `<div class="wrap print-page thanks-page" data-view="thanks">
+    <div class="no-print">${backBtn()}
+      <section class="hero"><div class="hero-kicker">${icon('print')}${t('ty.kicker')}</div><h1 class="hero-title">${t('ty.title')}</h1><p class="hero-sub">${t('ty.hint')}</p></section>
+      <div class="field"><label for="ty-name">${t('ty.name')}</label><input id="ty-name" class="input" maxlength="80" autocomplete="name" value="${esc(S.me?.name || '')}"></div>
+      <div class="btn-row"><button class="btn" data-act="print">${icon('print')}${t('lb.print')}</button></div>
+    </div>
+    <article class="cert" data-office="${esc(oName(o))}" data-type="${esc(type)}" data-date="${esc(fullDate(it.returnedAt || it.updatedAt))}">
+      <p class="cert-kicker">${t('app.name')}</p>
+      <h2 class="cert-title">${t('ty.certTitle')}</h2>
+      <p class="cert-body" id="ty-body"></p>
+      <p class="cert-ref">${t('ty.ref')}: <b dir="ltr">${esc(it.ref)}</b></p>
+      <small class="cert-note">${t('ty.note')}</small>
+    </article>
+  </div>`;
+}
+// نص الشهادة: يُعاد عند كل تعديل للاسم (بـ textContent، فلا حاجة لـ esc)
+export function fillThanks(){
+  const c = $('.cert'), inp = $('#ty-name'), out = $('#ty-body'); if (!c || !inp || !out) return;
+  const draw = () => { out.textContent = t('ty.body', {office: c.dataset.office, name: inp.value.trim() || '…', type: c.dataset.type, date: c.dataset.date}); };
+  inp.addEventListener('input', draw); draw();
 }

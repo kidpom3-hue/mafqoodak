@@ -51,6 +51,9 @@ export function applyLang(){
   const h = document.documentElement;
   h.lang = LANG; h.dir = LANG === 'ar' ? 'rtl' : 'ltr';
   document.title = t('app.title');
+  // نصوص ثابتة في index.html: رابط «تخطَّ إلى المحتوى» واسم شريط التنقل السفلي
+  const sk = document.getElementById('skip'); if (sk) sk.textContent = t('a11y.skip');
+  const nv = document.getElementById('nav'); if (nv) nv.setAttribute('aria-label', t('ui.navigation'));
 }
 export function setLang(l){
   if (l !== 'ar' && l !== 'en') return;

@@ -4,7 +4,7 @@ import { $, esc, today } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, curOffice } from '../state.js';
 import { card, skelCards } from './visitor.js';
-import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt, themePicker } from './common.js';
+import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt, themePicker, textPicker } from './common.js';
 import { hydrate } from '../ui.js';
 
 const TAG_ART = `<svg class="tag-art" viewBox="0 0 220 240" aria-hidden="true">
@@ -53,6 +53,8 @@ export function vHome(){
         <li><b>${t('home.how2')}</b><span>${t('home.how2d')}</span></li>
         <li><b>${t('home.how3')}</b><span>${t('home.how3d')}</span></li>
       </ol>
+      <div class="btn-row"><button class="btn sm ghost" data-act="nav" data-r="service">${icon('grid')}${t('svc.details')}</button>
+        <button class="btn sm ghost" data-act="nav" data-r="numbers">${icon('chart')}${t('num.title')}</button></div>
     </section>
 
     ${footer(o)}
@@ -95,9 +97,13 @@ function footer(o){
       <button class="link" data-act="nav" data-r="report">${t('foot.report')}</button>
       <button class="link" data-act="nav" data-r="found">${t('home.ctaFound')}</button>
       <button class="link" data-act="nav" data-r="office">${t('foot.office')}</button>
+      <button class="link" data-act="nav" data-r="service">${t('foot.services')}</button>
+      <button class="link" data-act="nav" data-r="numbers">${t('num.title')}</button>
+      <button class="link" data-act="nav" data-r="a11y">${t('a11y.title')}</button>
       <button class="link" data-act="nav" data-r="privacy">${t('foot.privacy')}</button>
       <button class="link" data-act="lang" lang="${t('lang.otherCode')}">${icon('globe')}${t('foot.lang')}</button>
       ${themePicker()}
+      ${textPicker()}
     </div>
     <small class="sf-copy">© ${new Date().getFullYear()} ${t('app.name')}</small>
   </footer>`;

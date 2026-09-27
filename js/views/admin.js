@@ -109,6 +109,7 @@ export function vOfficeForm(){
         <div class="field"><label for="o-phone">${t('of.phone')}</label><input id="o-phone" name="phone" class="input" maxlength="30" dir="ltr" value="${esc(o?.phone || '')}"></div>
         <div class="field"><label for="o-ret">${t('of.ret')}</label><input id="o-ret" name="retentionDays" type="number" min="7" max="365" class="input" value="${esc(o?.retentionDays || 90)}"></div>
         <div class="field"><label for="o-pick">${t('of.pick')}</label><input id="o-pick" name="pickupDays" type="number" min="1" max="60" class="input" value="${esc(o?.pickupDays || 7)}"><span class="hint">${t('of.pickHint')}</span></div>
+        <div class="field"><label for="o-review">${t('of.review')}</label><input id="o-review" name="reviewDays" type="number" min="1" max="30" class="input" value="${esc(o?.reviewDays || 2)}"><span class="hint">${t('of.reviewHint')}</span></div>
       </div>
       <div class="field"><label for="o-spots">${t('of.spots')}</label><textarea id="o-spots" name="spots" class="input" placeholder="${t('of.spotsPh')}">${esc((o?.spots || []).join('\n'))}</textarea><span class="hint">${t('of.spotsHint')}</span></div>
       <details class="en-fields" ${o?.nameEn || S.route.params.en ? 'open' : ''}>

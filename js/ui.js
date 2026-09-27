@@ -9,9 +9,10 @@ import { vAdmin, vOfficeForm } from './views/admin.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
 import { vHome, updateHome, vFound, vHandin } from './views/home.js';
 import { vPrivacy } from './views/privacy.js';
-import { vLabels, vPoster } from './views/print.js';
+import { vLabels, vPoster, vThanks, fillThanks } from './views/print.js';
 import { vStats } from './views/stats.js';
 import { vAudit } from './views/audit.js';
+import { vService, vNumbers, vA11y } from './views/gov.js';
 import { SETTINGS } from './config.js';
 import { cat } from './constants.js';
 
@@ -39,6 +40,11 @@ const ROUTES = {
   poster: {live: false, v: vPoster},
   stats: {live: true, v: vStats},
   audit: {live: true, v: vAudit},
+  // المرحلة F: بطاقة الخدمة، ومؤشرات المكتب، وبيان إمكانية الوصول، وشهادة الشكر (print.js)
+  service: {live: false, v: vService},
+  numbers: {live: true, v: vNumbers},
+  a11y: {live: false, v: vA11y},
+  thanks: {live: false, v: vThanks, after: fillThanks},
 };
 
 export function initForm(){
@@ -111,7 +117,7 @@ function renderMain(){
   if (S.route.name === 'login' && S.uid) S.route = S.route.params.next || {name: homeRoute(), params: {}};
   if (!S.config){ main.innerHTML = S.route.name === 'login' ? vLogin() : S.route.name === 'privacy' ? vPrivacy() : vSetup(); return; }
   // لا مكان مختار (أو لم يصل بعد من قاعدة البيانات): نعرض قائمة الأماكن دون تغيير الصفحة المطلوبة
-  if (!curOffice() && !['pick', 'admin', 'officeForm', 'audit', 'join', 'login', 'privacy'].includes(S.route.name)){ main.innerHTML = vPick(); return; }
+  if (!curOffice() && !['pick', 'admin', 'officeForm', 'audit', 'join', 'login', 'privacy', 'a11y'].includes(S.route.name)){ main.innerHTML = vPick(); return; }
   const r = ROUTES[S.route.name] || ROUTES.home;
   main.innerHTML = r.v();
   if (r.update) r.update();

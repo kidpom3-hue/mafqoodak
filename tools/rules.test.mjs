@@ -267,6 +267,28 @@ await t('E5: تسليم مباشر لغرض قديم (itemSecrets كاملاً �
 }));
 await t('E5: الموظف يجلب مكان أغراض مكتبه للإحصاءات (itemSecrets officeId ==)', q(A, 'itemSecrets', ['officeId', '==', O]));
 
+// ── المرحلة F: رقم الطلب، والتقييم، ومؤشرات المكتب ──
+await t('F: طلب فيه رقم قصير no', setDoc(doc(carol, 'claims/n1_carol'), claim('n1', 'carol', {no: 'REQ-7K3M'})));
+await t('F: رقم طلب أطول من 16 مرفوض', setDoc(doc(bob, 'claims/n1_bob'), claim('n1', 'bob', {no: 'x'.repeat(17)})), false);
+await t('F: تقييم طلب غير مكتمل مرفوض', updateDoc(doc(carol, 'claims/n1_carol'), {rating: 5, ratedAt: now}), false);
+// i7_alice مكتمل بالرمز (المرحلة D) ثم جُهّل بحذف الحساب؛ نستخدم طلباً مكتملاً جديداً لـ bob
+await env.withSecurityRulesDisabled(async c => { await setDoc(doc(c.firestore(), 'claims/i9_bob2'), {...claim('i9', 'bob'), status: 'done', doneAt: now}); });
+await t('F: تقييم 6 مرفوض', updateDoc(doc(bob, 'claims/i9_bob2'), {rating: 6, ratedAt: now}), false);
+await t('F: تقييم عشري مرفوض', updateDoc(doc(bob, 'claims/i9_bob2'), {rating: 4.5, ratedAt: now}), false);
+await t('F: غير صاحب الطلب لا يقيّم', updateDoc(doc(carol, 'claims/i9_bob2'), {rating: 5, ratedAt: now}), false);
+await t('F: تقييم طلب مكتمل مرة واحدة', updateDoc(doc(bob, 'claims/i9_bob2'), {rating: 4, ratingNote: 'تعامل ممتاز', ratedAt: now}));
+await t('F: التقييم الثاني مرفوض', updateDoc(doc(bob, 'claims/i9_bob2'), {rating: 5, ratedAt: now + 1}), false);
+await t('F: «حذف حسابي» يمسح ratingNote ويبقى rating', updateDoc(doc(bob, 'claims/i9_bob2'), {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', ratingNote: '', anonymizedAt: now}));
+await t('F: الموظف يجلب الطلبات المكتملة للإحصاءات', q(A, 'claims', ['officeId', '==', O], ['status', '==', 'done']));
+const ps = {month: '2026-09', monthReceived: 12, monthReturned: 7, totalReceived: 140, totalReturned: 96, returnRate: 69, avgDays: 3.4, avgRating: 4.6, ratings: 31, updatedAt: now};
+await t('F: غير الموظف يكتب publicStats مرفوض', setDoc(doc(bob, 'publicStats/' + O), ps), false);
+await t('F: موظف مكتب آخر يكتب publicStats مرفوض', setDoc(doc(A, 'publicStats/air'), ps), false);
+await t('F: الموظف يكتب publicStats لمكتبه', setDoc(doc(A, 'publicStats/' + O), ps));
+await t('F: مفتاح غريب في publicStats مرفوض', setDoc(doc(A, 'publicStats/' + O), {...ps, secret: 1}), false);
+await t('F: نسبة إرجاع فوق 100 مرفوضة', setDoc(doc(A, 'publicStats/' + O), {...ps, returnRate: 120}), false);
+await t('F: رقم نصي في publicStats مرفوض', setDoc(doc(A, 'publicStats/' + O), {...ps, totalReceived: '140'}), false);
+await t('F: الزائر غير المسجّل يقرأ publicStats', getDoc(doc(anon, 'publicStats/' + O)));
+
 // ── لغة المستخدم (للجزء B) ──
 await t('lang = en مسموح', setDoc(doc(alice, 'users/alice'), {name: 'A', email: 'a@x.com', photo: '', lastSeen: now, lang: 'en'}));
 await t('lang غير معروفة مرفوضة', setDoc(doc(alice, 'users/alice'), {name: 'A', lang: 'fr'}), false);
