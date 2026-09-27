@@ -18,6 +18,7 @@ export const S = {
   configured,
   authReady: false, uid: null, me: null,
   isAdmin: false, adminLoaded: false,
+  rejecting: {},        // G5: «ليس غرضي» ينتظر انتهاء مهلة «تراجع» (5 ثوانٍ): {reportId: [itemId]}
   config: null, configLoaded: false,
   offices: [], officesLoaded: false,
   // items: الأغراض النشطة (متاح ومحجوز) فقط. البقية تُجلب عند الحاجة حفاظاً على حصة القراءة اليومية
@@ -80,14 +81,20 @@ export const staffOffices = () => S.isAdmin ? S.offices.map(o => o.id) : (S.staf
 export const isStaffHere = () => !!S.officeId && staffOffices().includes(S.officeId);
 export function modes(){ const m = ['visitor']; if (isStaffHere()) m.push('staff'); if (S.isAdmin) m.push('admin'); return m; }
 export const homeRoute = () => S.mode === 'staff' ? 'staff' : S.mode === 'admin' ? 'admin' : 'home';
-export const myReports = () => S.myReports.slice().sort((a, b) => b.createdAt - a.createdAt);
-export const myClaims = () => S.myClaims.slice().sort((a, b) => b.createdAt - a.createdAt);
-export const myFound = () => S.myFound.slice().sort((a, b) => b.createdAt - a.createdAt);
+// G2: آخر حدث في البلاغ أو الطلب أو الإشعار؛ القوائم مرتّبة به (الأحدث أولاً)
+export const lastAt = x => Math.max(0, ...['createdAt', 'editedAt', 'renewedAt', 'pickedAt', 'closedAt', 'askedAt', 'answeredAt', 'decidedAt', 'doneAt', 'ratedAt', 'receivedAt', 'cancelledAt']
+  .map(k => typeof x?.[k] === 'number' ? x[k] : 0));
+export const byLast = (a, b) => lastAt(b) - lastAt(a);
+export const myReports = () => S.myReports.slice().sort(byLast);
+export const myClaims = () => S.myClaims.slice().sort(byLast);
+export const myFound = () => S.myFound.slice().sort(byLast);
 export const officeName = id => oName(S.offices.find(o => o.id === id));
 // اسم المكان بلغة الواجهة (من spotsEn في المكتب)
 setSpotHook((s, officeId) => spotLabel(S.offices.find(o => o.id === (officeId || S.officeId)), s));
 // سؤال التحقق: هل أجاب صاحب الطلب عن آخر سؤال؟ (الإجابة الأقدم من السؤال لا تُحسب)
 export const answered = c => !!c?.answer && (c.answeredAt || 0) >= (c.askedAt || 0);
+// G3: صاحب الطلب يعدّله ما دام قيد المراجعة ولم يسأله الموظف (القواعد تفرض ذلك أيضاً)
+export const claimEditable = c => !!c && c.uid === S.uid && c.status === 'pending' && !c.question;
 export const awaitingAnswer = c => c?.status === 'pending' && !!c.question && !answered(c);
 /* تضارب المصالح: صاحب الطلب هو من سلّم الغرض (إشعار التسليم المرتبط به) أو الموظف الذي سجّله.
    صاحب الإشعار يُجلب مرة واحدة لكل غرض (get) */
@@ -110,10 +117,21 @@ export const claimNo = c => c?.no || ('REQ-' + String(c?.id || '').slice(-4).toU
 export const myCode = id => S.priv?.codes?.[id] || LS.get('codes', {})[id] || null;
 export const MATCH_MIN = SETTINGS.matchThreshold;
 
+/* G5: «ليس غرضي»: الأغراض التي رفضها صاحب البلاغ = القائمة rejected (تكبر فقط، 30 على الأكثر)
+   + pickRejected القديم (قبل المرحلة G) + ما ضغط عليه الآن وما زالت مهلة «تراجع» جارية (S.rejecting) */
+export const rejectedOf = r => new Set([...(Array.isArray(r?.rejected) ? r.rejected : []), ...(r?.pickRejected ? [r.pickRejected] : []), ...(S.rejecting[r?.id] || [])]);
+// ترشيح الموظف ما دام الغرض متاحاً أو محجوزاً ولم يرفضه صاحب البلاغ
+export function pickOf(r){
+  if (!r?.staffPick) return null;
+  const i = item(r.staffPick); if (!i){ ensureItem(r.staffPick); return null; }
+  return ACTIVE.includes(i.status) && !rejectedOf(r).has(i.id) ? i : null;
+}
 // المرشحون لبلاغ: الزائر يقارن بالبيانات العامة فقط، والموظف يمرّر full ليقارن بالتفاصيل السرية أيضاً
+// ما رفضه صاحب البلاغ («ليس غرضي») لا يُرشَّح له مرة أخرى
 export function candidatesFor(r, n = 3, view = x => x){
   if (isStale(r)) return [];
-  return S.items.filter(i => i.status === 'available' || i.status === 'reserved')
+  const no = rejectedOf(r);
+  return S.items.filter(i => (i.status === 'available' || i.status === 'reserved') && !no.has(i.id))
     .map(i => ({i: view(i), s: matchScore(r, view(i))})).filter(x => x.s >= MATCH_MIN)
     .sort((a, b) => b.s - a.s).slice(0, n);
 }
@@ -126,19 +144,22 @@ export function mayBeYours(r, i){
   const d = dayNum(i.foundDate) - dayNum(r.lostDate);
   return !isNaN(d) ? d >= -1 && d <= 30 : true;
 }
-export const maybeFor = (r, n = 4) => S.items.filter(i => ACTIVE.includes(i.status) && mayBeYours(r, i))
-  .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, n);
+// بلا ما رفضه صاحب البلاغ، وبلا ترشيح الموظف (له صندوقه الخاص)
+export const maybeFor = (r, n = 4) => { const no = rejectedOf(r); return S.items.filter(i => ACTIVE.includes(i.status) && mayBeYours(r, i) && !no.has(i.id) && i.id !== r.staffPick)
+  .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, n); };
 
-/* تنبيهات الزائر: ترشيح الموظف، وتغيّر حالة الطلب، وأول غرض مشابه لكل بلاغ (مرة واحدة) */
+/* تنبيهات الزائر: ترشيح الموظف، وتغيّر حالة الطلب، وأحدث غرض مشابه لكل بلاغ
+   (المفتاح فيه رقم الغرض، فكل غرض مشابه جديد تنبيه جديد، وما رُفض بـ«ليس غرضي» لا ينبّه) */
 export function alertKeys(){
   const keys = [];
   for (const r of myReports()){
     if (r.status !== 'open') continue;
     if (isStale(r)){ keys.push(`s:${r.id}:${r.renewedAt || r.createdAt}`); continue; }   // هل ما زلت تبحث؟
     // ترشيح الموظف ينبّه فقط ما دام الغرض متاحاً أو محجوزاً
-    const pi = r.staffPick && item(r.staffPick);
-    if (pi && ACTIVE.includes(pi.status) && r.pickRejected !== r.staffPick) keys.push(`p:${r.id}:${r.staffPick}`);
-    if (maybeFor(r, 1).length) keys.push(`m:${r.id}`);
+    const pi = pickOf(r);
+    if (pi) keys.push(`p:${r.id}:${pi.id}`);
+    const m = maybeFor(r, 1)[0];
+    if (m) keys.push(`m:${r.id}:${m.id}`);
   }
   for (const c of myClaims()){
     if (['approved', 'rejected', 'expired', 'cancelled'].includes(c.status)) keys.push(`c:${c.id}:${c.status}`);

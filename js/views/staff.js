@@ -1,9 +1,9 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
 import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, claimOf, keepDaysOf, detailValue } from '../constants.js';
-import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime } from '../utils.js';
+import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo } from '../state.js';
-import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt } from './common.js';
+import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem } from '../state.js';
+import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt, whenLine, claimTimeline } from './common.js';
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
 
@@ -33,7 +33,7 @@ export const catKeepNote = i => { const d = keepDaysOf(i.cat, curOffice()); retu
 export const rivals = i => i?.status === 'reserved' ? S.claims.filter(c => c.itemId === i.id && c.status === 'pending' && c.id !== i.reservedFor) : [];
 // انتهت مهلة الاستلام للطلب المقبول؟
 export const pickupOver = c => c.status === 'approved' && c.pickupBy && Date.now() > c.pickupBy;
-const dateOf = ms => { const d = new Date(ms); return fmtDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`); };
+const dateOf = ms => fmtDate(isoDay(ms));
 export { dateOf };
 
 export function updateStaff(){
@@ -140,6 +140,10 @@ const isRes = v => v === OK || v === OK2 || v === NO;
 /* مقارنة إجابة سؤال التصنيف بالحقيقة: ✓ أو ✗، أو '' بلا نتيجة
    الأرقام وآخر 4 والاختيار: تطابق تام · التقريبي: الفرق ضمن الأكبر من 20% أو 20 ريالاً
    النص الحر: ✓ إذا احتوى أحدهما الآخر أو اشتركا في كلمة من 3 أحرف فأكثر، ولا ✗ آلياً على نص حر أبداً */
+// G1: الأعداد (10 فأكثر) في نص حرّ، بعد تحويل ٠-٩ و۰-۹ إلى 0-9 وحذف فاصل الآلاف: «٢٠٠ ريال» ← 200
+export const numsOf = s => (latinDigits(s).replace(/(\d)[,\u066C](?=\d{3}\b)/g, '$1').match(/\d+/g) || []).map(Number).filter(n => n >= 10);
+// نصان حرّان فيهما العدد نفسه (مثل المبلغ 200) = ✓ (ولا ✗ آلياً على النص الحرّ أبداً)
+export const sameNumber = (a, b) => { const B = new Set(numsOf(b)); return numsOf(a).some(n => B.has(n)); };
 export function detailCheck(d, said, truth){
   const a = detailValue(d, said), b = detailValue(d, truth);
   if (!a || !b) return '';
@@ -147,6 +151,7 @@ export function detailCheck(d, said, truth){
   if (d.type === 'approx'){ const x = Number(a), y = Number(b); return Math.abs(x - y) <= Math.max(0.2 * Math.max(x, y), 20) ? OK : NO; }
   const na = norm(a), nb = norm(b);
   if (na && nb && (na.includes(nb) || nb.includes(na))) return OK;
+  if (sameNumber(a, b)) return OK;
   const tb = new Set(tokens(b).filter(w => w.length >= 3));
   return tokens(a).some(w => w.length >= 3 && tb.has(w)) ? OK : '';
 }
@@ -166,8 +171,10 @@ export function claimChecks(c, f){
   const gap = c.lostDate && f?.foundDate ? dayNum(f.foundDate) - dayNum(c.lostDate) : null;
   const date = !c.lostDate ? NA() : gap === null ? '' : gap < 0 || gap > 14 ? NO : '';
   const det = q.details.map(d => ({d, said: saidOf(c, d), truth: f?.details?.[d.k] || ''})).map(x => ({...x, v: detailCheck(x.d, x.said, x.truth)}));
-  const all = [color, place, ...det.map(x => x.v)];
-  return {color, place, date, det, hits: all.filter(v => v === OK || v === OK2).length, total: all.filter(isRes).length};
+  // وصف الإثبات الحرّ مقابل الوصف السري: ✓ فقط إن ذكر الاثنان العدد نفسه، وبلا ✗ أبداً
+  const proof = c.proof && f?.desc && sameNumber(c.proof, f.desc) ? OK : '';
+  const all = [color, place, proof, ...det.map(x => x.v)];
+  return {color, place, date, proof, det, hits: all.filter(v => v === OK || v === OK2).length, total: all.filter(isRes).length};
 }
 // تنبيه تضارب المصالح: صاحب الطلب هو من سلّم الغرض للمكتب، أو الموظف الذي سجّله
 export const conflictNote = kind => kind ? `<div class="note bad conflict" role="alert">${icon('alert')}<span><b>${t(kind === 'finder' ? 'st.conflictFinder' : 'st.conflictRecorder')}</b></span></div>` : '';
@@ -177,7 +184,7 @@ function claimCompare(c, f){
   // اللون: مطابقة تلقائية إن لم تكن الصورة العامة تُظهره · المكان: ✓ المنطقة نفسها، ✓✓ والمبنى نفسه
   // التاريخ: ظاهر للعامة، فلا ✓ له، و✗ فقط إن كان مستحيلاً
   // أسئلة التصنيف: إجابة صاحب الطلب بجانب ما سجّله الموظف (الغرض القديم بلا إجابات: «—» بلا نتيجة)
-  const {color, place, date, det, hits, total} = claimChecks(c, f);
+  const {color, place, date, proof, det, hits, total} = claimChecks(c, f);
   const q = claimOf(f.cat), kind = conflictOf(c, f);
   const row = (k, a, b, v = '') => `<div class="cmp-row"><b>${k}</b><span>${a}</span><span>${b}</span>${v || '<span class="v"></span>'}</div>`;
   const card = `<span class="muted">${t('st.onCard')}</span>`;
@@ -196,7 +203,7 @@ function claimCompare(c, f){
     ${row(t('st.cmpPlace'), said(spotText({spot: c.lostSpot, bldg: c.bldg, room: c.room})), truth(spotText(f)), place)}
     ${row(t('st.cmpDate'), said(c.lostDate && fmtDate(c.lostDate)), truth(f.foundDate && t('st.foundOn', {date: fmtDate(f.foundDate)})), date)}
     ${q.fields.includes('brand') ? row(t('st.cmpBrand'), said(c.brand), truth(f.brand)) : ''}
-    ${row(t('st.cmpProof'), said(c.proof), truth(f.desc))}
+    ${row(t('st.cmpProof'), said(c.proof), truth(f.desc), proof)}
     ${c.question ? row(`${t('st.cmpQA')}: <span class="cmp-q">${esc(c.question)}</span>`, answered(c) ? esc(c.answer) : `<span class="muted">${t(c.status === 'pending' ? 'qa.waiting' : 'qa.none')}</span>`, '<span class="muted">—</span>') : ''}
     <div class="cmp-sum">${t('st.cmpSum', {n: hits, total})}</div>
   </div>`;
@@ -232,8 +239,10 @@ export function claimCardStaff(c){
       ${late ? `<button class="btn sm ghost" data-act="release" data-id="${esc(c.id)}">${icon('swap')}${t('st.release')}</button>` : ''}
       <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}${t('st.unapprove')}</button></div>` : '';
   return `<div class="box">
-    <div class="box-head"><div class="claim-who">${person(c.uid)}<span class="meta"><span dir="ltr" class="req-no">${esc(claimNo(c))}</span> · ${relTime(c.createdAt)}</span>${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div>${pill(CLAIM_STATUS, c.status)}</div>
+    <div class="box-head"><div class="claim-who">${person(c.uid)}<span class="meta"><span dir="ltr" class="req-no">${esc(claimNo(c))}</span></span>${whenLine('c.sentAt', c.createdAt)}${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div>${pill(CLAIM_STATUS, c.status)}</div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
+    ${c.editedAt ? `<div class="note info edited">${icon('edit')}<span>${t('st.editedAfter', {when: when(c.editedAt)})}</span></div>` : ''}
+    ${claimTimeline(c, true)}
     ${c.status === 'approved' && c.pickupBy ? `<div class="meta ${late ? 'flag' : ''}">${t(late ? 'st.pickupEnded' : 'st.pickupUntil', {date: dateOf(c.pickupBy)})}</div>` : ''}
     ${conflictNote(kind)}
     ${rv ? `<div class="note warn">${icon('info')}<span>${t('st.rivalNote')}</span></div>` : ''}
@@ -247,17 +256,17 @@ export function claimCardStaff(c){
   </div>`;
 }
 // البحث برقم الطلب (REQ-7K3M أو 7K3M فقط): يطابق الطلبات المفتوحة والسجل المحمّل
-const qNo = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const qNo = s => latinDigits(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
 export function staffClaims(){
   const q = qNo(S.claimQ);
   if (q){
     const all = [...S.claims, ...(S.claimHist || []).filter(h => !S.claims.some(c => c.id === h.id))];
-    const hits = all.filter(c => qNo(claimNo(c)).includes(q)).sort((a, b) => b.createdAt - a.createdAt);
+    const hits = all.filter(c => qNo(claimNo(c)).includes(q)).sort(byLast);
     return `<div class="section-title">${t('st.claimResults')} <span class="count">${hits.length}</span></div>
       ${hits.length ? `<div class="list">${hits.map(claimCardStaff).join('')}</div>` : `<p class="muted">${t('st.noClaimNo')}</p>`}
       ${S.claimHist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}${t('st.showHist')}</button>` : ''}`;
   }
-  const cs = S.claims.slice().sort((a,b) => b.createdAt - a.createdAt);
+  const cs = S.claims.slice().sort(byLast);
   const pend = cs.filter(c => c.status === 'pending'), appr = cs.filter(c => c.status === 'approved' && !pickupOver(c)), late = cs.filter(pickupOver);
   const hist = (S.claimHist || []).slice().sort((a,b) => (b.decidedAt || b.doneAt || b.createdAt) - (a.decidedAt || a.doneAt || a.createdAt)).slice(0, 50);
   return `
@@ -276,7 +285,7 @@ export function staffClaims(){
 export function foundCardStaff(f){
   const done = S.items.find(i => i.fromFound === f.id);   // سُجّل غرضه ولم يُحدَّث الإشعار (نادر)
   return `<div class="box">
-    <div class="box-head"><div class="claim-who">${person(f.uid)}<span class="meta">${relTime(f.createdAt)}</span>${f.code ? `<span class="pill info" dir="ltr">${esc(f.code)}</span>` : ''}</div>${pill(FOUND_STATUS, f.status)}</div>
+    <div class="box-head"><div class="claim-who">${person(f.uid)}${whenLine('c.sentAt', f.createdAt)}${f.code ? `<span class="pill info" dir="ltr">${esc(f.code)}</span>` : ''}</div>${pill(FOUND_STATUS, f.status)}</div>
     <div class="meta">${icon(cat(f.cat).icon)}${esc(catName(f.cat))}${f.sub ? ' — ' + esc(subLabel(f.sub)) : ''}</div>
     <div class="meta">${t('hi.foundAt', {place: esc(spotText(f) || t('it.unknown')), date: fmtDate(f.foundDate)})}</div>
     ${f.note ? `<div class="proof">${esc(f.note)}</div>` : ''}
@@ -287,7 +296,7 @@ export function foundCardStaff(f){
 // خانة البحث بكود إشعار التسليم تظهر فقط إذا زادت الإشعارات المعلّقة على هذا العدد
 export const CODE_SEARCH_MIN = 5;
 export function staffReports(){
-  const fs = S.found.slice().sort((a, b) => b.createdAt - a.createdAt);
+  const fs = S.found.slice().sort(byLast);
   // البحث بكود إشعار التسليم: يظهر فقط مع إشعارات كثيرة (الجهات الكبيرة)، وإلا يكفي اختيار الإشعار من القائمة
   const codeBox = fs.length <= CODE_SEARCH_MIN ? '' : `<form class="filters code-find" data-form="findCode" novalidate>
       <label class="searchbar" style="flex:1;min-width:180px">${icon('tag')}<input name="code" class="code-in" dir="ltr" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="${t('hi.codePh')}" aria-label="${t('hi.codeAria')}"></label>
@@ -298,19 +307,19 @@ export function staffReports(){
     <div class="section-title">${icon('bell')}${t('hi.lostTitle')}</div>` : '');
   // البلاغات القديمة (أكثر من 60 يوماً دون تجديد) مخفية افتراضياً
   const open = S.reports.filter(r => r.status === 'open'), old = open.filter(isStale);
-  const rs = open.filter(r => S.showStale || !isStale(r)).sort((a,b) => b.createdAt - a.createdAt);
+  const rs = open.filter(r => S.showStale || !isStale(r)).sort(byLast);
   const oldBtn = old.length ? `<div class="btn-row"><button class="btn sm ghost" data-act="toggleStale" aria-pressed="${S.showStale}">${icon('clock')}${t(S.showStale ? 'st.hideOld' : 'st.showOld', {n: old.length})}</button></div>` : '';
   if (!rs.length) return found + oldBtn + `<div class="empty">${icon('bell')}<b>${t('st.noReports')}</b><span>${t('st.noReportsSub')}</span></div>`;
   return found + oldBtn + `<div class="list">${rs.map(r => {
-    // الموظف يقارن بالتفاصيل السرية أيضاً، والغرض الذي قال صاحب البلاغ «ليس غرضي» لا يُرشَّح له من جديد
-    const cands = candidatesFor(r, 4, full).filter(x => x.i.id !== r.pickRejected).slice(0, 3);
-    const rejected = r.pickRejected && r.pickRejected === r.staffPick;
+    // الموظف يقارن بالتفاصيل السرية أيضاً، والأغراض التي قال عنها صاحب البلاغ «ليس غرضي» لا تُرشَّح له من جديد (G5)
+    const cands = candidatesFor(r, 3, full);
+    const refs = [...rejectedOf(r)].map(id => { const it = item(id); if (!it) ensureItem(id); return it?.ref || ''; }).filter(Boolean);
     return `<div class="box">
-      <div class="box-head"><div><h3>${esc(r.title)}${isStale(r) ? ` <span class="pill mute">${t('st.oldReport')}</span>` : ''}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(subLabel(r.sub)) : ''}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''}</span></div><span class="meta">${relTime(r.createdAt)}</span></div>
+      <div class="box-head"><div><h3>${esc(r.title)}${isStale(r) ? ` <span class="pill mute">${t('st.oldReport')}</span>` : ''}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(subLabel(r.sub)) : ''}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''}</span>${whenLine('c.sentAt', r.createdAt)}${whenLine('c.editedAt', r.editedAt)}</div></div>
       ${r.photo ? `<div class="row-thumb" style="width:84px;height:84px">${icon('camera')}<img data-photo="r_${esc(r.id)}" alt="" hidden></div>` : ''}
       ${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}
       <div class="meta">${person(r.uid)} · ${r.spot ? t('st.lostAt', {place: esc(spotText(r)), date: fmtDate(r.lostDate)}) : t('st.lostOn', {date: fmtDate(r.lostDate)})}</div>
-      ${rejected ? `<div class="note warn">${icon('x')}<span>${t('st.pickRejected', {ref: esc(item(r.pickRejected)?.ref || '')})}</span></div>` : ''}
+      ${refs.length ? `<div class="note warn">${icon('x')}<span>${t('st.rejectedBy', {refs: refs.map(x => `<b dir="ltr">${esc(x)}</b>`).join(t('c.listSep'))})}</span></div>` : ''}
       ${acceptBtn(r)}
       ${cands.length ? `<span class="label">${t('st.cands')}</span><div class="list">${cands.map(({i, s}) => `<div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
         ${r.staffPick === i.id ? `<span class="pill ok">${icon('check')}${t('st.picked')}</span>` : `<button class="btn sm soft" data-act="pickFor" data-r="${esc(r.id)}" data-i="${esc(i.id)}">${t('st.pick')}</button>`}</div>`).join('')}</div>`

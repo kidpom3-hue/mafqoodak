@@ -2,7 +2,7 @@
 import { icon, LOGO, otype, oShort, statusLabel, MODE_LABEL } from './constants.js';
 import { t } from './i18n.js';
 import { $, $$, esc } from './utils.js';
-import { S, curOffice, modes, homeRoute, unseenCount, markSeen, candidatesFor, getPhoto, getName, SHARE_RE, OFFICE_RE, full } from './state.js';
+import { S, curOffice, modes, homeRoute, unseenCount, markSeen, candidatesFor, rejectedOf, getPhoto, getName, SHARE_RE, OFFICE_RE, full } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice, vJoin } from './views/visitor.js';
 import { vStaff, updateStaff, vItemForm } from './views/staff.js';
 import { vAdmin, vOfficeForm } from './views/admin.js';
@@ -150,7 +150,7 @@ function navItems(){
   if (S.mode === 'staff'){
     const pend = S.claims.filter(c => c.status === 'pending').length;
     // البلاغات التي لها مرشّح لم يُرشَّح بعد + إشعارات التسليم المعلّقة
-    const open = S.reports.filter(r => r.status === 'open' && (!r.staffPick || r.pickRejected === r.staffPick) && candidatesFor(r, 1, full).length).length + S.found.length;
+    const open = S.reports.filter(r => r.status === 'open' && (!r.staffPick || rejectedOf(r).has(r.staffPick)) && candidatesFor(r, 1, full).length).length + S.found.length;
     return [
       {r: 'staff', tab: 'items', l: t('nav.store'), i: 'box'},
       {r: 'add', l: t('nav.add'), i: 'plus'},

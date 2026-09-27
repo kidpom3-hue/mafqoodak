@@ -2,7 +2,7 @@
 // الرمز يُولَّد داخل التطبيق (js/qr.js) فيعمل دون اتصال، والطباعة من زر «اطبع» في المتصفح.
 import { icon, LOGO, cat, catName, subLabel, oName, oShort, oPlace, oHours } from '../constants.js';
 import { t, locale, isEn } from '../i18n.js';
-import { esc, fmtDate, isoDay, $ } from '../utils.js';
+import { esc, fmtDate, isoDay, $, TZ } from '../utils.js';
 import { S, item, full, curOffice, ensureItem } from '../state.js';
 import { backBtn } from './common.js';
 import { qrSvg } from '../qr.js';
@@ -62,7 +62,7 @@ export function vPoster(){
    الاسم يُكتب قبل الطباعة (معبّأ من اسم الحساب) ولا يُحفظ. النوع العام فقط، بلا أي تفاصيل سرية، وبلا شعارات.
    A4 أفقي بلغة الواجهة (@page thanks في css/styles.css) */
 // تاريخ كامل بالسنة (الشهادة وثيقة تُحفظ)
-const fullDate = ms => { try { return new Intl.DateTimeFormat(locale(), {day: 'numeric', month: 'long', year: 'numeric'}).format(new Date(ms)); } catch { return isoDay(ms); } };
+const fullDate = ms => { try { return new Intl.DateTimeFormat(locale(), {day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ}).format(new Date(ms)); } catch { return isoDay(ms); } };
 export function vThanks(){
   const f = S.myFound.find(x => x.id === S.route.params.id);
   const it = f?.itemId ? item(f.itemId) : null; if (f?.itemId && !it) ensureItem(f.itemId);

@@ -31,6 +31,7 @@ export const P = {
   fwd:'<path d="m15 6-6 6 6 6"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
   inbox:'<path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5.5 5h13L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5l2.5-8Z"/>',
+  undo:'<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>',
   bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   building:'<path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M16 9h2a2 2 0 0 1 2 2v10M2 21h20"/><path d="M8 7h4M8 11h4M8 15h4"/>',
   users:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.6.8 2.7 2.6 3 5.2"/>',
@@ -121,8 +122,10 @@ export const claimOf = id => ({fields: CB, req: [], details: [], hint: 'cl.proof
 // هل في طلب الاستلام سؤال إجباري؟ (عندها تصبح خانة الإثبات الحرة اختيارية: «تفاصيل أخرى تثبت أنه لك»)
 export const claimHasRequired = id => { const c = claimOf(id); return c.req.length > 0 || c.details.some(d => d.as || d.req === 'both' || d.req === 'claim'); };
 // قيمة إجابة كما تُحفظ: الأرقام الهندية إلى لاتينية، والرقمية أرقام فقط، والنص حتى 80 حرفاً، والاختيار من القائمة فقط
+// G1: الأرقام العربية-الهندية (٠-٩) والفارسية (۰-۹) إلى لاتينية (تُصدَّر أيضاً من utils.js)
+export const latinDigits = s => String(s ?? '').replace(/[\u0660-\u0669\u06F0-\u06F9]/g, c => String(c.charCodeAt(0) & 0xF));
 export function detailValue(d, v){
-  v = String(v ?? '').replace(/[٠-٩]/g, x => '٠١٢٣٤٥٦٧٨٩'.indexOf(x)).replace(/[۰-۹]/g, x => '۰۱۲۳۴۵۶۷۸۹'.indexOf(x)).trim();
+  v = latinDigits(v).trim();
   if (d.type === 'num' || d.type === 'approx') return v.replace(/\D/g, '').slice(0, 9);
   if (d.type === 'last4') return v.replace(/\D/g, '').slice(0, 4);
   if (d.type === 'pick') return (d.opts || []).includes(v) ? v : '';
@@ -223,9 +226,8 @@ export const STOP = new Set(['في','من','على','عن','مع','الى','او
   'the','a','an','of','in','on','at','with','and','or','my','is','it','near']);
 // توحيد الكتابة العربية: حذف التشكيل، والأرقام الهندية إلى لاتينية، وتوحيد الهمزات والتاء المربوطة
 export function norm(s){
-  return String(s || '').toLowerCase()
+  return latinDigits(s || '').toLowerCase()
     .replace(/[ً-ٰٟـ]/g, '')
-    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
     .replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي').replace(/ء/g, '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 }

@@ -289,6 +289,32 @@ await t('F: نسبة إرجاع فوق 100 مرفوضة', setDoc(doc(A, 'publicS
 await t('F: رقم نصي في publicStats مرفوض', setDoc(doc(A, 'publicStats/' + O), {...ps, totalReceived: '140'}), false);
 await t('F: الزائر غير المسجّل يقرأ publicStats', getDoc(doc(anon, 'publicStats/' + O)));
 
+// ── المرحلة G: «ليس غرضي» كقائمة، وتعديل البلاغ والطلب ──
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore(); for (const k of ['g1', 'g2', 'g3']) await setDoc(doc(d, 'items/' + k), pub(k)); });
+await t('G: إنشاء بلاغ فيه rejected مرفوض', setDoc(doc(alice, 'reports/rG0'), rep({rejected: ['i1']})), false);
+await t('G: إنشاء بلاغ', setDoc(doc(alice, 'reports/rG'), rep()));
+await t('G: إضافة إلى rejected', updateDoc(doc(alice, 'reports/rG'), {rejected: ['i1', 'i2']}));
+await t('G: الحذف من rejected مرفوض', updateDoc(doc(alice, 'reports/rG'), {rejected: ['i1']}), false);
+await t('G: أكثر من 30 في rejected مرفوض', updateDoc(doc(alice, 'reports/rG'), {rejected: ['i1', 'i2', ...Array.from({length: 29}, (_, k) => 'x' + k)]}), false);
+await t('G: تعديل البلاغ مع editedAt', updateDoc(doc(alice, 'reports/rG'), {title: 'محفظة نقود', desc: 'بنية', editedAt: now}));
+await t('G: editedAt نصي مرفوض', updateDoc(doc(alice, 'reports/rG'), {editedAt: 'now'}), false);
+await t('G: غير صاحب البلاغ لا يضيف إلى rejected', updateDoc(doc(bob, 'reports/rG'), {rejected: ['i1', 'i2', 'i3']}), false);
+await t('G: طلب استلام g1', setDoc(doc(alice, 'claims/g1_alice'), claim('g1', 'alice', {claimantName: 'أليس', idLast4: '1234'})));
+await t('G: تعديل طلب قيد المراجعة بلا سؤال', updateDoc(doc(alice, 'claims/g1_alice'), {proof: 'غلاف أزرق', lostSpot: 'الممر', idLast4: '4321', details: {amount: '200'}, editedAt: now}));
+await t('G: editedAt نصي في الطلب مرفوض', updateDoc(doc(alice, 'claims/g1_alice'), {proof: 'x', editedAt: 'now'}), false);
+await t('G: صاحب الطلب يغيّر الحالة مرفوض', updateDoc(doc(alice, 'claims/g1_alice'), {status: 'approved', editedAt: now}), false);
+await t('G: idLast4 = abcd مرفوض', updateDoc(doc(alice, 'claims/g1_alice'), {idLast4: 'abcd', editedAt: now}), false);
+await t('G: مفتاح details غير معروف مرفوض', updateDoc(doc(alice, 'claims/g1_alice'), {details: {secret: 'x'}, editedAt: now}), false);
+await t('G: غير صاحب الطلب لا يعدّله', updateDoc(doc(bob, 'claims/g1_alice'), {proof: 'x', editedAt: now}), false);
+await t('G: الموظف يسأل', updateDoc(doc(A, 'claims/g1_alice'), {question: 'ما لون الغلاف من الداخل؟', askedAt: now, askedBy: 'staffA'}));
+await t('G: التعديل بعد السؤال مرفوض', updateDoc(doc(alice, 'claims/g1_alice'), {proof: 'y', editedAt: now}), false);
+await t('G: طلب استلام g2', setDoc(doc(bob, 'claims/g2_bob'), claim('g2', 'bob')));
+await t('G: قبول g2', batch(A, (b, r) => {
+  b.update(r('claims/g2_bob'), {status: 'approved', decidedAt: now, decidedBy: 'staffA', pickupBy: now});
+  b.update(r('items/g2'), {status: 'reserved', reservedFor: 'g2_bob', updatedAt: now});
+}));
+await t('G: تعديل طلب مقبول مرفوض', updateDoc(doc(bob, 'claims/g2_bob'), {proof: 'z', editedAt: now}), false);
+
 // ── لغة المستخدم (للجزء B) ──
 await t('lang = en مسموح', setDoc(doc(alice, 'users/alice'), {name: 'A', email: 'a@x.com', photo: '', lastSeen: now, lang: 'en'}));
 await t('lang غير معروفة مرفوضة', setDoc(doc(alice, 'users/alice'), {name: 'A', lang: 'fr'}), false);

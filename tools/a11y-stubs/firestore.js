@@ -21,7 +21,8 @@ export const getDocs = async q => { const d = docsOf(q); cnt(Math.max(1, d.lengt
 const log = (op, p, d) => F().writes.push([op, p, d && JSON.parse(JSON.stringify(d))]);
 // deleteField: يحذف الحقل عند التطبيق. spotRule: يحاكي القواعد (items لا تقبل spot بعد العملية)
 export const deleteField = () => ({__del: 1});
-const merged = (cur, d) => { const o = {...(cur || {})}; for (const [k, v] of Object.entries(d)) { if (v && v.__del) delete o[k]; else o[k] = v; } return o; };
+export const arrayUnion = (...a) => ({__union: a});
+const merged = (cur, d) => { const o = {...(cur || {})}; for (const [k, v] of Object.entries(d)) { if (v && v.__del) delete o[k]; else if (v && v.__union) o[k] = [...new Set([...(Array.isArray(o[k]) ? o[k] : []), ...v.__union])]; else o[k] = v; } return o; };
 const after = (op, p, d, o) => op === 'set' && !o?.merge ? merged({}, d) : merged(F().db[p], d);
 const spotDeny = (p, doc) => { if (F().spotRule && p.startsWith('items/') && doc && 'spot' in doc){ const e = new Error('denied: public spot'); e.code = 'permission-denied'; throw e; } };
 export const setDoc = async (r, d, o) => { deny(r.path); const nd = after('set', r.path, d, o); spotDeny(r.path, nd); log('set', r.path, d); F().db[r.path] = nd; notify(); };
