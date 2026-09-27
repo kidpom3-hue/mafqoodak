@@ -1,7 +1,7 @@
 // اختبارات قواعد Firestore على المحاكي (للمطوّر فقط؛ لا يحمّلها التطبيق)
 // التشغيل: cd tools && npm install && npm run test:rules   (يحتاج Java)
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, writeBatch, collection, query, where } from 'firebase/firestore';
 import fs from 'fs';
 
 const env = await initializeTestEnvironment({projectId: 'demo-mafqoodak',
@@ -107,6 +107,39 @@ await t('صاحب الطلب لا يغيّر حالة طلبه', updateDoc(doc(a
 await t('إشعار تسليم من حساب موثّق', setDoc(doc(bob, 'foundReports/f1'), {officeId: O, uid: 'bob', cat: 'keys', sub: '', spot: 'المواقف', bldg: '', room: '', foundDate: '2026-09-25', note: 'مفتاح', status: 'pending', createdAt: now}));
 await t('إشعار تسليم من غير موثّق مرفوض', setDoc(doc(dave, 'foundReports/f2'), {officeId: O, uid: 'dave', status: 'pending', createdAt: now}), false);
 await t('الموظف يؤكد الاستلام', updateDoc(doc(A, 'foundReports/f1'), {status: 'received', receivedAt: now, receivedBy: 'staffA', itemId: 'i6'}));
+
+// ── الجزء C: ما يفعله التطبيق فعلاً (الاستعلامات والـbatch) ──
+const q = (db, col, ...w) => getDocs(query(collection(db, col), ...w.map(([f, op, v]) => where(f, op, v))));
+await t('C: الموظف يسأل (الطلب + السجل في batch)', batch(A, (b, r) => {
+  b.update(r('claims/i6_alice'), {question: 'ما لون الغلاف؟', askedAt: now + 1, askedBy: 'staffA'});
+  b.set(r('logs/' + lid()), logDoc('staffA', 'ask', {itemId: 'i6', claimId: 'i6_alice', note: 'ما لون الغلاف؟'}));
+}));
+await t('C: موظف لا يسأل في طلبه هو', batch(A, (b, r) => { b.update(r('claims/i2_staffA'), {question: 'x'.repeat(10), askedAt: now, askedBy: 'staffA'}); }), false);
+await t('C: إشعارات التسليم المعلّقة للموظف (استعلام)', q(A, 'foundReports', ['officeId', '==', O], ['status', '==', 'pending']));
+await t('C: إشعاراتي أنا (استعلام بـ uid)', q(bob, 'foundReports', ['uid', '==', 'bob']));
+await t('C: الزائر لا يستعلم عن إشعارات المكتب', q(bob, 'foundReports', ['officeId', '==', O]), false);
+await t('C: إشعار ثانٍ', setDoc(doc(bob, 'foundReports/f3'), {officeId: O, uid: 'bob', cat: 'phones', sub: 'جوال', spot: 'المكتبة', bldg: '', room: '', foundDate: '2026-09-26', note: '', status: 'pending', createdAt: now}));
+await t('C: استلام الإشعار + سجل الإنشاء (batch)', batch(A, (b, r) => {
+  b.update(r('foundReports/f3'), {status: 'received', receivedAt: now, receivedBy: 'staffA', itemId: 'i5'});
+  b.set(r('logs/' + lid()), logDoc('staffA', 'create', {itemId: 'i5'}));
+}));
+await t('C: إشعار ثالث', setDoc(doc(bob, 'foundReports/f4'), {officeId: O, uid: 'bob', cat: 'bags', sub: '', spot: '', bldg: '', room: '', foundDate: '2026-09-26', note: '', status: 'pending', createdAt: now}));
+await t('C: «لم يصل» (إشعار + سجل)', batch(A, (b, r) => {
+  b.update(r('foundReports/f4'), {status: 'cancelled'});
+  b.set(r('logs/' + lid()), logDoc('staffA', 'found:drop'));
+}));
+await t('C: إشعار رابع', setDoc(doc(bob, 'foundReports/f5'), {officeId: O, uid: 'bob', cat: 'keys', sub: '', spot: '', bldg: '', room: '', foundDate: '2026-09-26', note: '', status: 'pending', createdAt: now}));
+await t('C: الواجد يلغي إشعاره المعلّق', updateDoc(doc(bob, 'foundReports/f5'), {status: 'cancelled', cancelledAt: now}));
+await t('C: الواجد يحذف الملغى', deleteDoc(doc(bob, 'foundReports/f5')));
+await t('C: الواجد لا يحذف المستلَم', deleteDoc(doc(bob, 'foundReports/f3')), false);
+await t('C: «حذف حسابي» يمسح بيانات المستلَم', updateDoc(doc(bob, 'foundReports/f3'), {uid: 'deleted', note: ''}));
+await t('C: سجل حيازة غرض للموظف (استعلام)', q(A, 'logs', ['officeId', '==', O], ['itemId', '==', 'i6']));
+await t('C: الزائر لا يستعلم عن السجل', q(alice, 'logs', ['officeId', '==', O], ['itemId', '==', 'i6']), false);
+await t('C: الموظف يقرأ التفاصيل السرية لمكتبه (تصدير CSV)', q(A, 'itemSecrets', ['officeId', '==', O]));
+await t('C: الزائر لا يقرأ التفاصيل السرية', q(alice, 'itemSecrets', ['officeId', '==', O]), false);
+await t('C: الموظف يقرأ بريد صاحب الطلب (EmailJS)', getDoc(doc(A, 'users/alice')));
+await t('C: رفض طلب i6 بعد الإجابة', updateDoc(doc(B, 'claims/i6_alice'), {status: 'rejected', note: 'لا يطابق', decidedAt: now, decidedBy: 'staffB'}));
+await t('C: «حذف حسابي» يمسح الإجابة مع بيانات الطلب المنتهي', updateDoc(doc(alice, 'claims/i6_alice'), {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', answer: '', anonymizedAt: now}));
 
 // ── لغة المستخدم (للجزء B) ──
 await t('lang = en مسموح', setDoc(doc(alice, 'users/alice'), {name: 'A', email: 'a@x.com', photo: '', lastSeen: now, lang: 'en'}));

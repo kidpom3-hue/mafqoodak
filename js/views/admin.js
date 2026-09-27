@@ -34,7 +34,7 @@ export function adminOverview(){
     <div class="panel"><div class="section-title">${t('adm.byOffice')}</div>
       <div class="table-wrap"><table class="t"><thead><tr><th scope="col">${t('adm.colOffice')}</th><th scope="col">${t('adm.colAvail')}</th><th scope="col">${t('adm.colRes')}</th><th scope="col">${t('adm.colRet')}</th><th scope="col">${t('adm.colRate')}</th></tr></thead><tbody>
       ${S.offices.map(o => { const x = C?.[o.id]; const a = x?.available ?? '…', r = x?.reserved ?? '…', d = x?.returned ?? '…'; const tot = x ? x.available + x.reserved + x.returned + x.disposed : 0;
-        return `<tr><td>${esc(oName(o))}${o.active === false ? ` <span class="pill mute">${t('adm.off')}</span>` : ''}</td><td class="n">${a}</td><td class="n">${r}</td><td class="n">${d}</td><td class="n">${tot ? Math.round(100 * x.returned / tot) + '%' : '—'}</td></tr>`; }).join('')}
+        return `<tr><td><button class="link" data-act="stats" data-id="${esc(o.id)}">${esc(oName(o))}</button>${o.active === false ? ` <span class="pill mute">${t('adm.off')}</span>` : ''}</td><td class="n">${a}</td><td class="n">${r}</td><td class="n">${d}</td><td class="n">${tot ? Math.round(100 * x.returned / tot) + '%' : '—'}</td></tr>`; }).join('')}
       </tbody></table></div>
       <button class="btn sm ghost" data-act="adminRefresh" style="align-self:flex-start">${icon('swap')}${t('adm.refresh')}</button>
     </div>`;
@@ -51,6 +51,8 @@ export function adminOffices(){
         <span class="btn-row" style="flex-direction:column;align-items:flex-end">
           <button class="switch ${o.active !== false ? 'on' : ''}" data-act="toggleOffice" data-id="${esc(o.id)}" role="switch" aria-checked="${o.active !== false}" aria-label="${t('adm.activeAria')}"></button>
           <button class="link" data-act="editOffice" data-id="${esc(o.id)}">${icon('edit')}${t('c.edit')}</button>
+          <button class="link" data-act="stats" data-id="${esc(o.id)}">${icon('chart')}${t('sx.btn')}</button>
+          <button class="link" data-act="poster" data-id="${esc(o.id)}">${icon('print')}${t('po.btn')}</button>
         </span>
       </div>`; }).join('') || `<div class="empty">${icon('pin')}<b>${t('adm.noOffices')}</b></div>`}</div>`;
 }

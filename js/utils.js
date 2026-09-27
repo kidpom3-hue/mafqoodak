@@ -20,6 +20,16 @@ export const daysAgo = s => dayNum(today()) - dayNum(s);
 const DFS = {};
 const df = () => DFS[locale()] || (DFS[locale()] = (() => { try { return new Intl.DateTimeFormat(locale(), {day: 'numeric', month: 'long'}); } catch { return new Intl.DateTimeFormat(isEn() ? 'en' : 'ar', {day: 'numeric', month: 'long'}); } })());
 export const fmtDate = s => { if (!s) return ''; const [y,m,d] = s.split('-').map(Number); return df().format(new Date(y, m-1, d)); };
+// التاريخ والوقت (سجل الحيازة): «27 سبتمبر 2026، 10:30 ص» / «27 Sept 2026, 10:30»
+const DTF = {};
+export function fmtDateTime(ms){
+  if (!ms) return '';
+  const k = locale(), o = {day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit'};
+  const f = DTF[k] || (DTF[k] = (() => { try { return new Intl.DateTimeFormat(k, o); } catch { return new Intl.DateTimeFormat(isEn() ? 'en' : 'ar', o); } })());
+  return f.format(new Date(ms));
+}
+// يوم بصيغة YYYY-MM-DD من وقت بالمللي ثانية (للتصدير والمقارنة)
+export const isoDay = ms => { if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 // المدة بالأيام: nom للرفع («متبقٍّ يومان»)، وبدونه للجر والنصب («قبل يومين»، «مدة الحفظ 90 يوماً»)
 export const daysWord = (n, nom = false) => tp(nom ? 'n.daysNom' : 'n.days', n);
 export function relDay(s){

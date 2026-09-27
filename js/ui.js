@@ -2,13 +2,15 @@
 import { icon, LOGO, otype, oShort, statusLabel, MODE_LABEL } from './constants.js';
 import { t } from './i18n.js';
 import { $, $$, esc } from './utils.js';
-import { S, curOffice, modes, homeRoute, unseenCount, markSeen, candidatesFor, getPhoto, getName, SHARE_RE, full } from './state.js';
+import { S, curOffice, modes, homeRoute, unseenCount, markSeen, candidatesFor, getPhoto, getName, SHARE_RE, OFFICE_RE, full } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice, vJoin } from './views/visitor.js';
 import { vStaff, updateStaff, vItemForm } from './views/staff.js';
 import { vAdmin, vOfficeForm } from './views/admin.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
-import { vHome, updateHome, vFound } from './views/home.js';
+import { vHome, updateHome, vFound, vHandin } from './views/home.js';
 import { vPrivacy } from './views/privacy.js';
+import { vLabels, vPoster } from './views/print.js';
+import { vStats } from './views/stats.js';
 import { cat } from './constants.js';
 
 /* live: تُعاد رسمها عند تغيّر البيانات. النماذج (live:false) لا تُعاد حتى لا يضيع ما كتبه المستخدم */
@@ -16,6 +18,7 @@ const ROUTES = {
   pick: {live: true, v: vPick},
   home: {live: true, v: vHome, update: updateHome},
   found: {live: true, v: vFound},
+  handin: {live: false, v: vHandin, after: initForm},
   browse: {live: true, v: vBrowse, update: updateBrowse},
   item: {live: true, v: vItem},
   claim: {live: false, v: vClaimForm},
@@ -30,10 +33,13 @@ const ROUTES = {
   login: {live: false, v: vLogin},
   setup: {live: false, v: vSetup},
   privacy: {live: false, v: vPrivacy},
+  labels: {live: false, v: vLabels},
+  poster: {live: false, v: vPoster},
+  stats: {live: true, v: vStats},
 };
 
 export function initForm(){
-  const f = $('form[data-form=item],form[data-form=report]'); if (!f) return;
+  const f = $('form[data-form=item],form[data-form=report],form[data-form=handin]'); if (!f) return;
   const c = f.querySelector('input[name=cat]:checked'); const sens = c ? !!cat(c.value).sensitive : false;
   const n = f.querySelector('#sens-note'), p = f.querySelector('#photo-field');
   if (n) n.hidden = !sens; if (p) p.hidden = sens;
@@ -72,7 +78,7 @@ export function back(){
 }
 window.addEventListener('popstate', () => {
   if (skipPop){ skipPop = 0; afterPop.splice(0).forEach(f => f()); return; }
-  if (SHARE_RE.test(location.hash.slice(1))) return;   // رابط مشاركة: يعالجه مستمع hashchange في main.js
+  if (SHARE_RE.test(location.hash.slice(1)) || OFFICE_RE.test(location.hash.slice(1))) return;   // رابط مشاركة أو مكتب: يعالجه مستمع hashchange في main.js
   if (S.sheet){ S.sheet = null; renderSheet(); return; }   // نافذة مفتوحة: نغلقها فقط
   backStep();
 });
@@ -116,7 +122,7 @@ function renderHeader(){
   // زر اللغة: يعرض اللغة الأخرى («EN» في العربية، «عربي» في الإنجليزية)
   const langBtn = `<button class="lang-btn" data-act="lang" lang="${t('lang.otherCode')}" aria-label="${t('lang.switch')}">${t('lang.other')}</button>`;
   $('#hdr').innerHTML = `<div class="top-row">
-      <button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="${t('nav.home')}">${LOGO}<span class="wordmark">${t('app.name')}</span></button>
+      <button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="${t('app.name')} — ${t('nav.home')}">${LOGO}<span class="wordmark">${t('app.name')}</span></button>
       ${S.config && (o || S.mode === 'admin') ? `<nav class="top-links" aria-label="${t('ui.navigation')}">${navItems().map(n => {
         const on = S.route.name === n.r && (!n.tab || (n.r === 'staff' ? S.staffTab : S.adminTab) === n.tab);
         return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}">${n.l}${n.b ? `<span class="count">${n.b}</span>` : ''}</button>`;
@@ -134,7 +140,8 @@ function renderHeader(){
 function navItems(){
   if (S.mode === 'staff'){
     const pend = S.claims.filter(c => c.status === 'pending').length;
-    const open = S.reports.filter(r => r.status === 'open' && !r.staffPick && candidatesFor(r, 1, full).length).length;
+    // البلاغات التي لها مرشّح لم يُرشَّح بعد + إشعارات التسليم المعلّقة
+    const open = S.reports.filter(r => r.status === 'open' && !r.staffPick && candidatesFor(r, 1, full).length).length + S.found.length;
     return [
       {r: 'staff', tab: 'items', l: t('nav.store'), i: 'box'},
       {r: 'add', l: t('nav.add'), i: 'plus'},

@@ -7,8 +7,12 @@ import { SETTINGS } from './config.js';
 
 // رابط مشاركة غرض: ./#item/<رقم المكتب>/<رقم الغرض> يفتح صفحة الغرض مباشرة
 export const SHARE_RE = /^item\/([\w-]+)\/([\w-]+)$/;
+// رابط مكتب (من ملصق QR المعلّق في المبنى): ./#o/<رقم المكتب> يفتح مفقودات هذا المكتب
+export const OFFICE_RE = /^o\/([\w-]+)$/;
 const SHARED = SHARE_RE.exec(location.hash.slice(1));
+const OFFICE_LINK = OFFICE_RE.exec(location.hash.slice(1));
 if (SHARED) LS.set('office', SHARED[1]);
+else if (OFFICE_LINK) LS.set('office', OFFICE_LINK[1]);
 
 export const S = {
   configured,
@@ -19,10 +23,13 @@ export const S = {
   // items: الأغراض النشطة (متاح ومحجوز) فقط. البقية تُجلب عند الحاجة حفاظاً على حصة القراءة اليومية
   items: [], itemsLoaded: false, reports: [], claims: [], allItems: [],
   myReports: [], myClaims: [],   // بلاغات المستخدم وطلباته في كل المكاتب
+  myFound: [], found: [],        // إشعارات التسليم: ما أبلغ المستخدم أنه وجده، وللموظف: المعلّقة في مكتبه
   itemCache: {},                 // غرض مفرد جُلب عند الحاجة (مُسلَّم أو من مكتب آخر): رقم ← غرض أو null
   extraItems: {},                // للموظف: المُسلَّم والمؤرشف والمُتصرَّف فيه عند اختيار الفلتر
   claimHist: null,               // للموظف: سجل الطلبات المنتهية عند الطلب
   counts: {},                    // أعداد من الخادم (getCountFromServer)
+  stats: {},                     // الإحصاءات: رقم المكتب ← {items} (تُجلب عند فتح صفحتها فقط)
+  logs: {},                      // للموظف: سجل الحيازة لكل غرض فُتح (رقم الغرض ← قائمة أو 'loading')
   verified: false,               // البريد موثّق؟
   secrets: {},   // تفاصيل المفقودات السرية (للموظف فقط): رقم الغرض ← {title, color, brand, desc, bldg, room, storage}
   staffDoc: null, staffLoaded: false, staffList: [], staffReqs: [], myReq: null, priv: {},
@@ -44,6 +51,8 @@ export function onReset(fn){ resetFn = fn; }
 let changeTimer = null;
 const changed = () => { if (changeTimer) return; changeTimer = setTimeout(() => { changeTimer = null; changedFn(); }, 16); };
 const reset = () => resetFn();
+// لوحدات أخرى (مثل الإحصاءات): إعادة رسم بعد وصول بيانات جلبتها بنفسها
+export const touch = () => changed();
 
 /* ---------- قراءات مساعدة ---------- */
 export const curOffice = () => S.offices.find(o => o.id === S.officeId) || null;
@@ -68,9 +77,13 @@ export function modes(){ const m = ['visitor']; if (isStaffHere()) m.push('staff
 export const homeRoute = () => S.mode === 'staff' ? 'staff' : S.mode === 'admin' ? 'admin' : 'home';
 export const myReports = () => S.myReports.slice().sort((a, b) => b.createdAt - a.createdAt);
 export const myClaims = () => S.myClaims.slice().sort((a, b) => b.createdAt - a.createdAt);
+export const myFound = () => S.myFound.slice().sort((a, b) => b.createdAt - a.createdAt);
 export const officeName = id => oName(S.offices.find(o => o.id === id));
 // اسم المكان بلغة الواجهة (من spotsEn في المكتب)
 setSpotHook((s, officeId) => spotLabel(S.offices.find(o => o.id === (officeId || S.officeId)), s));
+// سؤال التحقق: هل أجاب صاحب الطلب عن آخر سؤال؟ (الإجابة الأقدم من السؤال لا تُحسب)
+export const answered = c => !!c?.answer && (c.answeredAt || 0) >= (c.askedAt || 0);
+export const awaitingAnswer = c => c?.status === 'pending' && !!c.question && !answered(c);
 export const myCode = id => S.priv?.codes?.[id] || LS.get('codes', {})[id] || null;
 export const MATCH_MIN = SETTINGS.matchThreshold;
 
@@ -93,7 +106,7 @@ export const maybeFor = (r, n = 4) => S.items.filter(i => ACTIVE.includes(i.stat
   .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, n);
 
 /* تنبيهات الزائر: ترشيح الموظف، وتغيّر حالة الطلب، وأول غرض مشابه لكل بلاغ (مرة واحدة) */
-function alertKeys(){
+export function alertKeys(){
   const keys = [];
   for (const r of myReports()){
     if (r.status !== 'open') continue;
@@ -102,7 +115,17 @@ function alertKeys(){
     if (pi && ACTIVE.includes(pi.status)) keys.push(`p:${r.id}:${r.staffPick}`);
     if (maybeFor(r, 1).length) keys.push(`m:${r.id}`);
   }
-  for (const c of myClaims()) if (['approved', 'rejected', 'expired', 'cancelled'].includes(c.status)) keys.push(`c:${c.id}:${c.status}`);
+  for (const c of myClaims()){
+    if (['approved', 'rejected', 'expired', 'cancelled'].includes(c.status)) keys.push(`c:${c.id}:${c.status}`);
+    if (awaitingAnswer(c)) keys.push(`q:${c.id}:${c.askedAt}`);   // سؤال تحقق من المكتب بانتظار إجابتك
+  }
+  // إشعار التسليم: استلمه المكتب، ثم عاد الغرض لصاحبه
+  for (const f of S.myFound){
+    if (f.status !== 'received') continue;
+    keys.push(`f:${f.id}:r`);
+    const it = f.itemId && item(f.itemId); if (f.itemId && !it) ensureItem(f.itemId);
+    if (it?.status === 'returned') keys.push(`f:${f.id}:ret`);
+  }
   return keys;
 }
 export function unseenCount(){ const seen = new Set(LS.get('seen', [])); return alertKeys().filter(k => !seen.has(k)).length; }
@@ -136,7 +159,7 @@ function onUser(user){
   S.isAdmin = false; S.adminLoaded = !user; S.staffDoc = null; S.staffLoaded = !user;
   S.myReq = null; S.priv = {}; S.staffList = []; S.staffReqs = []; S.allItems = [];
   S.verified = !!user?.emailVerified;   // حسابات Google موثّقة تلقائياً
-  clear('mine'); S.myReports = []; S.myClaims = [];
+  clear('mine'); S.myReports = []; S.myClaims = []; S.myFound = [];
   S.authReady = true;
   if (user){
     dbx.set('users/' + user.uid, {name: S.me.name, email: S.me.email, photo: S.me.photo, lastSeen: Date.now(), ...(saved() ? {lang: LANG} : {})}, {merge: true}).catch(errH('users'));
@@ -155,6 +178,7 @@ function onUser(user){
     // «طلباتي»: بلاغات المستخدم وطلباته في كل المكاتب (بالمستخدم فقط، دون تقييد بالمكتب)
     subs.mine.push(dbx.watch('reports', [['uid', '==', user.uid]], l => { S.myReports = l; changed(); }, errH('my reports')));
     subs.mine.push(dbx.watch('claims', [['uid', '==', user.uid]], l => { S.myClaims = l; changed(); }, errH('my claims')));
+    subs.mine.push(dbx.watch('foundReports', [['uid', '==', user.uid]], l => { S.myFound = l; changed(); }, errH('my found')));
   } else fixMode();
   ensureOfficeSubs();
   reset();
@@ -170,7 +194,7 @@ let itemsKey = null, rcKey = null;
 export function ensureOfficeSubs(){
   if (!db) return;
   if (itemsKey !== S.officeId){
-    itemsKey = S.officeId; clear('items'); S.items = []; S.itemsLoaded = false; S.counts = {}; S.extraItems = {}; S.claimHist = null;
+    itemsKey = S.officeId; clear('items'); S.items = []; S.itemsLoaded = false; S.counts = {}; S.extraItems = {}; S.claimHist = null; S.logs = {};
     // الأغراض النشطة فقط (متاح ومحجوز): المُسلَّم القديم لا يُحمَّل لكل زائر
     if (S.officeId){
       subs.items.push(dbx.watch('items', [['officeId', '==', S.officeId], ['status', 'in', ACTIVE]], l => { S.items = l; S.itemsLoaded = true; watchSecrets(); changed(); },
@@ -181,7 +205,7 @@ export function ensureOfficeSubs(){
   const staffView = isStaffHere();
   const k = `${S.officeId}|${S.uid}|${staffView}`;
   if (rcKey !== k){
-    rcKey = k; clear('rc'); S.reports = []; S.claims = []; S.secrets = {}; S.claimHist = null;
+    rcKey = k; clear('rc'); S.reports = []; S.claims = []; S.found = []; S.secrets = {}; S.claimHist = null;
     secSubs.forEach(u => { try { u(); } catch {} }); secSubs.clear();
     // للموظف فقط: البلاغات المفتوحة، والطلبات المفتوحة (قيد المراجعة والمقبولة)، والتفاصيل السرية لمكتبه.
     // الزائر يرى بلاغاته وطلباته من اشتراك «طلباتي» بالأعلى.
@@ -189,6 +213,8 @@ export function ensureOfficeSubs(){
       const o = ['officeId', '==', S.officeId];
       subs.rc.push(dbx.watch('reports', [o, ['status', '==', 'open']], l => { S.reports = l; changed(); }, errH('reports')));
       subs.rc.push(dbx.watch('claims', [o, ['status', 'in', ['pending', 'approved']]], l => { S.claims = l; changed(); }, errH('claims')));
+      // إشعارات التسليم المعلّقة: من وجد غرضاً وسيسلّمه للمكتب
+      subs.rc.push(dbx.watch('foundReports', [o, ['status', '==', 'pending']], l => { S.found = l; changed(); }, errH('found')));
       watchSecrets();
     }
   }
@@ -236,6 +262,15 @@ export async function loadExtraItems(status){
     try { S.extraItems[st] = await dbx.list('items', [['officeId', '==', id], ['status', '==', st]]); } catch (e){ errH('extra items')(e); S.extraItems[st] = []; }
   }
   watchSecrets(); changed();
+}
+// للموظف: سجل حيازة الغرض (قيود logs) عند فتح صفحته، مرة واحدة لكل غرض.
+// القيود الجديدة تُضاف محلياً بعد كل عملية (commit في workflow.js) دون قراءة جديدة.
+export async function ensureLogs(i){
+  if (!i || !db || S.logs[i.id]) return;
+  S.logs[i.id] = 'loading';
+  try { S.logs[i.id] = (await dbx.list('logs', [['officeId', '==', i.officeId], ['itemId', '==', i.id]])).sort((a, b) => a.at - b.at); }
+  catch (e){ errH('logs')(e); S.logs[i.id] = []; }
+  changed();
 }
 // للموظف: سجل الطلبات المنتهية عند الطلب
 export async function loadClaimHistory(){

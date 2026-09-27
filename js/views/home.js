@@ -1,9 +1,10 @@
 // الصفحة الرئيسية للمكان المختار + صفحة «وجدت غرضاً»
 import { icon, LOGO, otype, otypeName, oName, oPlace, oHours, oCity } from '../constants.js';
-import { $, esc } from '../utils.js';
+import { $, esc, today } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, curOffice } from '../state.js';
 import { card, skelCards } from './visitor.js';
+import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt, themePicker } from './common.js';
 import { hydrate } from '../ui.js';
 
 const TAG_ART = `<svg class="tag-art" viewBox="0 0 220 240" aria-hidden="true">
@@ -96,6 +97,7 @@ function footer(o){
       <button class="link" data-act="nav" data-r="office">${t('foot.office')}</button>
       <button class="link" data-act="nav" data-r="privacy">${t('foot.privacy')}</button>
       <button class="link" data-act="lang" lang="${t('lang.otherCode')}">${icon('globe')}${t('foot.lang')}</button>
+      ${themePicker()}
     </div>
     <small class="sf-copy">© ${new Date().getFullYear()} ${t('app.name')}</small>
   </footer>`;
@@ -120,7 +122,36 @@ export function vFound(){
         ${o.phone ? `<dt>${t('found.contact')}</dt><dd><span dir="ltr">${esc(o.phone)}</span><button class="link" data-act="copy" data-v="${esc(o.phone)}">${icon('copy')}${t('c.copy')}</button></dd>` : ''}
       </dl>
     </div>
+    <div class="panel handin-cta">
+      <div class="section-title">${icon('bell')}${t('hi.ctaTitle')}</div>
+      <p class="muted">${t('hi.ctaBody')}</p>
+      <button class="btn" data-act="nav" data-r="handin" style="align-self:flex-start">${icon('plus')}${t('hi.ctaBtn')}</button>
+    </div>
     <div class="note warn">${icon('idcard')}<span>${t('found.idWarn')}</span></div>
     <div class="note">${icon('shield')}<span>${t('found.staffNote')}</span></div>
+  </div>`;
+}
+
+/* إشعار تسليم: من وجد غرضاً يسجّله قبل أن يسلّمه للمكتب، فيعرف الموظف ما سيصله ويتابع الواجد حالته */
+export function vHandin(){
+  const o = curOffice();
+  if (!S.uid) return `<div class="wrap">${backBtn()}${loginPrompt(t('hi.login'))}</div>`;
+  if (!S.verified) return `<div class="wrap">${backBtn()}${verifyPrompt(t('hi.verifyWhat'))}</div>`;
+  return `<div class="wrap" data-view="handin">${backBtn()}
+    <section class="hero"><div class="hero-kicker">${icon('tag')}${t('hi.kicker', {office: esc(oName(o))})}</div><h1 class="hero-title">${t('hi.title')}</h1>
+      <p class="hero-sub">${t('hi.sub')}</p></section>
+    <form data-form="handin" class="panel" novalidate>
+      <div class="field"><span class="label">${t('c.category')}</span>${catPicker('')}</div>
+      <div class="field" id="subs-field" hidden><span class="label">${t('c.type')}</span><div id="subs"></div></div>
+      <div class="two">
+        <div class="field"><label for="h-spot">${t('if.spot')}</label><select id="h-spot" name="spot" class="input">${spotOptions(o, '')}</select></div>
+        <div class="field"><label for="h-date">${t('if.date')}</label><input id="h-date" name="foundDate" type="date" class="input" value="${today()}" max="${today()}"></div>
+      </div>
+      ${spotExtra(null)}
+      <div class="field"><label for="h-note">${t('hi.note')} <span class="hint">${t('c.optional')}</span></label><textarea id="h-note" name="note" class="input" maxlength="500" placeholder="${t('hi.notePh')}"></textarea></div>
+      <div class="note">${icon('lock')}<span>${t('hi.privacy')}</span></div>
+      <div class="form-err" hidden></div>
+      <button class="btn block" type="submit">${icon('check')}${t('hi.send')}</button>
+    </form>
   </div>`;
 }

@@ -1,10 +1,10 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
-import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS } from '../constants.js';
-import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, spotName, showTitle } from '../utils.js';
+import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS } from '../constants.js';
+import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, spotName, showTitle, isoDay } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myCode, maybeFor, unseenCount, ensureItem, itemLoading, officeName, ACTIVE } from '../state.js';
+import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer } from '../state.js';
 import { backBtn, thumbHtml, miniItem, catPicker, colorPicker, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView } from './common.js';
-import { claimCardStaff, rivals, dateOf } from './staff.js';
+import { claimCardStaff, rivals, dateOf, qaBox, timeline } from './staff.js';
 import { aiReady } from '../ai.js';
 import { hydrate } from '../ui.js';
 
@@ -46,6 +46,7 @@ export function vBrowse(){
         <option value="all">${t('br.anyTime')}</option><option value="7">${t('br.last7')}</option><option value="30">${t('br.last30')}</option>
       </select>
     </div>
+    <h2 class="sr-only">${t('br.results')}</h2>
     <div id="results"></div>
     <aside class="cta-lost">
       <div><b>${t('br.notFound')}</b><p>${t('br.notFoundSub')}</p></div>
@@ -67,7 +68,8 @@ export const skelCards = (n = 4) => Array.from({length: n}, () => `<div class="c
 
 export function card(i){
   const c = cat(i.cat);
-  return `<article class="card" role="button" tabindex="0" data-act="openItem" data-id="${esc(i.id)}">
+  // بطاقة قابلة للضغط: div بدور زر (عنصر article لا يقبل دور button)
+  return `<div class="card" role="button" tabindex="0" data-act="openItem" data-id="${esc(i.id)}">
     <div class="thumb${isBlur(i) ? ' blurred' : ''}">${icon(c.icon)}${photoImg(i)}${blurBadge(i)}${i.sample ? `<span class="badge-sample">${t('c.sample')}</span>` : ''}</div>
     <div class="card-body">
       <span class="ref">${esc(i.ref)}</span>
@@ -76,7 +78,7 @@ export function card(i){
       <div class="meta">${icon('clock')}<span>${relDay(i.foundDate)}</span></div>
       ${i.status !== 'available' ? pill(ITEM_STATUS, i.status) : ''}
     </div>
-  </article>`;
+  </div>`;
 }
 export function updateBrowse(){
   const avail = S.items.filter(i => i.status === 'available').length;
@@ -115,6 +117,7 @@ export function vItem(){
     actions = `<div class="btn-row">
         <button class="btn" data-act="editItem" data-id="${esc(i.id)}">${icon('edit')}${t('c.edit')}</button>
         <button class="btn ghost" data-act="itemStatus" data-id="${esc(i.id)}">${icon('swap')}${t('it.changeStatus')}</button>
+        <button class="btn ghost" data-act="labels" data-ids="${esc(i.id)}">${icon('qr')}${t('lb.one')}</button>
         <button class="btn danger" data-act="delItem" data-id="${esc(i.id)}">${icon('trash')}${t('c.delete')}</button>
       </div>
       ${rivals(i).length ? `<div class="note warn">${icon('info')}<span>${t('it.rival')}</span></div>` : ''}
@@ -157,12 +160,16 @@ export function vItem(){
           <dt>${t('if.spot')}</dt><dd>${esc((staffMode ? spotText(f) : spotName(i.spot, i.officeId)) || t('it.unknown'))}</dd>
           <dt>${t('if.date')}</dt><dd>${fmtDate(i.foundDate)} <span class="muted">(${relDay(i.foundDate)})</span></dd>
           ${staffMode && f.storage ? `<dt>${t('if.storage')}</dt><dd>${esc(f.storage)}</dd>` : ''}
+          ${i.status === 'disposed' && i.disposal ? `<dt>${t('a.method')}</dt><dd>${t('disposal.' + (['donated', 'destroyed', 'authority'].includes(i.disposal) ? i.disposal : 'other'))}${i.disposedAt ? ` <span class="muted">(${fmtDate(isoDay(i.disposedAt))})</span>` : ''}</dd>` : ''}
+          ${staffMode && f.disposalNote ? `<dt>${t('it.disposalNote')}</dt><dd>${esc(f.disposalNote)}</dd>` : ''}
+          ${staffMode && f.handoverNote ? `<dt>${t('it.handoverNote')}</dt><dd>${esc(noteText(f.handoverNote))}</dd>` : ''}
           ${i.status === 'available' || i.status === 'reserved' ? `<dt>${t('setup.keep')}</dt><dd>${keepDays > 0 ? t('it.keepLeft', {days: daysWord(keepDays, true)}) : `<span class="flag">${t('it.keepOver')}</span>`}</dd>` : ''}
         </dl>
         ${actions}
         <button class="btn ghost" data-act="share" data-id="${esc(i.id)}">${icon('share')}${t('it.share')}</button>
       </div>
     </div>
+    ${staffMode ? timeline(i) : ''}
     ${o ? `<div class="panel"><div class="section-title">${icon('building')}${t('it.whereCollect')}</div>
       <dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl></div>` : ''}
   </div>`;
@@ -232,7 +239,7 @@ export function vReportForm(){
 /* ---------- visitor: my requests ---------- */
 export function vMine(){
   if (!S.uid) return `<div class="wrap">${loginPrompt(t('mine.login'))}</div>`;
-  const reps = myReports(), cls = myClaims();
+  const reps = myReports(), cls = myClaims(), fnd = myFound();
   const focus = S.route.params.focus;
   return `<div class="wrap" data-view="mine">
     <section class="hero"><div class="hero-kicker">${icon('inbox')}${t('mine.kicker')}</div><h1 class="hero-title">${t('nav.mine')}</h1></section>
@@ -241,6 +248,25 @@ export function vMine(){
     <div class="section-title">${t('mine.reports')} ${reps.length ? `<span class="count">${reps.length}</span>` : ''}</div>
     ${reps.length ? `<div class="list">${reps.map(r => reportCardMine(r, r.id === focus)).join('')}</div>`
       : `<div class="empty">${icon('bell')}<b>${t('mine.noReports')}</b><button class="btn soft" data-act="nav" data-r="report">${icon('plus')}${t('foot.report')}</button></div>`}
+    ${fnd.length ? `<div class="section-title">${t('hi.mineTitle')} <span class="count">${fnd.length}</span></div>
+      <div class="list">${fnd.map(f => foundCardMine(f, f.id === focus)).join('')}</div>` : ''}
+  </div>`;
+}
+/* إشعار التسليم كما يراه الواجد: بانتظار تسليمه ← استلمه المكتب (برقم قيده) ← عاد لصاحبه */
+export function foundCardMine(f, focus){
+  const it = f.itemId ? item(f.itemId) : null; if (f.itemId && !it) ensureItem(f.itemId);
+  const o = S.offices.find(x => x.id === f.officeId);
+  const st = f.status === 'received' && it?.status === 'returned' ? 'returned' : f.status;
+  const body = st === 'pending' ? `<div class="note info">${icon('building')}<span>${t('hi.pendingNote', {place: esc(oPlace(o) || oName(o))})}</span></div>
+      <div class="btn-row"><button class="btn sm ghost" data-act="cancelFound" data-id="${esc(f.id)}">${icon('x')}${t('hi.cancel')}</button></div>`
+    : st === 'returned' ? `<div class="note ok">${icon('check')}<span>${t('hi.returned')}</span></div>`
+    : st === 'received' ? `<div class="note ok">${icon('check')}<span>${it ? t('hi.receivedRef', {ref: `<b>${esc(it.ref)}</b>`}) : t('hi.received')}</span></div>`
+    : `<div class="btn-row"><button class="btn sm ghost" data-act="delFound" data-id="${esc(f.id)}">${icon('trash')}${t('c.delete')}</button></div>`;
+  return `<div class="box" ${focus ? 'style="border-color:var(--primary)"' : ''}>
+    <div class="box-head"><div><h3>${esc(f.sub ? subLabel(f.sub) : catName(f.cat))}</h3>
+      <span class="meta">${icon(cat(f.cat).icon)}${esc([spotText(f), fmtDate(f.foundDate)].filter(Boolean).join(' · '))}</span>
+      <span class="meta">${icon('building')}${esc(officeName(f.officeId))} · ${t('mine.sent', {when: relTime(f.createdAt)})}</span></div>${pill(FOUND_STATUS, st)}</div>
+    ${body}
   </div>`;
 }
 export function claimSteps(st){
@@ -253,7 +279,10 @@ export function claimCardMine(c){
   const o = S.offices.find(x => x.id === c.officeId); const code = myCode(c.id);
   let body = '';
   if (gone && ['pending', 'approved'].includes(c.status)) body = `<div class="note warn">${icon('info')}<span>${t('mine.gone')}</span></div>`;
-  else if (c.status === 'pending') body = `<p class="muted">${t('mine.pending')}</p>`;
+  // سؤال تحقق من المكتب: بانتظار إجابتك، أو أجبت عنه
+  else if (c.status === 'pending' && awaitingAnswer(c)) body = `<div class="note info qa-ask">${icon('question')}<span><b>${t('qa.fromOffice')}</b> ${esc(c.question)}</span></div>
+    <button class="btn sm" data-act="answerQ" data-id="${esc(c.id)}" style="align-self:flex-start">${icon('edit')}${t('qa.answerBtn')}</button>`;
+  else if (c.status === 'pending') body = `<p class="muted">${t('mine.pending')}</p>${qaBox(c)}`;
   else if (c.status === 'approved') body = code
     ? `<div class="code-tag"><small>${t('mine.code')}</small><span class="digits">${esc(code)}</span><small>${t('mine.codeHint')}</small></div>
        <dl class="facts"><dt>${t('st.cmpPlace')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>`

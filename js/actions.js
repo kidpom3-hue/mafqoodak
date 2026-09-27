@@ -1,7 +1,8 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
 import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS } from './constants.js';
 import { t, tp, tAr, LANG, setLang } from './i18n.js';
-import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle } from './utils.js';
+import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay } from './utils.js';
+import { loadStats, exportCsv } from './stats.js';
 import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
@@ -10,7 +11,9 @@ import { auth, dbx, GoogleAuthProvider, signInWithPopup, signInWithRedirect, cre
 import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar } from './ui.js';
 import { updateBrowse } from './views/visitor.js';
 import { updateStaff, staffItems, claimChecks, keepLeft } from './views/staff.js';
-import { FORM, subsPicker, pubPhoto, person } from './views/common.js';
+import { FORM, subsPicker, pubPhoto, person, themePicker } from './views/common.js';
+import { setTheme } from './theme.js';
+import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
 import { analyzePhoto, rankMatches, aiErrMsg, aiReady } from './ai.js';
 import { SETTINGS } from './config.js';
 import { sampleItems } from './sample-data.js';
@@ -212,6 +215,7 @@ async function submitForm(form){
     const existing = S.route.params.id ? full(item(S.route.params.id)) : null;
     const id = existing ? existing.id : dbx.newId('items');
     const fromReport = existing ? '' : (form.dataset.report || '');
+    const fromFound = existing ? '' : (form.dataset.found || '');   // إشعار تسليم من واجد
     const officeId = existing?.officeId || S.officeId;
     // الصورة الأصلية: المرفوعة الآن، أو صورة البلاغ عند قبوله (ولم يغيّرها الموظف)
     const original = sens ? null : FORM.photo || (FORM.copyFrom ? await getPhoto(FORM.copyFrom) : null);
@@ -230,11 +234,12 @@ async function submitForm(form){
       sample: !!existing?.sample,
     };
     if (fromReport) data.fromReport = fromReport;   // ربط الغرض بالبلاغ الذي قُبل
-    else if (existing?.fromReport) data.fromReport = existing.fromReport;
-    if (existing?.reservedFor) data.reservedFor = existing.reservedFor;
-    if (existing?.returnedAt) data.returnedAt = existing.returnedAt;
+    if (fromFound) data.fromFound = fromFound;      // ربط الغرض بإشعار التسليم
+    // التعديل يعيد كتابة المستند كاملاً: نحافظ على الحقول التي لا يعرضها النموذج
+    for (const k of ['fromReport', 'fromFound', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt']) if (existing?.[k] !== undefined) data[k] = existing[k];
     // التفاصيل السرية: لموظفي المكتب فقط
     const secret = {officeId, title: val('title'), color: val('color'), brand: val('brand').slice(0, 40), desc: val('desc'), bldg, room, storage: val('storage')};
+    for (const k of ['handoverNote', 'disposalNote']) if (existing?.[k]) secret[k] = existing[k];
     // حذف الصورة عند الحاجة يسبق حفظ الغرض
     if (removing){
       await dbx.del('itemPhotos/' + id).catch(e => console.warn(e));
@@ -262,12 +267,16 @@ async function submitForm(form){
     }
     busy(form, false);
     if (!ok) return;
+    // قيد في سجل الحيازة، ومعه ترشيح الغرض لصاحب البلاغ أو تأكيد استلام إشعار التسليم (batch واحد)
+    const linked = await write(() => wf.itemSaved({...data, id}, {created: !existing, fromReport, fromFound}),
+      fromReport ? t('a.reportAccepted') : fromFound ? t('hi.receivedToast') : '');
+    // بريد اختياري (EmailJS): لصاحب البلاغ بأن المكتب رشّح له غرضاً، وللواجد بأن المكتب استلم ما وجده
+    if (linked && fromReport) emailUser(S.reports.find(r => r.id === fromReport)?.uid, 'pick', {ref: data.ref});
+    if (linked && fromFound) emailUser(S.found.find(f => f.id === fromFound)?.uid, 'received', {ref: data.ref});
     if (existing){ back(); return; }
-    // قبول بلاغ: نرشّح الغرض الجديد لصاحب البلاغ فيصله تنبيه في «طلباتي»
-    if (fromReport) await write(() => dbx.update('reports/' + fromReport, {staffPick: id, pickedAt: Date.now()}), t('a.reportAccepted'));
     // المطابقة على جهة الموظف تشمل التفاصيل السرية
     const matches = S.reports.filter(r => r.status === 'open' && r.id !== fromReport && matchScore(r, {...data, ...secret, id}) >= MATCH_MIN);
-    S.hist = []; S.staffTab = fromReport ? 'reports' : 'items'; go('staff', {}, false);
+    S.hist = []; S.staffTab = fromReport || fromFound ? 'reports' : 'items'; go('staff', {}, false);
     if (matches.length) openSheet(`<h2>${icon('bell')} ${t('a.matchesTitle', {reports: tp('n.matchReports', matches.length)})}</h2>
       <div class="list">${matches.map(r => `<div class="box"><b>${esc(r.title)}</b><span class="meta">${esc(catName(r.cat))} · ${esc(colorName(r.color))} · ${t('st.lostOn', {date: relDay(r.lostDate)})}</span>${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}</div>`).join('')}</div>
       <p class="muted">${t('a.matchesHint')}</p>
@@ -312,9 +321,10 @@ async function submitForm(form){
     if (await sha(c.id + ':' + code) !== c.codeHash) return formErr(form, t('a.codeWrong'));
     busy(form, true);
     // التسليم فقط للطلب الذي حُجز له الغرض، وتُغلق بقية طلباته في العملية نفسها
-    let res = null;
+    let res = null; const it = item(c.itemId);   // قبل التسليم: الغرض المُسلَّم يخرج من قائمة النشطة
     const ok = await write(async () => { res = await wf.verifyHandover(c); }, t('a.handedOver'));
     busy(form, false); if (!ok) return;
+    emailFinder(it);
     closeSheet(); refreshCounts(); ownNotice(res); return;
   }
 
@@ -338,8 +348,14 @@ async function submitForm(form){
       for (const r of reports){ if (r.photo) await dbx.del('reportPhotos/' + r.id).catch(() => {}); await dbx.del('reports/' + r.id); }
       // الطلبات المنتهية تبقى سجلاً للمكتب بلا بيانات شخصية، وقيد المراجعة يُحذف
       for (const c of claims){
-        if (['done', 'rejected', 'expired', 'cancelled'].includes(c.status)) await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', anonymizedAt: Date.now()});
+        if (['done', 'rejected', 'expired', 'cancelled'].includes(c.status)) await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', ...(c.answer ? {answer: ''} : {}), anonymizedAt: Date.now()});
         else if (c.status === 'pending') await dbx.del('claims/' + c.id);
+      }
+      // إشعارات التسليم: المستلَم يبقى سجلاً للمكتب بلا بيانات صاحبه، والبقية تُحذف
+      const found = await dbx.list('foundReports', [['uid', '==', user.uid]]);
+      for (const f of found){
+        if (f.status === 'received') await dbx.update('foundReports/' + f.id, {uid: 'deleted', note: ''});
+        else await dbx.del('foundReports/' + f.id);
       }
       await dbx.del('users/' + user.uid + '/private/codes');
       await dbx.del('staffRequests/' + user.uid).catch(() => {});
@@ -356,12 +372,42 @@ async function submitForm(form){
     return;
   }
 
+  // إشعار تسليم: من وجد غرضاً يسجّله قبل أن يسلّمه للمكتب
+  if (kind === 'handin'){
+    const catId = val('cat');
+    if (!catId) return formErr(form, t('a.needCat'));
+    if (!S.verified) return formErr(form, t('a.verifyFirst'));
+    busy(form, true);
+    const id = dbx.newId('foundReports');
+    const ok = await write(() => dbx.set('foundReports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), spot: val('spot'), bldg, room,
+      foundDate: val('foundDate') || today(), note: val('note').slice(0, 500), status: 'pending', createdAt: Date.now()}), t('hi.sent'));
+    busy(form, false); if (ok){ S.hist = []; go('mine', {focus: id}, false); }
+    return;
+  }
+  // سؤال تحقق يرسله الموظف لصاحب طلب قيد المراجعة
+  if (kind === 'ask'){
+    const c = S.claims.find(x => x.id === form.dataset.id); if (!c) return;
+    busy(form, true);
+    const ok = await write(() => wf.askQuestion(c, val('question')), t('qa.sent'));
+    busy(form, false); if (ok){ closeSheet(); emailUser(c.uid, 'question', {ref: item(c.itemId)?.ref || ''}); }
+    return;
+  }
+  // إجابة صاحب الطلب عن سؤال التحقق (القواعد تسمح بها ما دام الطلب قيد المراجعة)
+  if (kind === 'answer'){
+    const c = S.myClaims.find(x => x.id === form.dataset.id); if (!c) return;
+    if (val('answer').length < 2) return formErr(form, t('qa.needAnswer'));
+    busy(form, true);
+    const ok = await write(() => dbx.update('claims/' + c.id, {answer: val('answer').slice(0, 1000), answeredAt: Date.now()}), t('qa.answerSent'));
+    busy(form, false); if (ok) closeSheet();
+    return;
+  }
+
   if (kind === 'reject'){
     const c = S.claims.find(x => x.id === form.dataset.id); if (!c) return;
     busy(form, true);
     // إن كان مقبولاً والغرض محجوزاً له، يعود الغرض متاحاً في العملية نفسها
     const ok = await write(() => wf.rejectClaim(c, val('note')), t('a.claimRejected'));
-    busy(form, false); if (ok) closeSheet(); return;
+    busy(form, false); if (ok){ closeSheet(); emailUser(c.uid, 'rejected', {ref: item(c.itemId)?.ref || '', note: val('note') || '—'}); } return;
   }
 
   // تسليم مباشر في المكتب دون طلب: ملاحظة التسليم تُحفظ في التفاصيل السرية
@@ -373,7 +419,7 @@ async function submitForm(form){
     busy(form, true);
     let res = null;
     const ok = await write(async () => { res = await wf.setItemStatus(i, 'returned', note); }, t('a.handoverSaved'));
-    busy(form, false); if (ok){ closeSheet(); refreshCounts(); ownNotice(res); }
+    busy(form, false); if (ok){ closeSheet(); refreshCounts(); ownNotice(res); emailFinder(i); }
     return;
   }
 
@@ -442,6 +488,9 @@ const ACT = {
       <div class="list">
         <button class="opt" data-act="nav" data-r="mine">${icon('inbox')}${t('acc.mine')}</button>
         <button class="opt" data-act="lang" lang="${t('lang.otherCode')}">${icon('globe')}${t('foot.lang')}</button>
+        ${notifySupported() ? `<button class="opt" data-act="notify" aria-pressed="${notifyOn()}">${icon('bell')}<span class="grow">${t('nt.label')}</span><span class="pill ${notifyOn() ? 'ok' : 'mute'}">${t(notifyOn() ? 'nt.on' : 'nt.off')}</span></button>
+          ${notifyDenied() ? `<p class="hint">${t('nt.deniedHint')}</p>` : ''}` : ''}
+        <div class="opt-row"><span class="label">${icon('contrast')}${t('th.label')}</span>${themePicker()}</div>
         <button class="opt" data-act="signOut">${icon('x')}${t('acc.signOut')}</button>
         <button class="opt" data-act="nav" data-r="privacy">${icon('lock')}${t('acc.privacy')}</button>
         <button class="opt" data-act="deleteAccount" style="color:var(--bad)">${icon('trash')}${t('acc.delete')}</button>
@@ -471,6 +520,17 @@ const ACT = {
   },
   async signOut(){ closeSheet(); S.mode = 'visitor'; LS.set('mode', 'visitor'); S.hist = []; S.route = {name: 'home', params: {}}; await signOut(auth); toast(t('a.signedOut')); },
   pickOffice(){ go('pick'); },
+  // المظهر: يُطبَّق فوراً ويُحدَّث الزر المختار دون إعادة رسم
+  theme(el){
+    setTheme(el.dataset.v);
+    el.parentElement.querySelectorAll('button').forEach(b => { const on = b === el; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+  },
+  // إشعارات المتصفح: تفعيل أو إيقاف
+  async notify(el){
+    const r = await toggleNotify();
+    toast(t('nt.t.' + r));
+    if (S.sheet) ACT.account();   // نعيد رسم نافذة الحساب بالحالة الجديدة
+  },
   // تبديل اللغة: يُحفظ على الجهاز، وفي users.lang لمن سجّل دخوله (يتبعه على أجهزته الأخرى)
   lang(){
     closeSheet();
@@ -539,7 +599,8 @@ const ACT = {
     const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return;
     const i = item(c.itemId);
     if (!i){ toast(t('it.gone')); return; }
-    const go2 = () => write(() => wf.approveClaim(c), t('a.approved'));
+    const o = S.offices.find(x => x.id === i.officeId);
+    const go2 = async () => { if (await write(() => wf.approveClaim(c), t('a.approved'))) emailUser(c.uid, 'approved', {ref: i.ref, date: isoDay(Date.now() + wf.pickupDays(o) * 864e5)}); };
     // تطابق ضعيف: أقل من 2 من 3 في جدول المقارنة
     const {hits} = claimChecks(c, full(i));
     if (hits < 2) return confirmSheet(t('a.weakQ'), t('a.weakBody', {n: hits}), t('a.weakBtn'), go2, false);
@@ -596,6 +657,31 @@ const ACT = {
       <div class="form-err" hidden></div>
       <div class="btn-row"><button class="btn danger" type="submit">${icon('x')}${t('a.rejectBtn')}</button><button type="button" class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div></form>`);
   },
+  // سؤال تحقق: اقتراحات جاهزة حسب تصنيف الغرض، ويكتب الموظف سؤاله
+  ask(el){
+    const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return; const i = item(c.itemId);
+    const sugs = [...(i ? t('qa.sug.' + i.cat).split('|') : []), t('qa.sugAny')].filter(Boolean);
+    openSheet(`<h2>${icon('question')} ${t('qa.askTitle')}</h2>
+      <p class="muted">${t('qa.askHint')}</p>
+      <form data-form="ask" data-id="${esc(c.id)}" novalidate>
+        <div class="field"><label for="qa-q">${t('qa.q')}</label><textarea id="qa-q" name="question" class="input" maxlength="300" required>${esc(c.question || '')}</textarea></div>
+        <div class="chips-wrap" role="group" aria-label="${t('qa.suggestions')}">${[...new Set(sugs)].map(q => `<button type="button" class="chip" data-act="qaSuggest" data-v="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+        <div class="form-err" hidden></div>
+        <div class="btn-row"><button class="btn" type="submit">${icon('check')}${t('qa.send')}</button><button type="button" class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>
+      </form>`);
+  },
+  qaSuggest(el){ const f = el.closest('form'); const q = f?.querySelector('[name=question]'); if (q){ q.value = el.dataset.v; q.focus(); } },
+  answerQ(el){
+    const c = S.myClaims.find(x => x.id === el.dataset.id); if (!c?.question) return;
+    openSheet(`<h2>${icon('question')} ${t('qa.answerTitle')}</h2>
+      <div class="qa"><div class="qa-q">${icon('question')}<span><b>${t('qa.q')}</b> ${esc(c.question)}</span></div></div>
+      <form data-form="answer" data-id="${esc(c.id)}" novalidate>
+        <div class="field"><label for="qa-a">${t('qa.yourAnswer')}</label><textarea id="qa-a" name="answer" class="input" maxlength="1000" required></textarea>
+          <span class="hint">${t('qa.answerHint')}</span></div>
+        <div class="form-err" hidden></div>
+        <div class="btn-row"><button class="btn" type="submit">${icon('check')}${t('qa.sendAnswer')}</button><button type="button" class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>
+      </form>`);
+  },
   verify(el){
     const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return; const i = item(c.itemId);
     openSheet(`<h2>${icon('shield')} ${t('a.handTitle', {ref: i ? esc(i.ref) : ''})}</h2>
@@ -608,10 +694,46 @@ const ACT = {
       </form>`);
   },
   acceptReport(el){ go('add', {fromReport: el.dataset.id}); },
-  async pickFor(el){ await write(() => dbx.update('reports/' + el.dataset.r, {staffPick: el.dataset.i, pickedAt: Date.now()}), t('a.picked')); },
+  // ملصقات QR: لغرض واحد من صفحته، أو لمجموعة من لوحة الموظف
+  labels(el){ go('labels', {ids: String(el.dataset.ids || '').split(',').filter(Boolean)}); },
+  labelsMenu(){
+    const act = S.items.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const day = today(), week = Date.now() - 7 * 864e5;
+    const opts = [['lb.today', act.filter(i => isoDay(i.createdAt) === day)], ['lb.week', act.filter(i => (i.createdAt || 0) >= week)], ['lb.all', act]];
+    openSheet(`<h2>${icon('qr')} ${t('lb.menuTitle')}</h2><p class="muted">${t('lb.menuHint')}</p>
+      <div class="list">${opts.map(([k, list]) => `<button class="opt" data-act="labels" data-ids="${esc(list.map(i => i.id).join(','))}" ${list.length ? '' : 'disabled aria-disabled="true"'}>${icon('qr')}<span class="grow">${t(k)}</span><span class="muted">${tp('n.item', list.length)}</span></button>`).join('')}</div>
+      <button class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button>`);
+  },
+  poster(el){ go('poster', {office: el.dataset.id || S.officeId}); },
+  print(){ window.print(); },
+  stats(el){ go('stats', {office: el.dataset.id || S.officeId}); },
+  statsRefresh(el){ loadStats(el.dataset.id, true); },
+  async exportCsv(el){ el.disabled = true; try { await exportCsv(el.dataset.id); } finally { el.disabled = false; } },
+  // إشعار التسليم: الموظف يستلم الغرض (نموذج الغرض معبّأ)، أو يغلق الإشعار إن لم يصل الغرض
+  async receiveFound(el){
+    const f = S.found.find(x => x.id === el.dataset.id); if (!f) return;
+    const done = S.items.find(i => i.fromFound === f.id);
+    if (done){ if (await write(() => wf.itemSaved(done, {fromFound: f.id}), t('hi.receivedToast'))) emailUser(f.uid, 'received', {ref: done.ref}); return; }
+    go('add', {fromFound: f.id});
+  },
+  dropFound(el){
+    const f = S.found.find(x => x.id === el.dataset.id); if (!f) return;
+    confirmSheet(t('hi.dropQ'), t('hi.dropBody'), t('hi.drop'), () => write(() => wf.dropFound(f), t('hi.dropped')), false);
+  },
+  // الواجد يلغي إشعاره ما دام لم يسلّم الغرض، ويحذف الملغى
+  cancelFound(el){
+    confirmSheet(t('hi.cancelQ'), t('hi.cancelBody'), t('hi.cancel'),
+      () => write(() => dbx.update('foundReports/' + el.dataset.id, {status: 'cancelled', cancelledAt: Date.now()}), t('hi.cancelled')), false);
+  },
+  delFound(el){ write(() => dbx.del('foundReports/' + el.dataset.id), t('hi.deleted')); },
+  async pickFor(el){
+    if (await write(() => dbx.update('reports/' + el.dataset.r, {staffPick: el.dataset.i, pickedAt: Date.now()}), t('a.picked')))
+      emailUser(S.reports.find(r => r.id === el.dataset.r)?.uid, 'pick', {ref: item(el.dataset.i)?.ref || ''});
+  },
   async pickAll(el){
     const rs = el.dataset.rs.split(',').filter(Boolean); closeSheet();
-    for (const r of rs) await write(() => dbx.update('reports/' + r, {staffPick: el.dataset.i, pickedAt: Date.now()}));
+    for (const r of rs) if (await write(() => dbx.update('reports/' + r, {staffPick: el.dataset.i, pickedAt: Date.now()})))
+      emailUser(S.reports.find(x => x.id === r)?.uid, 'pick', {ref: item(el.dataset.i)?.ref || ''});
     toast(t('a.pickedAll'));
   },
   newOffice(){ go('officeForm', {}); },
@@ -676,4 +798,20 @@ export function bindEvents(){
     if (t.name === 'spot' && t.closest('form')) onSpotChange(t.closest('form'), t.value);
     if (t.name === 'cat' && t.closest('form')) onCatChange(t.closest('form'), t.value, '');
   });
+  // تلميح الرسوم البيانية: عند المرور بالمؤشر أو التركيز بلوحة المفاتيح (النص يوضع بـ textContent)
+  const tip = document.createElement('div'); tip.id = 'viz-tip'; tip.setAttribute('role', 'tooltip'); tip.hidden = true;
+  tip.innerHTML = '<b></b><span></span>'; document.body.append(tip);
+  const showTip = el => {
+    tip.firstChild.textContent = el.dataset.tipV; tip.lastChild.textContent = el.dataset.tipL; tip.hidden = false;
+    const r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+    tip.style.top = Math.max(8, r.top - h - 8) + 'px';
+  };
+  const hideTip = () => { tip.hidden = true; };
+  app.addEventListener('pointerover', e => { const el = e.target.closest?.('[data-tip-v]'); if (el) showTip(el); });
+  app.addEventListener('pointerout', e => { if (e.target.closest?.('[data-tip-v]') && document.activeElement !== e.target) hideTip(); });
+  app.addEventListener('focusin', e => { if (e.target.matches?.('[data-tip-v]')) showTip(e.target); });
+  app.addEventListener('focusout', e => { if (e.target.matches?.('[data-tip-v]')) hideTip(); });
+  // التمرير يخفي تلميح المؤشر، ويُبقي تلميح العنصر المُركَّز عليه (مع إعادة تحديد مكانه)
+  window.addEventListener('scroll', () => { const a = document.activeElement; if (a?.matches?.('[data-tip-v]')) showTip(a); else hideTip(); }, {passive: true});
 }
