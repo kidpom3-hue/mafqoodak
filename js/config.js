@@ -31,7 +31,7 @@ export const SETTINGS = {
 
   // التنبيهات بالبريد عبر EmailJS (اختيارية؛ خطتهم المجانية تكفي نحو 200 رسالة شهرياً وقت كتابة هذا): emailjs.com
   // اتركها فارغة لإيقافها. خطوات إنشاء الحساب والقالب في README.md (قسم «التنبيهات بالبريد»)
-  emailjs: {publicKey: '', serviceId: '', templateId: ''},
+  emailNotify: {enabled: false, serviceId: '', templateId: '', publicKey: ''},
 
   // بيانات أول موقع تُنشأ عند الإعداد الأول (يمكن تعديلها لاحقاً من لوحة الإدارة)
   firstOffice: {

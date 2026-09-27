@@ -108,13 +108,15 @@ export function staffItems(){
 }
 /* سجل الحيازة (للموظف): كل ما حدث للغرض من تسجيله إلى تسليمه، من قيود logs.
    الأغراض الأقدم من السجل تبدأ بتاريخ تسجيلها. */
-const LOG_ACTIONS = ['create', 'edit', 'receive', 'ask', 'approve', 'reject', 'release', 'handover', 'status:available', 'status:returned', 'status:archived', 'dispose', 'delete'];
+const LOG_ACTIONS = ['claim', 'create', 'edit', 'receive', 'ask', 'approve', 'reject', 'release', 'handover', 'status:available', 'status:returned', 'status:archived', 'dispose', 'delete'];
 export function timeline(i){
   ensureLogs(i);
   const L = S.logs[i.id];
   const head = `<div class="section-title">${icon('clock')}${t('tl.title')}</div>`;
   if (!Array.isArray(L)) return `<div class="panel">${head}<div class="loading sm" aria-busy="true"><span class="spin"></span></div></div>`;
-  const events = [...(L.some(e => e.action === 'create') ? [] : [{action: 'create', at: i.createdAt, by: i.createdBy, legacy: true}]), ...L];
+  const claims = [...S.claims, ...(S.claimHist || [])].filter((c, k, a) => c.itemId === i.id && a.findIndex(x => x.id === c.id) === k);
+  const events = [...(L.some(e => e.action === 'create') ? [] : [{action: 'create', at: i.createdAt, by: i.createdBy, legacy: true}]), ...L,
+    ...claims.map(c => ({action: 'claim', at: c.createdAt, claimId: c.id}))].sort((a, b) => (a.at || 0) - (b.at || 0));
   return `<div class="panel">${head}
     <ol class="timeline">${events.map(e => {
       const claimant = e.claimId ? e.claimId.slice(e.claimId.indexOf('_') + 1) : '';
@@ -150,6 +152,7 @@ function claimCompare(c, f){
     ${row(t('st.cmpDate'), said(c.lostDate && fmtDate(c.lostDate)), truth(f.foundDate && t('st.foundOn', {date: fmtDate(f.foundDate)})), date)}
     ${row(t('st.cmpBrand'), said(c.brand), truth(f.brand))}
     ${row(t('st.cmpProof'), said(c.proof), truth(f.desc))}
+    ${c.question ? row(`${t('st.cmpQA')}: <span class="cmp-q">${esc(c.question)}</span>`, answered(c) ? esc(c.answer) : `<span class="muted">${t(c.status === 'pending' ? 'qa.waiting' : 'qa.none')}</span>`, '<span class="muted">—</span>') : ''}
     <div class="cmp-sum">${t('st.cmpSum', {n: hits})}</div>
   </div>`;
 }
@@ -185,7 +188,7 @@ export function claimCardStaff(c){
     ${c.status === 'approved' && c.pickupBy ? `<div class="meta ${late ? 'flag' : ''}">${t(late ? 'st.pickupEnded' : 'st.pickupUntil', {date: dateOf(c.pickupBy)})}</div>` : ''}
     ${rv ? `<div class="note warn">${icon('info')}<span>${t('st.rivalNote')}</span></div>` : ''}
     ${i ? claimCompare(c, full(i)) : `<div class="proof">${esc(c.proof)}</div>`}
-    ${qaBox(c)}
+    ${i ? '' : qaBox(c)}
     ${['rejected', 'expired', 'cancelled'].includes(c.status) && c.note ? `<div class="meta">${t(c.status === 'rejected' ? 'st.rejectReason' : 'st.note')}: ${esc(noteText(c.note))}</div>` : ''}
     ${actions}
   </div>`;

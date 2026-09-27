@@ -33,7 +33,7 @@ export function vStats(){
     <div class="btn-row"><button class="btn sm" data-act="exportCsv" data-id="${esc(id)}">${icon('download')}${t('sx.csv')}</button>
       <button class="btn sm ghost" data-act="statsRefresh" data-id="${esc(id)}">${icon('swap')}${t('sx.refresh')}</button></div>`;
   if (!data) return `<div class="wrap" data-view="stats">${head}<div class="loading" aria-busy="true"><span class="spin"></span></div></div>`;
-  const s = computeStats(data.items, o);
+  const s = computeStats(data.items, o, data.reports || []);
   if (!s.total) return `<div class="wrap" data-view="stats">${head}<div class="empty">${icon('chart')}<b>${t('sx.empty')}</b></div></div>`;
   // الأشهر: عمودان متجاوران لكل شهر (ما وُجد وما أُعيد) على محور واحد
   const top = nice(Math.max(...s.months.map(m => Math.max(m.found, m.ret))));
@@ -65,6 +65,8 @@ export function vStats(){
       ${table([t('c.category'), t('sx.count'), t('home.statReturned')], catRows.map(r => [r.label, r.n, r.ret]))}</figure>
     <figure class="panel viz"><figcaption class="section-title">${t('sx.bySpot')}</figcaption>${hbars(spotRows)}
       ${table([t('if.spot'), t('sx.count')], spotRows.map(r => [r.label, r.n]))}</figure>
+    ${s.lost.length ? `<figure class="panel viz"><figcaption class="section-title">${t('sx.byLost')}</figcaption>${hbars(s.lost.map(x => ({label: x.s ? spotName(x.s, id) : t('it.unknown'), n: x.n, tip: String(x.n)})))}
+      ${table([t('if.spot'), t('sx.count')], s.lost.map(x => [x.s ? spotName(x.s, id) : t('it.unknown'), x.n]))}</figure>` : ''}
     <p class="hint">${t('sx.note', {items: tp('n.item', data.items.length)})}</p>
   </div>`;
 }

@@ -29,9 +29,9 @@ async function show(body, tag){
 }
 
 // نص الإشعار لكل نوع تنبيه (مفاتيح alertKeys في state.js، ومفاتيح الموظف بالأسفل)
-function msgOf(k){
+export function msgOf(k){
   const [type, , st] = k.split(':');
-  return ({p: 'nt.pick', m: 'nt.match', q: 'nt.question', sc: 'nt.newClaim', sa: 'nt.answer', sf: 'nt.found'})[type]
+  return ({p: 'nt.pick', m: 'nt.match', q: 'nt.question', d: 'nt.pickupSoon', sc: 'nt.newClaim', sa: 'nt.answer', sf: 'nt.found'})[type]
     || (type === 'f' ? (st === 'ret' ? 'nt.foundReturned' : 'nt.foundReceived') : '')
     || (type === 'c' ? (st === 'approved' ? 'nt.approved' : st === 'rejected' ? 'nt.rejected' : 'nt.claimChanged') : 'nt.update');
 }
@@ -49,7 +49,14 @@ function currentKeys(){
 }
 // يُستدعى بعد كل تحديث للبيانات: ما ظهر من تنبيهات جديدة والتطبيق في الخلفية يصل إشعاراً
 const known = new Set(); let who = null, armedAt = 0;
+// للموظف: شارة على أيقونة التطبيق وعدد في عنوان الصفحة (طلبات جديدة + إشعارات تسليم)
+function staffBadge(){
+  const n = isStaffHere() ? S.claims.filter(c => c.status === 'pending' && c.uid !== S.uid).length + S.found.length : 0;
+  document.title = (n ? `(${n}) ` : '') + t('app.title');
+  try { if (n) navigator.setAppBadge?.(n); else navigator.clearAppBadge?.(); } catch {}
+}
 export function checkNotify(){
+  staffBadge();
   if (who !== S.uid){ who = S.uid; known.clear(); armedAt = Date.now() + 6000; }   // مهلة أولى: الموجود عند الفتح لا يُشعَر به
   if (!S.uid) return;
   const fresh = currentKeys().filter(k => !known.has(k));
@@ -60,19 +67,19 @@ export function checkNotify(){
 }
 
 /* ---------- البريد عبر EmailJS (اختياري) ---------- */
-export const emailReady = () => { const e = SETTINGS.emailjs || {}; return !!(e.publicKey && e.serviceId && e.templateId); };
-// رسالة لمستخدم بلغته (من users.lang): العنوان والنص من القاموسين (em.<نوع>.s وem.<نوع>.b)
+export const emailReady = () => { const e = SETTINGS.emailNotify || {}; return !!(e.enabled && e.publicKey && e.serviceId && e.templateId); };
+// رسالة عامة فقط بلغة المستلم (users.lang): «تحدّث حالة طلبك، افتح مفقودك». لا رقم غرض ولا سبب ولا أي تفصيل
 export async function emailUser(uid, kind, vars = {}){
   if (!emailReady() || !uid || uid === 'deleted') return;
   try {
     const u = await dbx.get('users/' + uid);   // الموظف يقرأ ملف صاحب الطلب (القواعد تسمح بذلك)
     if (!u?.email) return;
-    const lang = u.lang === 'en' ? 'en' : 'ar', e = SETTINGS.emailjs;
+    const lang = u.lang === 'en' ? 'en' : 'ar', e = SETTINGS.emailNotify;
     const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({service_id: e.serviceId, template_id: e.templateId, user_id: e.publicKey,
         // رابط التطبيق مكتوب في القالب نفسه على EmailJS (لا يُرسل من هنا)، حتى لا يستطيع أحد تغييره
-        template_params: {to_email: u.email, to_name: u.name || '', subject: tIn(lang, `em.${kind}.s`, vars), message: tIn(lang, `em.${kind}.b`, vars), app_name: tIn(lang, 'app.name')}}),
+        template_params: {to_email: u.email, to_name: u.name || '', subject: tIn(lang, 'em.s'), message: tIn(lang, 'em.b'), app_name: tIn(lang, 'app.name')}}),
     });
     if (!res.ok) console.warn('[emailjs]', res.status);
   } catch (err){ console.warn('[emailjs]', err); }

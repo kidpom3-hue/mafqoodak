@@ -671,3 +671,8 @@ html[dir=ltr] svg.i.dir{transform:scaleX(-1)}
 /* اختيار المظهر لا يتجاوز عرض عموده (الإنجليزية أطول) */
 .theme-seg{max-width:100%;flex-wrap:wrap}
 .theme-seg button{flex:1 1 auto;justify-content:center}
+/* مركز التنبيهات في «طلباتي» */
+.alerts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.alerts li{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px}
+.alerts li svg{width:18px;height:18px;color:var(--primary);flex:none}
+.cmp-q{font-weight:500}
