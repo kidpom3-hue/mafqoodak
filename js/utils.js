@@ -53,8 +53,8 @@ export const fmtDateTime = ms => ms ? fmt('dt', {day: 'numeric', month: 'short',
 // وخلال آخر 24 ساعة: «قبل 5 دقائق · 9:31 م». الإنجليزية بالمنطق نفسه
 export function when(ms){
   if (!ms) return '';
-  // الساعة لا تنقسم على سطرين: «9:31 م» بمسافة غير قابلة للكسر، وكذلك « · » قبلها
-  const d = new Date(ms), clock = '\u00A0·\u00A0' + fmt('hm', {hour: 'numeric', minute: '2-digit', hour12: true}).format(d).replace(/\s/g, '\u00A0');
+  // الساعة لا تنقسم على سطرين: «· 9:31 م» بمسافات غير قابلة للكسر (السطر ينكسر قبل «·» فقط عند الحاجة)
+  const d = new Date(ms), clock = ' ·\u00A0' + fmt('hm', {hour: 'numeric', minute: '2-digit', hour12: true}).format(d).replace(/\s/g, '\u00A0');
   const m = Math.floor((Date.now() - ms) / 6e4);
   if (m >= 0 && m < 24 * 60){
     const rel = m < 1 ? t('time.now') : m < 60 ? tp('time.minAgo', m) : tp('time.hourAgo', Math.floor(m / 60));
