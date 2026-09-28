@@ -315,6 +315,37 @@ await t('G: قبول g2', batch(A, (b, r) => {
 }));
 await t('G: تعديل طلب مقبول مرفوض', updateDoc(doc(bob, 'claims/g2_bob'), {proof: 'z', editedAt: now}), false);
 
+// ── دعوات الموظفين (بدل «طلب صلاحية موظف») ──
+const withEmail = (uid, email, verified = true) => env.authenticatedContext(uid, {email, email_verified: verified}).firestore();
+const newbie = withEmail('newbie', 'new@x.com'), newbieUnv = withEmail('newbie', 'new@x.com', false), other = withEmail('other', 'other@x.com');
+const inv = (offices = [O]) => ({offices, createdBy: 'owner', createdAt: now});
+const acceptBatch = (db, uid, email, offices, extra = {}) => batch(db, (b, r) => {
+  b.set(r('staff/' + uid), {offices, approvedAt: now, approvedBy: 'owner', ...extra});
+  b.delete(r('staffInvites/' + email));
+  for (const o of offices) b.set(r('logs/' + lid()), logDoc(uid, 'perm:grant', {note: uid}));
+});
+await t('INV: زائر لا ينشئ staffRequests', setDoc(doc(alice, 'staffRequests/alice'), {offices: [O], note: 'x', status: 'pending', createdAt: now}), false);
+await t('INV: غير الإداري لا يكتب في staffInvites', setDoc(doc(bob, 'staffInvites/bob@x.com'), {offices: [O], createdBy: 'bob', createdAt: now}), false);
+await t('INV: الموظف (غير الإداري) لا يكتب في staffInvites', setDoc(doc(A, 'staffInvites/new@x.com'), {...inv(), createdBy: 'staffA'}), false);
+await t('INV: المالك ينشئ دعوة', setDoc(doc(owner, 'staffInvites/new@x.com'), inv()));
+await t('INV: معرّف الدعوة بأحرف كبيرة مرفوض', setDoc(doc(owner, 'staffInvites/New@x.com'), inv()), false);
+await t('INV: حقل غريب في الدعوة مرفوض', setDoc(doc(owner, 'staffInvites/z@x.com'), {...inv(), admin: true}), false);
+await t('INV: بريد غير موثّق لا يقرأ الدعوة', getDoc(doc(newbieUnv, 'staffInvites/new@x.com')), false);
+await t('INV: بريد غير موثّق لا ينشئ staff', setDoc(doc(newbieUnv, 'staff/newbie'), {offices: [O], approvedAt: now, approvedBy: 'owner'}), false);
+await t('INV: لا أحد يقرأ دعوة غيره', getDoc(doc(other, 'staffInvites/new@x.com')), false);
+await t('INV: المدعو يقرأ دعوته', getDoc(doc(newbie, 'staffInvites/new@x.com')));
+await t('INV: البريد بأحرف كبيرة في الحساب يقرأ دعوته (lower)', getDoc(doc(withEmail('newbie', 'NEW@x.com'), 'staffInvites/new@x.com')));
+await t('INV: إضافة مكتب آخر غير الدعوة مرفوض', acceptBatch(newbie, 'newbie', 'new@x.com', [O, 'air']), false);
+await t('INV: حقل إضافي في staff مرفوض', acceptBatch(newbie, 'newbie', 'new@x.com', [O], {note: 'x'}), false);
+await t('INV: approvedBy غير صاحب الدعوة مرفوض', batch(newbie, (b, r) => { b.set(r('staff/newbie'), {offices: [O], approvedAt: now, approvedBy: 'newbie'}); b.delete(r('staffInvites/new@x.com')); }), false);
+await t('INV: المدعو لا يحذف الدعوة وحدها', deleteDoc(doc(newbie, 'staffInvites/new@x.com')), false);
+await t('INV: مستخدم آخر لا ينشئ staff بدعوة غيره', setDoc(doc(other, 'staff/other'), {offices: [O], approvedAt: now, approvedBy: 'owner'}), false);
+await t('INV: قبول الدعوة: staff بالمكاتب نفسها + حذف الدعوة + perm:grant في batch واحد', acceptBatch(newbie, 'newbie', 'new@x.com', [O]));
+await t('INV: الموظف الجديد يقرأ مفقودات مكتبه السرية', getDoc(doc(newbie, 'itemSecrets/i1')));
+await t('INV: الموظف لا يعدّل وثيقة staff الخاصة به', updateDoc(doc(newbie, 'staff/newbie'), {offices: [O, 'air']}), false);
+await t('INV: المالك يلغي دعوة', batch(owner, (b, r) => { b.set(r('staffInvites/gone@x.com'), inv()); }).then(() => deleteDoc(doc(owner, 'staffInvites/gone@x.com'))));
+await t('INV: المالك يقرأ طلبات الصلاحية القديمة ويحذفها', getDocs(collection(owner, 'staffRequests')));
+
 // ── لغة المستخدم (للجزء B) ──
 await t('lang = en مسموح', setDoc(doc(alice, 'users/alice'), {name: 'A', email: 'a@x.com', photo: '', lastSeen: now, lang: 'en'}));
 await t('lang غير معروفة مرفوضة', setDoc(doc(alice, 'users/alice'), {name: 'A', lang: 'fr'}), false);

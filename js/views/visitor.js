@@ -2,7 +2,7 @@
 import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf } from '../state.js';
+import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf } from '../state.js';
 import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq } from './common.js';
 import { claimCardStaff, rivals, dateOf, qaBox, timeline, catKeepNote } from './staff.js';
 import { aiReady } from '../ai.js';
@@ -425,7 +425,6 @@ const FAQ = () => [1, 2, 3, 4, 5, 6, 7].map(n => [t('faq.q' + n), t('faq.a' + n)
 
 export function vOffice(){
   const o = curOffice();
-  const req = S.myReq; const isStaff = isStaffHere();
   return `<div class="wrap" data-view="office">
     <section class="hero"><div class="hero-kicker">${icon(otype(o.type).icon)}${esc(otypeName(o.type))}${oCity(o) ? ' · ' + esc(oCity(o)) : ''}</div><h1 class="hero-title">${esc(oName(o))}</h1></section>
     <div class="panel">
@@ -442,13 +441,6 @@ export function vOffice(){
       <h2 class="section-title">${icon('grid')}${t('svc.indexTitle')}</h2>
       <div class="svc-links" role="list">${['claim', 'report', 'handin'].map(id => `<button role="listitem" class="opt" data-act="nav" data-r="service" data-id="${id}">${icon(id === 'claim' ? 'shield' : id === 'report' ? 'bell' : 'tag')}<span class="grow">${t('svc.' + id + '.name')}</span>${icon('fwd')}</button>`).join('')}</div>
       <button class="btn ghost" data-act="nav" data-r="numbers" style="align-self:flex-start">${icon('chart')}${t('num.title')}</button>
-    </div>
-    <div class="panel">
-      <div class="section-title">${icon('users')}${t('ofc.work')}</div>
-      ${isStaff ? `<div class="note ok">${icon('check')}<span>${t('ofc.isStaff')}</span></div>
-        <button class="btn soft" data-act="poster" style="align-self:flex-start">${icon('print')}${t('po.btn')}</button>`
-      : req?.status === 'pending' ? `<div class="note warn">${icon('clock')}<span>${t('ofc.reqPending')}</span></div>`
-      : `<p class="muted">${t('ofc.grantNote')}</p><button class="btn soft" data-act="nav" data-r="join">${icon('shield')}${t('ofc.request')}</button>`}
     </div>
     <section class="home-sec">
       <div class="sec-head"><h2>${t('ofc.privacy')}</h2></div>
@@ -469,21 +461,5 @@ export function vOffice(){
       <dl class="facts terms">${TERMS.map(k => `<dt>${t('term.' + k)}</dt><dd>${t('term.' + k + '.d')}</dd>`).join('')}</dl>
     </section>
     <button class="link" data-act="nav" data-r="privacy" style="align-self:center">${icon('lock')}${t('foot.privacy')}</button>
-  </div>`;
-}
-export function vJoin(){
-  if (!S.uid) return `<div class="wrap">${backBtn()}${loginPrompt(t('join.login'))}</div>`;
-  const req = S.myReq; const act = S.offices.filter(o => o.active !== false);
-  return `<div class="wrap" data-view="join">${backBtn()}
-    <section class="hero"><div class="hero-kicker">${icon('shield')}${t('join.kicker')}</div><h1 class="hero-title">${t('join.title')}</h1>
-      <p class="hero-sub">${t('join.sub')}</p></section>
-    ${req ? `<div class="note ${req.status === 'pending' ? 'warn' : req.status === 'approved' ? 'ok' : ''}">${icon('info')}<span>${t(req.status === 'pending' ? 'join.pending' : req.status === 'approved' ? 'join.approved' : 'join.rejected')}</span></div>` : ''}
-    <form data-form="join" class="panel" novalidate>
-      <div class="field"><span class="label">${t('join.office')}</span>
-        ${act.map(o => `<label class="check"><input type="checkbox" name="offices" value="${esc(o.id)}" ${(req?.offices || [S.officeId]).includes(o.id) ? 'checked' : ''}><span>${esc(oName(o))}</span></label>`).join('')}</div>
-      <div class="field"><label for="j-note">${t('join.note')}</label><input id="j-note" name="note" class="input" maxlength="120" value="${esc(req?.note || '')}" placeholder="${t('join.notePh')}"></div>
-      <div class="form-err" hidden></div>
-      <button class="btn block" type="submit">${icon('check')}${t('cl.send')}</button>
-    </form>
   </div>`;
 }

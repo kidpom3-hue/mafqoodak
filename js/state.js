@@ -38,7 +38,7 @@ export const S = {
   audit: {},                     // للإدارة: «سجل العمليات» (مكتب|فلتر ← قائمة أو 'loading')
   verified: false,               // البريد موثّق؟
   secrets: {},   // تفاصيل المفقودات السرية (للموظف فقط): رقم الغرض ← {title, color, brand, desc, bldg, room, storage}
-  staffDoc: null, staffLoaded: false, staffList: [], staffReqs: [], myReq: null, priv: {},
+  staffDoc: null, staffLoaded: false, staffList: [], invites: [], priv: {},
   officeId: LS.get('office', null),
   mode: LS.get('mode', 'visitor'),
   // فتح صفحة محددة من اختصارات أيقونة التطبيق (مثل ./#report)
@@ -206,7 +206,7 @@ function onUser(user){
   S.uid = user?.uid || null;
   S.me = user ? {name: user.displayName || (user.email || '').split('@')[0] || t('user.anon'), email: user.email || '', photo: user.photoURL || ''} : null;
   S.isAdmin = false; S.adminLoaded = !user; S.staffDoc = null; S.staffLoaded = !user;
-  S.myReq = null; S.priv = {}; S.staffList = []; S.staffReqs = []; S.allItems = []; S.adminList = []; S.audit = {};
+  S.priv = {}; S.staffList = []; S.invites = []; S.allItems = []; S.adminList = []; S.audit = {};
   S.verified = !!user?.emailVerified;   // حسابات Google موثّقة تلقائياً
   clear('mine'); S.myReports = []; S.myClaims = []; S.myFound = [];
   S.authReady = true;
@@ -220,9 +220,8 @@ function onUser(user){
       if (!S.isAdmin && was) clear('admin');
       fixMode(); ensureOfficeSubs(); changed();
     }, e => { errH('admins')(e); S.adminLoaded = true; fixMode(); }));
-    subs.user.push(dbx.watchDoc('staff/' + user.uid, d => { S.staffDoc = d; S.staffLoaded = true; fixMode(); ensureOfficeSubs(); changed(); },
+    subs.user.push(dbx.watchDoc('staff/' + user.uid, d => { S.staffDoc = d; S.staffLoaded = true; fixMode(); ensureOfficeSubs(); changed(); tryInvite(); },
       e => { errH('staff')(e); S.staffLoaded = true; fixMode(); }));
-    subs.user.push(dbx.watchDoc('staffRequests/' + user.uid, d => { S.myReq = d; changed(); }, errH('staffRequests')));
     subs.user.push(dbx.watchDoc('users/' + user.uid + '/private/codes', d => { S.priv = d || {}; changed(); }, errH('codes')));
     // «طلباتي»: بلاغات المستخدم وطلباته في كل المكاتب (بالمستخدم فقط، دون تقييد بالمكتب)
     subs.mine.push(dbx.watch('reports', [['uid', '==', user.uid]], l => { S.myReports = l; autoClose(); changed(); }, errH('my reports')));
@@ -245,10 +244,28 @@ function autoClose(){
     }
   }
 }
+/* دعوة موظف: بعد تحميل وثيقة staff، إن لم يكن المستخدم موظفاً وبريده موثّقاً، نقرأ staffInvites/{بريده}
+   وإن وُجدت نقبلها (workflow.acceptInvite). مرة واحدة لكل حساب وبريد؛ checkInvite() يعيد المحاولة بعد توثيق البريد.
+   البريد غير الموثّق لا يقرأ الدعوة أصلاً (القواعد)، فتنتظر الدعوة حتى التوثيق */
+let inviteTried = '';
+async function tryInvite(){
+  const u = auth?.currentUser;
+  if (!u || !u.emailVerified || !u.email || !S.staffLoaded || S.staffDoc || u.uid !== S.uid) return;
+  const email = u.email.trim().toLowerCase(), key = u.uid + '|' + email;
+  if (inviteTried === key) return; inviteTried = key;
+  try {
+    const inv = await dbx.get('staffInvites/' + email);
+    if (!inv?.offices?.length) return;
+    const wf = await import('./workflow.js');   // استيراد عند الحاجة (workflow.js يستورد state.js)
+    await wf.acceptInvite(email, inv);
+    toast(t('inv.accepted'));
+  } catch (e){ console.warn('[invite]', e?.code || e); }
+}
+export function checkInvite(){ inviteTried = ''; tryInvite(); }
 function startAdmin(){
   clear('admin');
   subs.admin.push(dbx.watch('staff', [], l => { S.staffList = l; changed(); }, errH('staff list')));
-  subs.admin.push(dbx.watch('staffRequests', [], l => { S.staffReqs = l; changed(); }, errH('requests')));
+  subs.admin.push(dbx.watch('staffInvites', [], l => { S.invites = l; changed(); }, errH('invites')));
   subs.admin.push(dbx.watch('admins', [], l => { S.adminList = l; changed(); }, errH('admins list')));
   // لا اشتراك في كل أغراض كل المكاتب: الأرقام تُجلب بـ getCountFromServer عند فتح «نظرة عامة»
 }

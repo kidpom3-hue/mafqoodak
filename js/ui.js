@@ -3,7 +3,7 @@ import { icon, LOGO, otype, oShort, statusLabel, MODE_LABEL } from './constants.
 import { t } from './i18n.js';
 import { $, $$, esc } from './utils.js';
 import { S, curOffice, modes, homeRoute, unseenCount, markSeen, candidatesFor, rejectedOf, getPhoto, getName, SHARE_RE, OFFICE_RE, full } from './state.js';
-import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice, vJoin } from './views/visitor.js';
+import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice } from './views/visitor.js';
 import { vStaff, updateStaff, vItemForm } from './views/staff.js';
 import { vAdmin, vOfficeForm } from './views/admin.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
@@ -28,7 +28,6 @@ const ROUTES = {
   report: {live: false, v: vReportForm, after: initForm},
   mine: {live: true, v: vMine, after: markSeen},
   office: {live: true, v: vOffice},
-  join: {live: false, v: vJoin},
   staff: {live: true, v: vStaff, update: updateStaff},
   add: {live: false, v: vItemForm, after: initForm},
   admin: {live: true, v: vAdmin},
@@ -127,7 +126,7 @@ function renderMain(){
   if (S.route.name === 'login' && S.uid) S.route = S.route.params.next || {name: homeRoute(), params: {}};
   if (!S.config){ main.innerHTML = S.route.name === 'login' ? vLogin() : S.route.name === 'privacy' ? vPrivacy() : vSetup(); return; }
   // لا مكان مختار (أو لم يصل بعد من قاعدة البيانات): نعرض قائمة الأماكن دون تغيير الصفحة المطلوبة
-  if (!curOffice() && !['pick', 'admin', 'officeForm', 'audit', 'join', 'login', 'privacy', 'a11y'].includes(S.route.name)){ main.innerHTML = vPick(); return; }
+  if (!curOffice() && !['pick', 'admin', 'officeForm', 'audit', 'login', 'privacy', 'a11y'].includes(S.route.name)){ main.innerHTML = vPick(); return; }
   const r = ROUTES[S.route.name] || ROUTES.home;
   main.innerHTML = r.v();
   if (r.update) r.update();
@@ -152,7 +151,7 @@ function renderHeader(){
         ${langBtn}${acct}
       </div>
     </div>
-    ${S.uid && !S.verified ? `<div class="verify-bar" role="status">${icon('lock')}<span>${t('ui.verifyBar')}</span>
+    ${S.uid && !S.verified ? `<div class="verify-bar" role="status">${icon('lock')}<span>${t('ui.verifyBar')} ${t('ui.verifyStaff')}</span>
       <button class="btn sm" data-act="checkVerified">${t('c.verified')}</button><button class="btn sm ghost" data-act="resendVerify">${t('ui.resend')}</button></div>` : ''}
     ${ms.length > 1 ? `<div class="seg modes" role="tablist" aria-label="${t('ui.viewMode')}">${ms.map(m => `<button class="${S.mode === m ? 'on' : ''}" data-act="mode" data-v="${m}" role="tab" aria-selected="${S.mode === m}">${statusLabel(MODE_LABEL[m])}</button>`).join('')}</div>` : ''}`;
   syncHeader();
@@ -170,11 +169,10 @@ function navItems(){
     ];
   }
   if (S.mode === 'admin'){
-    const pend = S.staffReqs.filter(r => r.status === 'pending').length;
     return [
       {r: 'admin', tab: 'overview', l: t('nav.overview'), i: 'grid'},
       {r: 'admin', tab: 'offices', l: t('nav.offices'), i: 'pin'},
-      {r: 'admin', tab: 'people', l: t('nav.people'), i: 'users', b: pend},
+      {r: 'admin', tab: 'people', l: t('nav.people'), i: 'users'},
     ];
   }
   return [

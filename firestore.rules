@@ -26,6 +26,11 @@ service cloud.firestore {
     function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
     // بريد موثّق: حساب Google موثّق تلقائياً، وحساب البريد وكلمة المرور بعد الضغط على رابط التحقق
     function verified() { return signedIn() && request.auth.token.email_verified == true; }
+    // دعوة الموظف: معرّفها البريد بأحرف صغيرة. تُقرأ ببريد الحساب الموثّق نفسه فقط
+    function myEmail() { return request.auth.token.email.lower(); }
+    function hasEmail() { return verified() && ('email' in request.auth.token) && request.auth.token.email is string; }
+    function inviteDoc() { return /databases/$(database)/documents/staffInvites/$(myEmail()); }
+    function invited() { return hasEmail() && exists(inviteDoc()); }
 
     // ── حراسة سلسلة الحيازة على الخادم ──
     // قبول طلب: الغرض متاح قبل العملية، ويصبح محجوزاً لهذا الطلب في العملية نفسها (يمنع قبول طلبين معاً من جهازين)
@@ -328,7 +333,13 @@ service cloud.firestore {
     // سجل العمليات (سلسلة الحيازة): يُضاف إليه فقط، ولا يُعدَّل
     match /logs/{logId} {
       allow read: if isStaffOf(resource.data.officeId);
-      allow create: if isStaffOf(request.resource.data.officeId)
+      allow create: if (isStaffOf(request.resource.data.officeId)
+          // قبول الدعوة: قيد «منح الصلاحية» يكتبه الموظف الجديد عن نفسه في الـ batch نفسه
+          // (قبل العملية ليس موظفاً، وبعدها صار موظفاً في هذا المكتب، والدعوة موجودة قبل حذفها)
+          || (request.resource.data.action == 'perm:grant' && request.resource.data.note == me()
+            && request.resource.data.itemId == '' && invited()
+            && !exists(/databases/$(database)/documents/staff/$(me()))
+            && request.resource.data.officeId in getAfter(/databases/$(database)/documents/staff/$(me())).data.offices))
         && request.resource.data.by == me()
         && request.resource.data.keys().hasOnly(['officeId', 'itemId', 'claimId', 'reportId', 'action', 'by', 'at', 'note'])
         && request.resource.data.action is string && request.resource.data.action.size() <= 40
@@ -342,16 +353,33 @@ service cloud.firestore {
     // صلاحيات الموظفين: يمنحها ويسحبها المالك فقط
     match /staff/{userId} {
       allow read: if signedIn() && (userId == me() || isAdmin());
-      allow write: if isAdmin();
+      // قبول الدعوة: المدعو ينشئ وثيقته بنفسه مرة واحدة، ببريد موثّق ودعوة موجودة، وبمكاتب الدعوة نفسها تماماً
+      allow create: if isAdmin() || (signedIn() && userId == me() && invited()
+        && request.resource.data.keys().hasOnly(['offices', 'approvedAt', 'approvedBy'])
+        && request.resource.data.offices == get(inviteDoc()).data.offices
+        && request.resource.data.approvedBy == get(inviteDoc()).data.createdBy
+        && request.resource.data.approvedAt is number);
+      // أي تعديل آخر أو سحب للصلاحية: للإدارة فقط
+      allow update, delete: if isAdmin();
     }
 
+    // دعوات الموظفين: تكتبها الإدارة فقط (البريد بأحرف صغيرة معرّفاً)، ويقرأ المدعو دعوته فقط ببريده الموثّق
+    match /staffInvites/{email} {
+      allow read: if isAdmin() || (hasEmail() && email == myEmail());
+      allow create, update: if isAdmin() && email == email.lower()
+        && request.resource.data.keys().hasOnly(['offices', 'createdBy', 'createdAt'])
+        && request.resource.data.offices is list && request.resource.data.offices.size() > 0 && request.resource.data.offices.size() <= 50
+        && request.resource.data.createdBy == me() && request.resource.data.createdAt is number;
+      // الإدارة تلغي الدعوة. والمدعو يحذفها فقط في عملية القبول نفسها (وثيقة staff له بمكاتب الدعوة نفسها في الـ batch)
+      allow delete: if isAdmin() || (hasEmail() && email == myEmail()
+        && getAfter(/databases/$(database)/documents/staff/$(me())).data.offices == resource.data.offices);
+    }
+
+    // طلبات الصلاحية القديمة (أُلغيت؛ الموظفون يُدعون الآن من الإدارة): لا إنشاء ولا تعديل إلا للإدارة،
+    // والقراءة والحذف كما كانت حتى ينظّف المالك الطلبات القديمة
     match /staffRequests/{userId} {
       allow read: if signedIn() && (userId == me() || isAdmin());
-      allow create, update: if isAdmin() || (signedIn() && userId == me()
-        && request.resource.data.status == 'pending'
-        && request.resource.data.keys().hasOnly(['offices', 'note', 'status', 'createdAt'])
-        && request.resource.data.offices is list && request.resource.data.offices.size() <= 50
-        && strMax(request.resource.data, 'note', 600));
+      allow create, update: if isAdmin();
       allow delete: if signedIn() && (userId == me() || isAdmin());
     }
   }

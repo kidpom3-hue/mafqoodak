@@ -266,14 +266,19 @@ export async function deleteItem(i){
    السجل يظهر في صفحة «سجل العمليات» (route: audit). */
 const permLog = (b, offices, action, uid) => { for (const o of new Set(offices)) log(b, o, action, {note: uid}); };
 const allOffices = () => S.offices.map(o => o.id);
-// منح الصلاحية من طلب موظف: وثيقة staff + حالة الطلب
-export async function grantStaff(req){
-  const cur = S.staffList.find(s => s.id === req.id);
-  const offices = [...new Set([...(cur?.offices || []), ...(req.offices || [])])];
-  const b = dbx.batch(); const now = Date.now();
-  b.set(dbx.ref('staff/' + req.id), {offices, note: req.note || '', approvedAt: now, approvedBy: S.uid});
-  b.update(dbx.ref('staffRequests/' + req.id), {status: 'approved', decidedAt: now});
-  permLog(b, req.offices || [], 'perm:grant', req.id);
+/* دعوة موظف (بدل «طلب صلاحية موظف»): الإدارة تكتب staffInvites/{البريد بأحرف صغيرة} = {offices, createdBy, createdAt}.
+   عند دخول صاحب البريد ببريد موثّق يقبلها تلقائياً (acceptInvite من state.js). القواعد تفرض كل الشروط */
+export const inviteId = e => String(e || '').trim().toLowerCase();
+export async function inviteStaff(email, offices){
+  await dbx.set('staffInvites/' + inviteId(email), {offices: [...new Set(offices)], createdBy: S.uid, createdAt: Date.now()});
+}
+export async function cancelInvite(email){ await dbx.del('staffInvites/' + email); }
+// قبول الدعوة (يكتبها المدعو نفسه): وثيقة staff بمكاتب الدعوة نفسها تماماً + حذف الدعوة + «منح الصلاحية» في السجل، في batch واحد
+export async function acceptInvite(email, inv){
+  const b = dbx.batch();
+  b.set(dbx.ref('staff/' + S.uid), {offices: inv.offices, approvedAt: Date.now(), approvedBy: inv.createdBy});
+  b.delete(dbx.ref('staffInvites/' + email));
+  permLog(b, inv.offices, 'perm:grant', S.uid);
   await commit(b);
 }
 export async function revokeStaff(uid){
