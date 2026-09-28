@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>دليل التجربة الأولى — مفقودك</title>
+<!-- نسخة للطباعة من docs/TRIAL.md: افتحها في المتصفح واضغط «اطبع» (Ctrl+P). المحتوى نفسه؛ عدّل الملفين معاً -->
+<style>
+  @page { size: A4; margin: 12mm 13mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: #111; font-family: Tahoma, "Segoe UI", "Noto Naskh Arabic", "Geeza Pro", Arial, sans-serif; font-size: 11pt; line-height: 1.5; }
+  .page { max-width: 182mm; margin: 0 auto; padding: 8mm 0; }
+  h1 { font-size: 18pt; margin: 0 0 2mm; }
+  h2 { font-size: 13pt; margin: 4.5mm 0 1.5mm; padding-bottom: 1mm; border-bottom: 1.5pt solid #111; break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 3mm 0 1mm; break-after: avoid; }
+  p { margin: 1mm 0; }
+  ol, ul { margin: 1mm 0; padding-inline-start: 7mm; }
+  li { margin: .6mm 0; }
+  .meta { margin: 0 0 3mm; }
+  .note { border: 1pt solid #111; border-radius: 2mm; padding: 2mm 3mm; margin: 2mm 0; }
+  .tasks { list-style: none; padding: 0; margin: 0; }
+  .tasks li { margin: 0 0 1.6mm; break-inside: avoid; }
+  .tasks .box { display: inline-block; width: 4.2mm; height: 4.2mm; border: 1.2pt solid #111; vertical-align: -0.7mm; margin-inline-end: 2mm; }
+  .tasks .ask { display: block; color: #333; font-size: 10.5pt; margin-top: .5mm; }
+  .line { display: inline-block; border-bottom: 1pt dotted #555; min-width: 90mm; height: 4mm; vertical-align: bottom; }
+  table { width: 100%; border-collapse: collapse; margin: 2mm 0; break-inside: avoid; }
+  th, td { border: 1pt solid #111; padding: 1.5mm 2mm; text-align: start; vertical-align: top; }
+  th { background: #eee; font-weight: 700; }
+  .log td { height: 7.5mm; }
+  .log th:first-child { width: 22mm; }
+  .log th:nth-child(2), .log th:nth-child(3), .log th:nth-child(4) { width: 24mm; }
+  .mins { width: 36mm; }
+  .q li { margin-bottom: 2.2mm; }
+  .break { break-before: page; }
+  b.btn { white-space: nowrap; }
+  .no-print { position: fixed; inset-inline-start: 12px; top: 12px; font: inherit; padding: 8px 16px; border: 1px solid #111; border-radius: 8px; background: #fff; cursor: pointer; }
+  @media print { .no-print { display: none; } .page { padding: 0; } }
+</style>
+</head>
+<body>
+<button class="no-print" onclick="print()">اطبع</button>
+<div class="page">
+
+<h1>دليل التجربة الأولى: مفقودك في الكلية التقنية بالأحساء</h1>
+<p class="meta">
+  <b>المدة:</b> أسبوعان.
+  <b>المشاركون:</b> موظف مكتب المفقودات، وطالبان أو ثلاثة.<br>
+  <b>الهدف:</b> أن نعرف ما الذي ينفع، وما الذي يربك، وما الذي ينقص. <b>لا توجد إجابة خاطئة.</b>
+</p>
+
+<h2>1) قبل البدء (للمالك)</h2>
+<h3>أ. إضافة الموظف</h3>
+<ol>
+  <li>أرسل رابط التطبيق للموظف.</li>
+  <li>يسجّل دخوله، ويتأكد أن المكان المختار في أعلى الصفحة هو «تقنية الأحساء».</li>
+  <li>يفتح <b class="btn">«المكتب»</b> ← <b class="btn">«اطلب صلاحية موظف»</b>، ويختار المكتب، ويكتب اسمه ووظيفته، ثم يضغط <b class="btn">«أرسل الطلب»</b>.</li>
+  <li>أنت: اختر <b class="btn">«الإدارة»</b> أعلى الصفحة ← <b class="btn">«الصلاحيات»</b> ← <b class="btn">«طلبات الصلاحية»</b> ← <b class="btn">«منح الصلاحية»</b>.</li>
+  <li>للتأكد: يظهر للموظف أعلى الصفحة زر <b class="btn">«موظف المكتب»</b>. إذا ضغطه تظهر <b>«لوحة مكتب المفقودات»</b> وتحتها «المستودع» و«الاستلام» و«البلاغات».</li>
+</ol>
+<h3>ب. ملصق المكتب (QR)</h3>
+<ul>
+  <li>من <b>«لوحة مكتب المفقودات»</b>: على الجوال <b class="btn">«المزيد»</b> ← <b class="btn">«ملصق المكتب»</b>، وعلى الكمبيوتر زر <b class="btn">«ملصق المكتب»</b> مباشرة.</li>
+  <li>أو من <b class="btn">«الإدارة»</b> ← <b class="btn">«المواقع»</b> ← <b class="btn">«ملصق المكتب»</b> تحت اسم الكلية.</li>
+  <li>اضغط <b class="btn">«اطبع»</b>، ثم علّق الملصق عند المكتب وقرب المداخل.</li>
+</ul>
+<h3>ج. حذف البيانات التوضيحية (المعلّمة بـ«مثال»)</h3>
+<ul>
+  <li><b class="btn">«الإدارة»</b> ← <b class="btn">«نظرة عامة»</b> ← <b class="btn">«حذف البيانات التوضيحية»</b>، ثم أكّد.</li>
+  <li>لا يظهر هذا الزر إلا إذا وُجدت أغراض توضيحية. إذا لم يظهر فلا يوجد شيء لحذفه.</li>
+</ul>
+<p class="note"><b>تنبيه:</b> الموظف لا يستطيع قبول طلب أرسله هو بنفسه. لتجربة الطلبات، اجعل الطالب يرسل الطلب والموظف يراجعه.</p>
+
+<h2>2) مهام الموظف (علّم ☐ عند الإنجاز)</h2>
+<ol class="tasks">
+  <li><span class="box"></span>1. <b>أضف غرضاً بصورة:</b> «أضف غرضاً» ← «اختر صورة» ← اختر «كيف تظهر الصورة للزوار؟» (واضحة / مموّهة / مخفية) ← «سجّل الغرض».
+    <span class="ask">هل كانت واضحة؟ وماذا أربكك؟ <span class="line"></span></span></li>
+  <li><span class="box"></span>2. <b>أضف غرضاً بلا صورة</b> (مثلاً مفتاح أو بطاقة).
+    <span class="ask">هل كانت واضحة؟ وماذا أربكك؟ <span class="line"></span></span></li>
+  <li><span class="box"></span>3. <b>اطبع ملصق QR لغرض:</b> افتح الغرض ← «ملصق QR» ← «اطبع». أو «المزيد» ← «ملصقات QR» لعدة أغراض.
+    <span class="ask">هل كانت واضحة؟ وماذا أربكك؟ <span class="line"></span></span></li>
+  <li><span class="box"></span>4. <b>راجع طلب استلام:</b> «الاستلام» ← افتح الطلب ← قارن «إجابة صاحب الطلب» مع «المسجّل في المكتب».
+    <span class="ask">هل كانت واضحة؟ وماذا أربكك؟ <span class="line"></span></span></li>
+  <li><span class="box"></span>5. <b>اسأل سؤال تحقق:</b> في الطلب ← «اسأل سؤال تحقق» ← «أرسل السؤال»، ثم انتظر إجابة الطالب.
+    <span class="ask">هل كانت واضحة؟ وماذا أربكك؟ <span class="line"></span></span></li>
+  <li><span class="box"></span>6. <b>اقبل طلباً ثم سلّم الغرض:</b> «قبول» ← عندما يحضر الطالب: «تحقق من الرمز وسلّم» ← اكتب «رمز الاستلام» الذي في جواله ← طابق بطاقته ← «طابقتُ البطاقة» ← «تحقق وسلّم».
+    <span class="ask">هل كانت واضحة؟ وماذا أربكك؟ <span class="line"></span></span></li>
+  <li><span class="box"></span>7. <b>ارفض طلباً:</b> «رفض» ← اكتب السبب (يظهر للطالب) ← «رفض الطلب».
+    <span class="ask">هل كانت واضحة؟ وماذا أربكك؟ <span class="line"></span></span></li>
+  <li><span class="box"></span>8. <b>تعامل مع بلاغ فقدان:</b> «البلاغات» ← انظر «مرشّحون من المستودع» ← «رشّح» للغرض المناسب.
+    <span class="ask">هل كانت واضحة؟ وماذا أربكك؟ <span class="line"></span></span></li>
+  <li><span class="box"></span>9. <b>استلم غرضاً من طالب وجده:</b> «البلاغات» ← «إشعارات التسليم من الواجدين» ← «استلمته — سجّله في المستودع».
+    <span class="ask">هل كانت واضحة؟ وماذا أربكك؟ <span class="line"></span></span></li>
+  <li><span class="box"></span>10. <b>افتح الإحصاءات:</b> «المزيد» ← «الإحصاءات».
+    <span class="ask">هل كانت واضحة؟ وماذا أربكك؟ <span class="line"></span></span></li>
+</ol>
+
+<h2>3) مهام الطالب (من الجوال)</h2>
+<table>
+  <thead><tr><th>#</th><th>المهمة</th><th class="mins">كم دقيقة أخذت منك تقريباً؟</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><b>ابحث عن غرض:</b> «تصفّح المفقودات» واكتب في البحث، مثل «محفظة».</td><td>...... دقيقة</td></tr>
+    <tr><td>2</td><td><b>اطلب استلام غرض:</b> افتح الغرض ← «هذا غرضي — اطلب استلامه» ← عبّئ ← «أرسل الطلب».</td><td>...... دقيقة</td></tr>
+    <tr><td>3</td><td><b>سجّل بلاغ فقدان:</b> «فقدت غرضاً» ← «سجّل البلاغ وابحث عن تطابق».</td><td>...... دقيقة</td></tr>
+    <tr><td>4</td><td><b>تابع «طلباتي»:</b> اقرأ حالة طلبك، وأجب إن سألك المكتب، وانظر «رمز الاستلام» بعد القبول.</td><td>...... دقيقة</td></tr>
+    <tr><td>5</td><td><b>«وجدت غرضاً»:</b> «سجّل ما وجدته» ← عبّئ ← «أرسل الإشعار» ← سلّم الغرض للمكتب.</td><td>...... دقيقة</td></tr>
+  </tbody>
+</table>
+<p>ملاحظات الطالب: <span class="line" style="min-width:140mm"></span></p>
+
+<h2>4) ماذا نسجّل يومياً (يعبّئه الموظف بخط اليد)</h2>
+<table class="log">
+  <thead><tr><th>التاريخ</th><th>الأغراض المضافة</th><th>الطلبات</th><th>التسليمات</th><th>مشكلة أو اقتراح</th></tr></thead>
+  <tbody>
+    <tr><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td></tr>
+  </tbody>
+</table>
+
+<h2>5) أسئلة نهاية الأسبوعين</h2>
+<ol class="q">
+  <li>هل التطبيق أسرع من طريقتكم الحالية (الدفتر أو غيره)؟ <span class="line"></span></li>
+  <li>ما الشيء الذي لم تستخدمه أبداً؟ <span class="line"></span></li>
+  <li>ما الشيء الذي احتجته ولم تجده؟ <span class="line"></span></li>
+  <li>ما أكثر شيء أربكك أو أخذ وقتاً؟ <span class="line"></span></li>
+  <li>هل فهم الطلاب طريقة الاستلام برمز الاستلام؟ <span class="line"></span></li>
+  <li>هل ستستمر في استخدامه؟ ولماذا؟ <span class="line"></span></li>
+</ol>
+
+<h2>6) قاعدة للمالك خلال الأسبوعين</h2>
+<ul>
+  <li><b>لا تُضاف ميزات جديدة.</b></li>
+  <li><b>تُصلح فقط الأعطال التي تمنع العمل</b> (مثل: لا يُحفظ الغرض، أو لا يصل الطلب).</li>
+  <li><b>تُجمع كل الملاحظات كما هي</b>، من هذه الورقة ومن كلام الموظف والطلاب.</li>
+  <li><b>بعد الأسبوعين</b> تُرتّب الملاحظات حسب عدد تكرارها، فتصبح هي <b>المرحلة H</b>.</li>
+</ul>
+
+</div>
+</body>
+</html>
