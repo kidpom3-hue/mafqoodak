@@ -19,7 +19,13 @@ import { SETTINGS } from './config.js';
 import { sampleItems } from './sample-data.js';
 
 /* ---------- أدوات النماذج ---------- */
-function formErr(form, msg){ const e = form.querySelector('.form-err'); if (!e) return; e.textContent = msg; e.hidden = !msg; if (msg) e.scrollIntoView({block: 'center', behavior: 'smooth'}); }
+// field: اسم الخانة المسؤولة عن الخطأ (H1): يُفتح القسم المطوي الذي فيه (<details>) وينتقل التركيز إليها
+function formErr(form, msg, field){
+  const e = form.querySelector('.form-err'); if (!e) return; e.textContent = msg; e.hidden = !msg; if (!msg) return;
+  const el = field && form.querySelector(`[name="${field}"]`);
+  if (el){ const d = el.closest('details'); if (d) d.open = true; el.focus({preventScroll: true}); el.scrollIntoView({block: 'center', behavior: 'smooth'}); }
+  else e.scrollIntoView({block: 'center', behavior: 'smooth'});
+}
 function busy(form, on){ const b = form.querySelector('button[type=submit]'); if (b) b.disabled = on; }
 
 export function onCatChange(form, catId, sub){
@@ -70,13 +76,13 @@ async function onPhoto(input){
 /* إجابات أسئلة التصنيف من النموذج: القيم غير الفارغة فقط (مُطبَّعة كما تُحفظ)، وأول سؤال إجباري ناقص.
    mode: 'item' نموذج الموظف · 'claim' طلب الاستلام (بلا أسئلة as) · 'report' البلاغ (كلها اختيارية) */
 function readDetails(form, catId, mode){
-  const fd = new FormData(form), details = {}; let missing = '';
+  const fd = new FormData(form), details = {}; let missing = '', missingKey = '';
   for (const d of claimOf(catId).details){
     if (mode === 'claim' && d.as) continue;
     const v = detailValue(d, fd.get('d_' + d.k));
-    if (v) details[d.k] = v; else if (!missing && detailReq(d, mode)) missing = dfLabel(catId, d.k);
+    if (v) details[d.k] = v; else if (!missing && detailReq(d, mode)){ missing = dfLabel(catId, d.k); missingKey = 'd_' + d.k; }
   }
-  return {details, missing};
+  return {details, missing, missingKey};
 }
 
 /* ---------- «تراجع» (G5) ----------
@@ -233,16 +239,16 @@ async function submitForm(form){
     if (!i || !ACTIVE.includes(i.status)) return formErr(form, t('cl.unavailable'));
     if (!S.verified) return formErr(form, t('a.verifyFirst'));
     // هوية صاحب الطلب: الاسم كما في البطاقة وآخر 4 أرقام منها (يطابقها الموظف عند التسليم)
-    if (val('claimantName').length < 3) return formErr(form, t('a.needClaimantName'));
+    if (val('claimantName').length < 3) return formErr(form, t('a.needClaimantName'), 'claimantName');
     const last4 = latinDigits(val('idLast4'));
-    if (!/^\d{4}$/.test(last4)) return formErr(form, t('a.needLast4'));
+    if (!/^\d{4}$/.test(last4)) return formErr(form, t('a.needLast4'), 'idLast4');
     // أسئلة التصنيف: الإجبارية منها (مثل المبلغ للنقود)، والماركة للجوالات
-    const q = claimOf(i.cat), {details, missing} = readDetails(form, i.cat, 'claim');
-    if (q.req.includes('brand') && !val('brand')) return formErr(form, t('a.needDetail', {label: t('if.brand')}));
-    if (missing) return formErr(form, t('a.needDetail', {label: missing}));
+    const q = claimOf(i.cat), {details, missing, missingKey} = readDetails(form, i.cat, 'claim');
+    if (q.req.includes('brand') && !val('brand')) return formErr(form, t('a.needDetail', {label: t('if.brand')}), 'brand');
+    if (missing) return formErr(form, t('a.needDetail', {label: missing}), missingKey);
     // الإثبات الحر: إجباري إلا في التصنيفات التي فيها سؤال إجباري («تفاصيل أخرى تثبت أنه لك»)
-    if (!claimHasRequired(i.cat) && val('proof').length < 15) return formErr(form, t('a.proofShort'));
-    if (!fd.get('pledge')) return formErr(form, t('a.needPledge'));
+    if (!claimHasRequired(i.cat) && val('proof').length < 15) return formErr(form, t('a.proofShort'), 'proof');
+    if (!fd.get('pledge')) return formErr(form, t('a.needPledge'), 'pledge');
     if (ed){
       // الحقول التي يعدّلها صاحب الطلب فقط (القواعد لا تقبل غيرها) + وقت التعديل
       busy(form, true);
@@ -287,7 +293,7 @@ async function submitForm(form){
     // G3: اسم واضح: 3 أحرف على الأقل بعد حذف المسافات
     if (val('title').replace(/\s+/g, '').length < 3) return formErr(form, t('a.titleShort'));
     // الموظف يسجّل إجابات الأسئلة الإجبارية للتصنيف (مثل المبلغ للنقود) ليقارنها بما يقوله صاحب الطلب
-    if (kind === 'item'){ const {missing} = readDetails(form, catId, 'item'); if (missing) return formErr(form, t('a.needDetail', {label: missing})); }
+    if (kind === 'item'){ const {missing, missingKey} = readDetails(form, catId, 'item'); if (missing) return formErr(form, t('a.needDetail', {label: missing}), missingKey); }
     const sens = cat(catId).sensitive;
     busy(form, true);
 
@@ -760,6 +766,13 @@ const ACT = {
     });
   },
   editItem(el){ go('add', {id: el.dataset.id}); },
+  // H2: «المزيد» في لوحة الموظف على الجوال: الملصقات وملصق المكتب والإحصاءات في النافذة السفلية
+  staffMore(){
+    openSheet(`<h2>${t('st.moreTitle')}</h2><div class="sheet-list">
+      <button class="btn ghost block" data-act="labelsMenu">${icon('qr')}${t('lb.menu')}</button>
+      <button class="btn ghost block" data-act="poster">${icon('print')}${t('po.btn')}</button>
+      <button class="btn ghost block" data-act="stats">${icon('chart')}${t('sx.btn')}</button></div>`);
+  },
   // تغيير الحالة يدوياً: متاح، أو سُلّم مباشرة (بملاحظة تسليم)، أو مؤرشف. «محجوز» يأتي من قبول طلب فقط
   itemStatus(el){
     const i = item(el.dataset.id); if (!i) return;
@@ -852,6 +865,7 @@ const ACT = {
   // تعبئة طلب الاستلام من بلاغ المستخدم المفتوح
   useReport(el){
     const r = S.myReports.find(x => x.id === el.dataset.id); const f = el.closest('form'); if (!r || !f) return;
+    const more = f.querySelector('#cl-more'); if (more) more.open = true;   // H1: ما عُبّئ من البلاغ يظهر
     const cc = f.querySelector(`input[name=color][value="${COLORS.some(c => c.id === r.color) ? r.color : ''}"]`); if (cc) cc.checked = true;
     const sp = f.querySelector('[name=spot]'); if (sp && [...sp.options].some(o => o.value === r.spot)){ sp.value = r.spot; onSpotChange(f, r.spot); }
     if (r.bldg) f.querySelector('[name=bldg]').value = r.bldg;

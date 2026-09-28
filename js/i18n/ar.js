@@ -280,7 +280,7 @@ export const AR = {
   "st.sOpenR": "بلاغات فقدان مفتوحة",
   "st.overKeep": "تجاوز مدة الحفظ",
   "st.sLate": "انتهت مهلة استلامه",
-  "st.searchPh": "ابحث برقم القيد أو الاسم…",
+  "st.searchPh": "ابحث برقم القيد أو الاسم",
   "st.searchAria": "بحث في المستودع",
   "st.status": "الحالة",
   "st.fActive": "المتاح والمحجوز",
@@ -1189,4 +1189,7 @@ export const AR = {
   "ctl.pickupBy": "آخر موعد للاستلام",
   "ctl.done": "سُلّم",
   "c.listSep": "، ",
+  "cl.more": "تفاصيل إضافية تزيد فرصة قبول طلبك",
+  "st.more": "المزيد",
+  "st.moreTitle": "أدوات المكتب",
 };

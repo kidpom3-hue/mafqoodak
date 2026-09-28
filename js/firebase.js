@@ -1,5 +1,5 @@
 // تهيئة Firebase — يُحمَّل الـ SDK مباشرة من CDN بدون أي أدوات بناء.
-// لتحديث نسخة Firebase غيّر الرقم 12.19.0 في الأسطر الثلاثة.
+// لتحديث نسخة Firebase غيّر الرقم 12.19.0 في الأسطر الأربعة (وفي js/ai.js وروابط modulepreload في index.html).
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
@@ -10,12 +10,26 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence,
   collection, doc, query, where, onSnapshot, getDoc, getDocs, getCountFromServer, setDoc, updateDoc, deleteDoc, writeBatch, deleteField, arrayUnion,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
-import { firebaseConfig } from './config.js';
+// App Check (H4): يثبت أن الطلبات تأتي من تطبيقنا على موقعنا لا من سكربت آخر يستخدم المفاتيح العامة
+import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app-check.js';
+import { firebaseConfig, SETTINGS } from './config.js';
 import { LANG } from './i18n.js';
 
 export const configured = !Object.values(firebaseConfig).some(v => String(v).includes('PASTE_'));
 
 export const app = configured ? initializeApp(firebaseConfig) : null;
+/* App Check: يُفعَّل فقط إذا وُضع siteKey في SETTINGS.appCheck (config.js)، وإلا يعمل التطبيق كما كان.
+   يُستدعى هنا قبل تهيئة Firestore والدخول والذكاء الاصطناعي، فتحمل كل الطلبات رمز التحقق من أولها.
+   الإلزام (Enforce) لا يُفعَّل من هنا: يفعّله المالك يدوياً من Firebase Console بعد التأكد (انظر README) */
+export const appCheck = (() => {
+  const c = SETTINGS.appCheck || {};
+  if (!app || !c.siteKey) return null;
+  try {
+    // وضع التجربة: يطبع رمز تصحيح في وحدة التحكم يُسجَّل في Firebase Console (للتجربة على localhost فقط)
+    if (c.debug) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    return initializeAppCheck(app, {provider: new ReCaptchaV3Provider(c.siteKey), isTokenAutoRefreshEnabled: true});
+  } catch (e){ console.warn(e); return null; }
+})();
 export const auth = app ? getAuth(app) : null;
 if (auth) auth.languageCode = LANG;   // لغة رسائل Firebase تتبع لغة الواجهة
 

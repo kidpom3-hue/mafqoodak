@@ -137,7 +137,8 @@ function renderHeader(){
   const o = curOffice(); const ms = S.config ? modes() : ['visitor'];
   const acct = !S.configured || !S.authReady ? ''
     : S.uid ? `<button class="avatar-btn" data-act="account" aria-label="${t('ui.account')}">${safeAvatar(S.me?.photo) ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span>${esc((S.me?.name || '?').trim().charAt(0))}</span>`}</button>`
-    : `<button class="btn sm ghost" data-act="login">${icon('users')}${t('ui.signIn')}</button>`;
+    // H3: تحت 400px يصبح زر الدخول أيقونة فقط (النص مخفي بصرياً ويبقى اسمه في aria-label)، فيتسع اسم المكتب
+    : `<button class="btn sm ghost login-btn" data-act="login" aria-label="${t('ui.signIn')}">${icon('users')}<span class="login-txt">${t('ui.signIn')}</span></button>`;
   // زر اللغة: يعرض اللغة الأخرى («EN» في العربية، «عربي» في الإنجليزية)
   const langBtn = `<button class="lang-btn" data-act="lang" lang="${t('lang.otherCode')}" aria-label="${t('lang.switch')}">${t('lang.other')}</button>`;
   $('#hdr').innerHTML = `<div class="top-row">

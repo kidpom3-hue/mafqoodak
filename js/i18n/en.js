@@ -280,7 +280,7 @@ export const EN = {
   "st.sOpenR": "Open lost reports",
   "st.overKeep": "Past retention",
   "st.sLate": "Pickup overdue",
-  "st.searchPh": "Search by ref. or name…",
+  "st.searchPh": "Search by ref or name",
   "st.searchAria": "Search the store",
   "st.status": "Status",
   "st.fActive": "Available & reserved",
@@ -1189,4 +1189,7 @@ export const EN = {
   "ctl.pickupBy": "Pickup deadline",
   "ctl.done": "Handed over",
   "c.listSep": ", ",
+  "cl.more": "More details that improve your chances",
+  "st.more": "More",
+  "st.moreTitle": "Office tools",
 };
