@@ -15,6 +15,8 @@ const list = key => t(key).split('|').filter(Boolean);
 export const reviewDaysOf = o => Math.max(1, Math.min(30, Number(o?.reviewDays) || 2));
 const pickupDaysOf = o => Math.max(1, Math.min(60, Number(o?.pickupDays) || 7));
 
+// المصطلحات الموحّدة في كل الواجهة (المرحلة F): اسم واحد لكل مفهوم. كانت في صفحة المكتب، ومكانها الآن فهرس الخدمات (مطوية)
+const TERMS = ['report', 'claim', 'handin', 'ref', 'reqNo', 'code'];
 function serviceIndex(){
   return `<div class="wrap" data-view="service">${S.hist.length ? backBtn() : ''}
     <section class="hero"><div class="hero-kicker">${icon('grid')}${t('svc.kicker')}</div><h1 class="hero-title">${t('svc.indexTitle')}</h1>
@@ -22,6 +24,8 @@ function serviceIndex(){
     <div class="office-list">${SERVICES.map(id => `<button class="office-card" data-act="nav" data-r="service" data-id="${id}">
       <span class="oi">${icon(id === 'claim' ? 'shield' : id === 'report' ? 'bell' : 'tag')}</span>
       <span class="grow"><b>${t('svc.' + id + '.name')}</b><span class="meta">${t('svc.' + id + '.short')}</span></span>${icon('fwd')}</button>`).join('')}</div>
+    <div class="faq"><details class="terms-box"><summary>${t('term.title')}${icon('chev')}</summary>
+      <dl class="facts terms">${TERMS.map(k => `<dt>${t('term.' + k)}</dt><dd>${t('term.' + k + '.d')}</dd>`).join('')}</dl></details></div>
   </div>`;
 }
 export function vService(){
