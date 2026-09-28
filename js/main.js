@@ -1,4 +1,6 @@
 // نقطة البداية: تربط الواجهة بالبيانات وتبدأ التطبيق
+// G6: التطبيق يدير مكان التمرير بنفسه عند الرجوع (ui.js)، فلا يتدخّل المتصفح ويعيده مكاناً آخر
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 import { S, start, onChange, onReset, setOffice, SHARE_RE, OFFICE_RE } from './state.js';
 import { renderAll, refresh, go } from './ui.js';
 import { bindEvents } from './actions.js';

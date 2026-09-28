@@ -450,7 +450,8 @@ h1,h2,h3,p,dd,.row-title,.card-body h3,.hero-title{overflow-wrap:anywhere}
 .thumb>svg{width:48px;height:48px;padding:11px;border-radius:50%;background:var(--surface);color:var(--primary);opacity:1;stroke-width:1.6;box-shadow:0 2px 8px rgba(0,0,0,.06)}
 .row-thumb>svg{color:var(--primary)}
 /* D3: صورة التفاصيل أقصر حين لا توجد صورة */
-.detail-photo:not(:has(img:not([hidden]))){aspect-ratio:16/7}
+/* G6: الارتفاع يُحجز من البداية: بلا صورة أصلاً = أقصر، ومع صورة (ولو لم تُحمَّل بعد) = 4/3، فلا يقفز المكان بعد تحميلها */
+.detail-photo:not(:has(img)){aspect-ratio:16/7}
 .detail-photo>svg{width:48px;height:48px;padding:11px;border-radius:50%;background:var(--surface);color:var(--primary)}
 /* G4: الوضع الداكن فقط: صور بطاقات التصفح والرئيسية أخفت قليلاً حتى لا تبهر العين،
    وصفحة الغرض وصفحات الموظف بسطوعها الكامل. وبلا ظل للأيقونة في الداكن */
