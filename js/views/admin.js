@@ -1,9 +1,9 @@
 // صفحات الإدارة: نظرة عامة، المواقع، الصلاحيات، نموذج الموقع
 import { icon, OFFICE_TYPES, otype, otypeName, oName, oCity } from '../constants.js';
-import { esc, relTime } from '../utils.js';
+import { esc } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, loadAdminCounts } from '../state.js';
-import { backBtn, person } from './common.js';
+import { backBtn, person, whenLine } from './common.js';
 
 /* ---------- admin ---------- */
 export function vAdmin(){
@@ -20,7 +20,7 @@ export function adminOverview(){
   loadAdminCounts();
   const C = S.counts.admin, samples = S.counts.samples || 0;
   const sum = k => C ? Object.values(C).reduce((a, x) => a + (x[k] || 0), 0) : '…';
-  const pendReq = S.staffReqs.filter(r => r.status === 'pending').length;
+  const pendInv = S.invites.length;
   // مكاتب نشطة بلا أسماء إنجليزية: الزائر الإنجليزي يرى النص العربي
   const noEn = S.offices.filter(o => o.active !== false && (!o.nameEn || !o.placeEn || !o.hoursEn || ((o.spots || []).length && !(o.spotsEn || []).some(Boolean))));
   return `
@@ -33,7 +33,7 @@ export function adminOverview(){
       <div class="stat"><b>${C ? sum('available') + sum('reserved') : '…'}</b><span>${t('adm.sStored')}</span></div>
       <div class="stat"><b>${sum('returned')}</b><span>${t('home.statReturned')}</span></div>
       <div class="stat"><b>${S.staffList.length}</b><span>${t('adm.sStaff')}</span></div>
-      <div class="stat ${pendReq ? 'hot' : ''}"><b>${pendReq}</b><span>${t('adm.sReqs')}</span></div>
+      <div class="stat"><b>${pendInv}</b><span>${t('inv.pending')}</span></div>
     </div>
     <div class="panel"><div class="section-title">${t('adm.byOffice')}</div>
       <div class="table-wrap"><table class="t"><thead><tr><th scope="col">${t('adm.colOffice')}</th><th scope="col">${t('adm.colAvail')}</th><th scope="col">${t('adm.colRes')}</th><th scope="col">${t('adm.colRet')}</th><th scope="col">${t('adm.colRate')}</th></tr></thead><tbody>
@@ -63,7 +63,6 @@ export function adminOffices(){
       </div>`; }).join('') || `<div class="empty">${icon('pin')}<b>${t('adm.noOffices')}</b></div>`}</div>`;
 }
 export function adminPeople(){
-  const reqs = S.staffReqs.filter(r => r.status === 'pending');
   const oname = id => oName(S.offices.find(o => o.id === id)) || id;
   const owner = S.config?.ownerUid, isAdm = uid => S.adminList.some(a => a.id === uid);
   // بريد صاحب الحساب (يقرؤه المالك من users)، مع تحذير إن كان خارج نطاق الموظفين (SETTINGS.staffEmailDomain)
@@ -73,13 +72,25 @@ export function adminPeople(){
     : `<button class="btn sm ghost" data-act="makeAdmin" data-id="${esc(uid)}">${icon('shield')}${t('adm.makeAdmin')}</button>`;
   // مديرون ليست لهم صلاحية موظف في مكتب محدد
   const admOnly = S.adminList.filter(a => !S.staffList.some(s => s.id === a.id));
+  // دعوة موظف (بدل طلبات الصلاحية): البريد والمكاتب، وتُقبل تلقائياً حين يدخل صاحب البريد ببريد موثّق
+  const act = S.offices.filter(o => o.active !== false);
+  const invites = S.invites.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return `
-    <div class="section-title">${t('adm.reqs')} ${reqs.length ? `<span class="count">${reqs.length}</span>` : ''}</div>
-    ${reqs.length ? `<div class="list">${reqs.map(r => `<div class="box">
-      <div class="box-head"><div>${person(r.id)}${email(r.id)}<span class="meta">${esc(r.note || '')}</span></div><span class="meta">${relTime(r.createdAt)}</span></div>
-      <div class="tags">${(r.offices || []).map(id => `<span class="tagchip">${esc(oname(id))}</span>`).join('')}</div>
-      <div class="btn-row"><button class="btn sm" data-act="approveReq" data-id="${esc(r.id)}">${icon('check')}${t('adm.grant')}</button><button class="btn sm danger" data-act="rejectReq" data-id="${esc(r.id)}">${icon('x')}${t('c.reject')}</button></div>
-    </div>`).join('')}</div>` : `<div class="note">${icon('info')}<span>${t('adm.reqHow')}</span></div>`}
+    <div class="section-title">${icon('plus')}${t('inv.title')}</div>
+    <form data-form="invite" class="panel" novalidate>
+      <div class="field"><label for="inv-email">${t('inv.email')}</label><input id="inv-email" name="email" type="email" class="input" dir="ltr" autocomplete="off" required placeholder="name@example.com"></div>
+      <div class="field" role="group" aria-labelledby="inv-off"><span class="label" id="inv-off">${t('inv.offices')}</span>
+        ${act.map(o => `<label class="check"><input type="checkbox" name="offices" value="${esc(o.id)}" ${o.id === S.officeId || act.length === 1 ? 'checked' : ''}><span>${esc(oName(o))}</span></label>`).join('')}</div>
+      <p class="hint">${t('inv.hint')}</p>
+      <div class="form-err" hidden></div>
+      <button class="btn" type="submit" style="align-self:flex-start">${icon('check')}${t('inv.send')}</button>
+    </form>
+    <div class="section-title">${t('inv.pending')} ${invites.length ? `<span class="count">${invites.length}</span>` : ''}</div>
+    ${invites.length ? `<div class="list">${invites.map(v => `<div class="box">
+      <div class="box-head"><div><b dir="ltr">${esc(v.id)}</b>${whenLine('c.sentAt', v.createdAt)}</div><span class="pill warn">${t('inv.waiting')}</span></div>
+      <div class="tags">${(v.offices || []).map(id => `<span class="tagchip">${esc(oname(id))}</span>`).join('')}</div>
+      <div class="btn-row"><button class="btn sm danger" data-act="cancelInvite" data-id="${esc(v.id)}">${icon('x')}${t('inv.cancel')}</button></div>
+    </div>`).join('')}</div>` : `<p class="muted">${t('inv.none')}</p>`}
     <div class="section-title">${t('adm.current')}</div>
     <div class="note">${icon('shield')}<span>${t('adm.ownerNote')}</span></div>
     ${S.staffList.length ? `<div class="list">${S.staffList.map(s => `<div class="box">

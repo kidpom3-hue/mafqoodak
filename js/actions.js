@@ -3,7 +3,7 @@ import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, 
 import { t, tp, tAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
 import { loadStats, exportCsv } from './stats.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch } from './state.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion,
@@ -394,13 +394,14 @@ async function submitForm(form){
     return;
   }
 
-  if (kind === 'join'){
-    const offices = fd.getAll('offices').map(String);
+  // دعوة موظف (الإدارة): البريد بأحرف صغيرة معرّفاً، ومكتب واحد على الأقل
+  if (kind === 'invite'){
+    const email = val('email').toLowerCase(), offices = fd.getAll('offices').map(String);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return formErr(form, t('inv.badEmail'), 'email');
     if (!offices.length) return formErr(form, t('a.needOffice'));
-    if (!val('note')) return formErr(form, t('a.needNote'));
     busy(form, true);
-    const ok = await write(() => dbx.set('staffRequests/' + S.uid, {offices, note: val('note').slice(0, 120), status: 'pending', createdAt: Date.now()}), t('a.reqSent'));
-    busy(form, false); if (ok) go('office', {}, false);
+    const ok = await write(() => wf.inviteStaff(email, offices), t('inv.sent'));
+    busy(form, false); if (ok) form.reset();
     return;
   }
 
@@ -887,6 +888,7 @@ const ACT = {
     try { await u.reload(); if (auth.currentUser.emailVerified) await auth.currentUser.getIdToken(true); } catch (e){ console.warn(e); }
     S.verified = !!auth.currentUser?.emailVerified;
     toast(S.verified ? t('a.verifiedOk') : t('a.notVerified', {btn: t('c.verified')}));
+    if (S.verified) checkInvite();   // دعوة موظف تنتظر توثيق البريد: تُقبل الآن
     renderAll();
   },
   reject(el){
@@ -988,16 +990,13 @@ const ACT = {
   newOffice(){ go('officeForm', {}); },
   editOffice(el){ go('officeForm', {id: el.dataset.id, en: el.dataset.en === '1'}); },
   async toggleOffice(el){ const o = S.offices.find(x => x.id === el.dataset.id); if (o) await write(() => dbx.update('offices/' + o.id, {active: o.active === false})); },
-  // منح الصلاحية وسحبها والإدارة: batch واحد مع قيد في السجل لكل مكتب معني (workflow.js)
-  async approveReq(el){
-    const r = S.staffReqs.find(x => x.id === el.dataset.id); if (!r) return;
-    await write(() => wf.grantStaff(r), t('a.granted'));
-  },
+  // سحب الصلاحية والإدارة: batch واحد مع قيد في السجل لكل مكتب معني (workflow.js)
+  cancelInvite(el){ confirmSheet(t('inv.cancelQ'), t('inv.cancelBody'), t('inv.cancel'), () => write(() => wf.cancelInvite(el.dataset.id), t('inv.cancelled'))); },
+
   makeAdmin(el){ confirmSheet(t('a.makeAdminQ'), t('a.makeAdminBody'), t('adm.makeAdmin'), () => write(() => wf.setAdmin(el.dataset.id, true), t('a.adminAdded')), false); },
   unAdmin(el){ confirmSheet(t('a.unAdminQ'), t('a.unAdminBody'), t('adm.unAdmin'), () => write(() => wf.setAdmin(el.dataset.id, false), t('a.adminRemoved'))); },
   audit(el){ go('audit', {office: el.dataset.id || S.offices[0]?.id || ''}); },
   auditRefresh(){ const p = S.route.params; loadAudit(p.office, p.filter || 'all', true); },
-  async rejectReq(el){ await write(() => dbx.update('staffRequests/' + el.dataset.id, {status: 'rejected', decidedAt: Date.now()}), t('a.reqRejected')); },
   revoke(el){ confirmSheet(t('a.revokeQ'), t('a.revokeBody'), t('a.revokeBtn'), () => write(() => wf.revokeStaff(el.dataset.id), t('a.revoked'))); },
   async delSamples(){
     // تُجلب الأمثلة عند الطلب فقط (لا اشتراك دائم في كل الأغراض)
