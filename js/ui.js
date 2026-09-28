@@ -64,7 +64,8 @@ function dropSheetEntry(){ if (history.state?.sheet && !skipPop){ skipPop = 1; h
 
 export function go(name, params = {}, push = true){
   const pushed = push && S.route.name !== name;
-  if (pushed) S.hist.push(S.route);
+  // G6: نحفظ مكان التمرير مع الصفحة الحالية، فيعود إليه الرجوع (بلا قفزة للأعلى بعد السحب للرجوع في الآيفون)
+  if (pushed){ S.route.y = window.scrollY; S.hist.push(S.route); }
   if (S.hist.length > 30) S.hist.shift();
   if (S.sheet) dropSheetEntry();
   S.route = {name, params}; S.sheet = null;
@@ -77,8 +78,17 @@ export function tabEntry(){ histDo(() => { if (!history.state?.mf) history.pushS
 // خطوة رجوع داخل التطبيق (بلا pushState)
 function backStep(){
   const prev = S.hist.pop(); S.sheet = null;
-  if (prev){ S.route = prev; renderAll(); }
+  if (prev){ S.route = prev; renderAll(); restoreScroll(prev.y || 0); }
   else go(homeRoute(), {}, false);
+}
+// G6: إعادة التمرير بعد رسم الصفحة السابقة. نعيده في إطار الرسم التالي، ومرة ثانية إن لم تكن الصفحة
+// قد اكتملت بعد (أقصر من المكان المحفوظ). الصور الكسولة محجوزة الارتفاع (aspect-ratio) فلا يتغيّر المكان بعد تحميلها
+function restoreScroll(y){
+  window.scrollTo(0, y);
+  requestAnimationFrame(() => {
+    window.scrollTo(0, y);
+    if (Math.abs(window.scrollY - y) > 1) requestAnimationFrame(() => window.scrollTo(0, y));
+  });
 }
 // زر «رجوع» في الواجهة: نرجع عبر سجل المتصفح ليبقى متطابقاً مع التطبيق
 export function back(){
