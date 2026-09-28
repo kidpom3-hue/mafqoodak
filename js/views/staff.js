@@ -51,6 +51,8 @@ export function updateStaff(){
     ${over ? `<div class="stat hot"><b>${over}</b><span>${t('st.overKeep')}</span></div>` : ''}
     ${late ? `<div class="stat hot"><b>${late}</b><span>${t('st.sLate')}</span></div>` : ''}`;
   $$('#s-tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === S.staffTab));
+  // H2: في الجوال (تحت 768px) «أضف غرضاً» زر رئيسي بعرض كامل (add-full) والأدوات الثلاث في «المزيد» (more-btn)؛
+  // وفي الكمبيوتر كما كانت: الزر في صف البحث (add-inline) والأدوات ظاهرة (tools-row). الإظهار والإخفاء في CSS
   if (toolsTab !== S.staffTab || !$('#s-tools').innerHTML){
     toolsTab = S.staffTab;
     $('#s-tools').innerHTML = S.staffTab === 'items' ? `<div class="filters">
@@ -58,8 +60,10 @@ export function updateStaff(){
         <select class="select-sm" id="sstatus" aria-label="${t('st.status')}">
           <option value="active">${t('st.fActive')}</option><option value="returned">${t('st.fReturned')}</option><option value="archived">${t('st.fArchived')}</option><option value="disposed">${t('st.fDisposed')}</option><option value="all">${t('st.fAll')}</option>
         </select>
-        <button class="btn sm" data-act="nav" data-r="add">${icon('plus')}${t('nav.add')}</button>
+        <button class="btn sm add-inline" data-act="nav" data-r="add">${icon('plus')}${t('nav.add')}</button>
+        <button class="btn sm ghost more-btn" data-act="staffMore">${icon('dots')}${t('st.more')}</button>
       </div>
+      <button class="btn block add-full" data-act="nav" data-r="add">${icon('plus')}${t('nav.add')}</button>
       <div class="btn-row tools-row">
         <button class="btn sm ghost" data-act="labelsMenu">${icon('qr')}${t('lb.menu')}</button>
         <button class="btn sm ghost" data-act="poster">${icon('print')}${t('po.btn')}</button>

@@ -3,7 +3,7 @@ import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPl
 import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, isStaffHere, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf } from '../state.js';
-import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline } from './common.js';
+import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq } from './common.js';
 import { claimCardStaff, rivals, dateOf, qaBox, timeline, catKeepNote } from './staff.js';
 import { aiReady } from '../ai.js';
 import { hydrate } from '../ui.js';
@@ -203,6 +203,14 @@ export function vClaimForm(){
   // قيم الخانات عند التعديل: من الطلب نفسه
   const v = ed ? {name: ed.claimantName, last4: ed.idLast4, proof: ed.proof, spot: ed.lostSpot, bldg: ed.bldg, room: ed.room, date: ed.lostDate}
     : {proof: pre?.desc, spot: pre?.spot, bldg: pre?.bldg, room: pre?.room, date: pre?.lostDate};
+  // H1: الظاهر افتراضياً: الهوية، والأسئلة المطلوبة للتصنيف، والإقرار. والباقي في «تفاصيل إضافية» المطوية،
+  // وتُفتح عند التعديل أو التعبئة من بلاغ أو إن كان فيها قيم. الوصف الحر ظاهر إن كان إجبارياً لهذا التصنيف
+  const proofField = `<div class="field"><label for="proof">${t(proofOpt ? 'cl.proofMore' : 'cl.proof')}${proofOpt ? ` <span class="hint">${t('c.optional')}</span>` : ''}</label>
+        <textarea id="proof" name="proof" class="input" ${proofOpt ? '' : 'required'}>${esc(v.proof || '')}</textarea>
+        <span class="hint">${t(q.hint)}</span></div>`;
+  const optVals = [src.brand, v.spot, v.date, v.bldg, v.room, proofOpt ? v.proof : '', q.fields.includes('color') && !q.req.includes('color') ? src.color : '',
+    ...q.details.filter(d => !d.as && !detailReq(d, 'claim')).map(d => src.details?.[d.k])];
+  const moreOpen = !!ed || !!pre || optVals.some(Boolean);
   return `<div class="wrap" data-view="claim">${backBtn()}
     <section class="hero"><div class="hero-kicker">${icon('shield')}${t('cl.kicker')}</div><h1 class="hero-title">${t(ed ? 'cl.editTitle' : 'cl.title')}</h1></section>
     ${miniItem(i)}
@@ -215,14 +223,19 @@ export function vClaimForm(){
         <div class="field"><label for="c-name">${t(ids ? 'cl.nameIds' : 'cl.name')}</label><input id="c-name" name="claimantName" class="input" maxlength="120" autocomplete="name" required value="${esc(v.name || '')}"></div>
         <div class="field"><label for="c-last4">${t(ids ? 'cl.last4Ids' : 'cl.last4')}</label><input id="c-last4" name="idLast4" class="input" inputmode="numeric" maxlength="4" dir="ltr" autocomplete="off" required value="${esc(v.last4 || '')}"></div>
         <span class="hint">${icon('lock')}${t('cl.idPrivate')}</span></div>
-      <div id="cat-fields" data-mode="claim">${catFields(i.cat, src, 'claim')}</div>
-      <div class="field"><label for="proof">${t(proofOpt ? 'cl.proofMore' : 'cl.proof')}${proofOpt ? ` <span class="hint">${t('c.optional')}</span>` : ''}</label>
-        <textarea id="proof" name="proof" class="input" ${proofOpt ? '' : 'required'}>${esc(v.proof || '')}</textarea>
-        <span class="hint">${t(q.hint)}</span></div>
-      <div class="field"><label for="c-spot">${t('cl.where')}</label><select id="c-spot" name="spot" class="input">${spotOptions(o, v.spot || '')}</select></div>
-      ${spotExtra({spot: v.spot, bldg: v.bldg, room: v.room})}
-      <div class="field"><label for="c-date">${t('cl.when')} <span class="hint">${t('c.optional')}</span></label><input id="c-date" name="lostDate" type="date" class="input" max="${today()}" value="${esc(v.date || '')}">
-        <span class="hint date-hint" ${v.date ? 'hidden' : ''}>${t('cl.dateHint')}</span></div>
+      <div id="cat-fields" data-mode="claim">${catFields(i.cat, src, 'claim', 'req')}</div>
+      ${proofOpt ? '' : proofField}
+      <details class="more-box" id="cl-more" ${moreOpen ? 'open' : ''}>
+        <summary>${icon('plus')}<span>${t('cl.more')}</span>${icon('chev')}</summary>
+        <div class="more-body">
+          <div id="cat-fields-opt">${catFields(i.cat, src, 'claim', 'opt')}</div>
+          ${proofOpt ? proofField : ''}
+          <div class="field"><label for="c-spot">${t('cl.where')}</label><select id="c-spot" name="spot" class="input">${spotOptions(o, v.spot || '')}</select></div>
+          ${spotExtra({spot: v.spot, bldg: v.bldg, room: v.room})}
+          <div class="field"><label for="c-date">${t('cl.when')} <span class="hint">${t('c.optional')}</span></label><input id="c-date" name="lostDate" type="date" class="input" max="${today()}" value="${esc(v.date || '')}">
+            <span class="hint date-hint" ${v.date ? 'hidden' : ''}>${t('cl.dateHint')}</span></div>
+        </div>
+      </details>
       <label class="check"><input type="checkbox" name="pledge" id="pledge"><span>${t('cl.pledge')}</span></label>
       <div class="form-err" hidden></div>
       <button class="btn block" type="submit">${icon('check')}${t(ed ? 'c.saveEdit' : 'cl.send')}</button>

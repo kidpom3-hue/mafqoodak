@@ -42,6 +42,10 @@ export const SETTINGS = {
   // معطّلة افتراضياً؛ فعّلها فقط إن كانت أنظمة المنشأة تسمح بإعطاء الغرض لمن وجده.
   allowReturnToFinder: false,
 
+  // App Check (اختياري، المرحلة H0): مفتاح موقع reCAPTCHA v3 (Site key، لا المفتاح السري).
+  // فارغ = معطّل والتطبيق يعمل كما هو. debug: true للتجربة على localhost فقط. الخطوات في README.md
+  appCheck: {siteKey: '', debug: false},
+
   // بيانات أول موقع تُنشأ عند الإعداد الأول (يمكن تعديلها لاحقاً من لوحة الإدارة)
   firstOffice: {
     id: 'tc-ahsa',

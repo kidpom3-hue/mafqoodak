@@ -75,19 +75,23 @@ export const dfLabel = (catId, k) => t(hasKey(`df.${catId}.${k}`) ? `df.${catId}
 export const dfOpt = (k, o) => t(`df.${k}.${o}`);
 // هل السؤال إجباري في هذا النموذج؟ (البلاغ: كلها اختيارية)
 export const detailReq = (d, mode) => mode === 'item' ? d.req === 'both' || d.req === 'staff' : mode === 'claim' ? d.req === 'both' || d.req === 'claim' : false;
-export function catFields(catId, src = {}, mode = 'item'){
+/* H1: part يقسّم خانات طلب الاستلام: 'req' المطلوبة فقط (ظاهرة دائماً)، و'opt' الاختيارية فقط
+   (داخل «تفاصيل إضافية» المطوية)، وبدونه كل الخانات (نموذج الغرض والبلاغ). العرض فقط: ما يُحفظ لا يتغيّر */
+export function catFields(catId, src = {}, mode = 'item', part = ''){
   if (!catId) return '';
   const q = claimOf(catId), det = src?.details || {};
+  const show = req => !part || (part === 'req') === !!req;
   const opt = on => on ? '' : ` <span class="hint">${t('c.optional')}</span>`;
   const colorLabel = hasKey(`df.${catId}.color`) ? t(`df.${catId}.color`) : t(mode === 'claim' ? 'cl.color' : 'c.color');
   const brandReq = mode === 'claim' && q.req.includes('brand');
   const out = [];
-  if (q.fields.includes('color')) out.push(`<div class="field"><span class="label">${colorLabel}</span>${colorPicker(src?.color || '', mode === 'claim')}</div>`);
-  if (q.fields.includes('brand') && mode !== 'report') out.push(`<div class="field"><label for="cf-brand">${t('if.brand')}${mode === 'item' ? ` <span class="hint">${t('if.staffOnly')}</span>` : opt(brandReq)}</label>
+  if (q.fields.includes('color') && show(mode === 'claim' && q.req.includes('color'))) out.push(`<div class="field"><span class="label">${colorLabel}</span>${colorPicker(src?.color || '', mode === 'claim')}</div>`);
+  if (q.fields.includes('brand') && mode !== 'report' && show(brandReq)) out.push(`<div class="field"><label for="cf-brand">${t('if.brand')}${mode === 'item' ? ` <span class="hint">${t('if.staffOnly')}</span>` : opt(brandReq)}</label>
     <input id="cf-brand" name="brand" class="input" maxlength="40" autocomplete="off" value="${esc(src?.brand || '')}" ${mode === 'item' ? `placeholder="${t('if.brandPh')}"` : ''}></div>`);
   for (const d of q.details){
     if (mode === 'claim' && d.as) continue;   // الاسم وآخر 4 أرقام في صندوق الهوية أصلاً
     const id = `cf-${d.k}`, v = det[d.k] || '', req = detailReq(d, mode);
+    if (!show(req)) continue;
     const lab = `<label for="${id}">${dfLabel(catId, d.k)}${opt(req)}</label>`;
     const ph = hasKey(`df.${d.k}.ph`) ? ` placeholder="${esc(t(`df.${d.k}.ph`))}"` : '';
     const input = d.type === 'pick'

@@ -51,6 +51,7 @@ for (const lang of ['ar', 'en']) for (const dark of [false, true]) for (const [r
   await ctx.route(/firebase-app\.js/, r => r.fulfill({contentType: 'text/javascript', body: 'export const initializeApp = () => ({});'}));
   await ctx.route(/firebase-auth\.js/, r => r.fulfill({contentType: 'text/javascript', body: stub('auth.js')}));
   await ctx.route(/firebase-firestore\.js/, r => r.fulfill({contentType: 'text/javascript', body: stub('firestore.js')}));
+  await ctx.route(/firebase-app-check\.js/, r => r.fulfill({contentType: 'text/javascript', body: 'export const initializeAppCheck = (a, o) => { window.__APPCHECK = o; return {}; }; export class ReCaptchaV3Provider { constructor(k){ this.key = k; } }'}));
   await ctx.route(/fonts\.(googleapis|gstatic)\.com/, r => r.fulfill({status: 200, contentType: 'text/css', body: ''}));
   await ctx.addInitScript(`window.__FAKE = ${JSON.stringify({db, reads: [], writes: [], user})}; localStorage.setItem('mfq:office', '"${O}"'); localStorage.setItem('mfq:lang', '"${lang}"'); localStorage.setItem('mfq:mode', '"${mode}"');`);
   const p = await ctx.newPage();
