@@ -3,7 +3,7 @@ import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPl
 import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard } from '../state.js';
-import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf } from './common.js';
+import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
 import { aiReady } from '../firebase.js';
@@ -220,6 +220,11 @@ export function vClaimForm(){
   const optVals = [src.brand, v.spot, v.date, v.bldg, v.room, proofOpt ? v.proof : '', q.fields.includes('color') && !q.req.includes('color') ? src.color : '',
     ...q.details.filter(d => !d.as && !detailReq(d, 'claim')).map(d => src.details?.[d.k])];
   const moreOpen = !!ed || !!pre || optVals.some(Boolean);
+  // v7: مكتب يشترط بريد الكلية لطلب الاستلام: رسالة واضحة وزر للدخول بالبريد الصحيح بدل النموذج
+  if (!ed && !claimEmailOk(o, S.me?.email)) return `<div class="wrap" data-view="claim">${backBtn()}${miniItem(i)}
+    <div class="note warn domain-need">${icon('idcard')}<span>${t('cl.domainNeedLong', {domains: claimDomainsOf(o).map(d => `<b dir="ltr">@${esc(d)}</b>`).join(t('c.listSep'))})}</span></div>
+    <button class="btn" data-act="collegeLogin">${icon('users')}${t('cl.domainLogin')}</button></div>`;
+  if (!ed) FORM.proofs = [];   // v7: صور إثبات جديدة لكل طلب
   return `<div class="wrap" data-view="claim">${backBtn()}
     <section class="hero"><div class="hero-kicker">${icon('shield')}${t('cl.kicker')}</div><h1 class="hero-title">${t(ed ? 'cl.editTitle' : 'cl.title')}</h1></section>
     ${miniItem(i)}
@@ -243,6 +248,9 @@ export function vClaimForm(){
           ${spotExtra({spot: v.spot, bldg: v.bldg, room: v.room})}
           <div class="field"><label for="c-date">${t('cl.when')} <span class="hint">${t('c.optional')}</span></label><input id="c-date" name="lostDate" type="date" class="input" max="${today()}" value="${esc(v.date || '')}">
             <span class="hint date-hint" ${v.date ? 'hidden' : ''}>${t('cl.dateHint')}</span></div>
+          ${ed ? '' : `<div class="field"><label for="proof-in">${t('cl.proofImg')} <span class="hint">${t('c.optional')}</span></label>
+            <input id="proof-in" type="file" accept="image/*" multiple class="input">
+            <span class="hint">${icon('lock')}${t('cl.proofImgHint')}</span><div id="proof-pv" class="proof-pv"></div></div>`}
         </div>
       </details>
       <label class="check"><input type="checkbox" name="pledge" id="pledge"><span>${t('cl.pledge')}</span></label>

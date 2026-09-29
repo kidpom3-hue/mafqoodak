@@ -206,6 +206,9 @@ export function staffEvents(){
     if (c.status !== 'pending' || c.uid === S.uid) continue;
     add('nc:' + c.id, 'claims:decide', 's:' + c.id, c.createdAt);
     if (answered(c)) add(`na:${c.id}:${c.answeredAt}`, 'claims:decide', 's:' + c.id, c.answeredAt);
+    // v7: غرض ثمين وافق عليه موظف آخر: «بانتظار موافقتك الثانية» (بلا وقت، فيبقى جديداً حتى يُقرأ)
+    const ap = Array.isArray(c.approvals) ? c.approvals : [];
+    if (ap.length === 1 && !ap.includes(S.uid)) add(`ap:${c.id}:${ap[0]}`, 'claims:decide', 's:' + c.id, null);
   }
   for (const f of S.found) add('nf:' + f.id, 'claims:incoming', 'sf:' + f.id, f.createdAt);
   for (const r of S.reports){
@@ -220,6 +223,37 @@ export function staffEvents(){
   }
   return out;
 }
+/* v7: البلاغ المرتبط بطلب الاستلام إن كان سابقاً للعثور (أُنشئ قبل تسجيل الغرض): أقوى دليل على الملكية.
+   يُقرأ مرة واحدة إن لم يكن في بلاغات المكتب المحمّلة، ويجب أن يكون لصاحب الطلب نفسه */
+const REP = {};
+export function priorReport(c, i){
+  if (!c?.reportId || !i) return null;
+  let r = S.reports.find(x => x.id === c.reportId) || (S.closedReps || []).find(x => x.id === c.reportId) || REP[c.reportId];
+  if (r === undefined){
+    REP[c.reportId] = 'loading';
+    dbx.get('reports/' + c.reportId).then(d => { REP[c.reportId] = d ? {id: c.reportId, ...d} : null; changed(); }).catch(() => { REP[c.reportId] = null; });
+    return null;
+  }
+  if (!r || r === 'loading') return null;
+  return r.uid === c.uid && typeof r.createdAt === 'number' && typeof i.createdAt === 'number' && r.createdAt < i.createdAt ? r : null;
+}
+/* v7: سجل صاحب الطلب في هذا المكتب (للموظف): عدد طلباته السابقة والمرفوض منها. قراءة واحدة عند فتح البطاقة، بلا اشتراك */
+const HIST = {};
+export function claimerHist(c, open){
+  if (!c || c.uid === 'deleted' || !isStaffHere()) return null;
+  const k = c.uid + '|' + c.officeId, h = HIST[k];
+  if (h === undefined){
+    if (!open) return null;
+    HIST[k] = 'loading';
+    dbx.list('claims', [['officeId', '==', c.officeId], ['uid', '==', c.uid]]).then(l => { HIST[k] = l; changed(); }).catch(() => { HIST[k] = []; });
+    return null;
+  }
+  if (!Array.isArray(h)) return null;
+  const others = h.filter(x => x.id !== c.id);
+  return {n: others.length, rejected: others.filter(x => x.status === 'rejected').length};
+}
+// عند فتح بطاقة طلب بيد الموظف (actions.js): نبدأ قراءة سجل صاحبه
+export const openClaimCard = id => { const c = S.claims.find(x => x.id === id) || (S.claimHist || []).find(x => x.id === id); if (c) claimerHist(c, true); };
 // الأحداث التي لم تُرَ بعد
 export function staffKeys(){
   const {since, keys} = staffSeen(), seen = new Set(keys);
@@ -456,7 +490,9 @@ export function fixMode(){
 const PHOTO = new Map();
 // مفاتيح الصور: p_<id> الأصل الواضح (للموظفين)، r_<id> صورة بلاغ، وغير ذلك الصورة العامة للغرض
 export const photoPath = key => key.startsWith('p_') ? 'itemPhotosPrivate/' + key.slice(2)
-  : key.startsWith('r_') ? 'reportPhotos/' + key.slice(2) : 'itemPhotos/' + key;
+  : key.startsWith('r_') ? 'reportPhotos/' + key.slice(2)
+  : key.startsWith('cp_') ? 'claimProofs/' + key.slice(3)   // v7: صور إثبات طلب الاستلام (للموظف وصاحب الطلب فقط)
+  : 'itemPhotos/' + key;
 export function getPhoto(key){
   if (PHOTO.has(key)) return PHOTO.get(key);
   const p = db ? dbx.get(photoPath(key)).then(d => d?.data || null).catch(() => null) : Promise.resolve(null);
@@ -481,9 +517,9 @@ export function getName(uid){
    نتحقق على الجهاز أولاً، وعند رفض الخادم نقرأ rate/{uid}: إن كان الإنشاء السابق قريباً تظهر رسالة ودّية «انتظر قليلاً ثم أعد المحاولة» */
 const RATE_MS = 20000;
 const rateErr = () => Object.assign(new Error('rate'), {msg: t('err.rateWait'), code: 'rate'});
-export async function createLimited(path, data){
+export async function createLimited(path, data, extra){
   if (Date.now() - (LS.get('rateAt', 0) || 0) < RATE_MS) throw rateErr();
-  try { await dbx.createLimited(path, data, S.uid); LS.set('rateAt', Date.now()); }
+  try { await dbx.createLimited(path, data, S.uid, extra); LS.set('rateAt', Date.now()); }
   catch (e){
     if (String(e?.code || '').includes('permission-denied')){
       const r = await dbx.get('rate/' + S.uid).catch(() => null);
