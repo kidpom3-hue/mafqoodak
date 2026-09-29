@@ -276,7 +276,7 @@ export function staffClaims(){
   if (q){
     const all = [...S.claims, ...(S.claimHist || []).filter(h => !S.claims.some(c => c.id === h.id))];
     const hits = all.filter(c => qNo(claimNo(c)).includes(q)).sort(byLast);
-    return `<div class="section-title">${t('st.claimResults')} <span class="count">${hits.length}</span></div>
+    return `<div class="section-title">${t('st.claimResults')} ${tabNum(0, hits.length)}</div>
       ${hits.length ? `<div class="list">${hits.map(claimCardStaff).join('')}</div>` : `<p class="muted">${t('st.noClaimNo')}</p>`}
       ${S.claimHist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}${t('st.showHist')}</button>` : ''}`;
   }

@@ -2,7 +2,7 @@
 // 1) إشعارات المتصفح (يفعّلها المستخدم من نافذة الحساب): تصل والتطبيق مفتوح أو في الخلفية.
 //    الإشعار والتطبيق مغلق تماماً يحتاج خادماً (Cloud Functions)، وهو خارج الخطة المجانية (انظر docs/ROADMAP.md).
 // 2) البريد عبر EmailJS (اختياري، معطّل حتى تُكتب مفاتيحه في js/config.js): يرسله متصفح الموظف بعد قراره.
-import { S, alertKeys, isStaffHere, answered } from './state.js';
+import { S, alertKeys, isStaffHere, answered, staffNew, unseenCount } from './state.js';
 import { dbx } from './firebase.js';
 import { SETTINGS } from './config.js';
 import { t, LANG } from './i18n.js';
@@ -49,9 +49,10 @@ function currentKeys(){
 }
 // يُستدعى بعد كل تحديث للبيانات: ما ظهر من تنبيهات جديدة والتطبيق في الخلفية يصل إشعاراً
 const known = new Set(); let who = null, armedAt = 0;
-// للموظف: شارة على أيقونة التطبيق وعدد في عنوان الصفحة (طلبات جديدة + إشعارات تسليم)
+// H6: شارة أيقونة التطبيق والعدد في عنوان الصفحة = الجديد غير المقروء فقط (نفس أرقام الشريط السفلي)، لا عدد العناصر:
+// للموظف أحداث «الاستلام» و«البلاغات» الجديدة، ولغيره تنبيهات «طلباتي» غير المقروءة
 function staffBadge(){
-  const n = isStaffHere() ? S.claims.filter(c => c.status === 'pending' && c.uid !== S.uid).length + S.found.length : 0;
+  const n = isStaffHere() ? staffNew('claims') + staffNew('reports') : S.uid ? unseenCount() : 0;
   document.title = (n ? `(${n}) ` : '') + t('app.title');
   try { if (n) navigator.setAppBadge?.(n); else navigator.clearAppBadge?.(); } catch {}
 }

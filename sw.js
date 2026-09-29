@@ -1,7 +1,7 @@
 // Service Worker: يحفظ ملفات التطبيق ليفتح بسرعة ويعمل عند ضعف الاتصال.
 // الاستراتيجية: الشبكة أولاً (لتظهر تعديلاتك فوراً)، ثم النسخة المحفوظة إذا انقطع الاتصال.
 // عند تغيير أسماء الملفات غيّر رقم الإصدار هنا.
-const CACHE = 'mafqoodak-v22';
+const CACHE = 'mafqoodak-v23';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
 // ملفات التطبيق نفسه فقط: ملفات Firebase من gstatic (ومنها firebase-app-check.js) لا يتعامل معها هذا العامل (مصدر آخر)
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/styles.css',
@@ -14,7 +14,8 @@ const SHELL = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload': تُجلب ملفات النسخة الجديدة من الخادم مباشرة، لا من ذاكرة HTTP القديمة
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, {cache: 'reload'})))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
@@ -22,8 +23,11 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  // H6: cache: 'no-cache' يجبر المتصفح على سؤال الخادم (GitHub Pages) عن كل ملف بدل نسخته المخزّنة في ذاكرة HTTP،
+  // فلا تظهر نسخة قديمة بعد التحديث. طلب فتح الصفحة (navigate) لا يقبل خيارات إضافية، فنبني له طلباً جديداً بعنوانه
+  const fresh = req.mode === 'navigate' ? new Request(req.url, {cache: 'no-cache'}) : new Request(req, {cache: 'no-cache'});
   e.respondWith(
-    fetch(req).then(res => {
+    fetch(fresh).then(res => {
       if (res.ok){ const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
       return res;
     }).catch(() => caches.match(req).then(r => r || (req.mode === 'navigate' ? caches.match('./index.html') : undefined)))

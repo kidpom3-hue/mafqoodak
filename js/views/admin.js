@@ -3,7 +3,7 @@ import { icon, OFFICE_TYPES, otype, otypeName, oName, oCity } from '../constants
 import { esc } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, loadAdminCounts } from '../state.js';
-import { backBtn, person, whenLine } from './common.js';
+import { backBtn, person, whenLine, tabNum } from './common.js';
 
 /* ---------- admin ---------- */
 export function vAdmin(){
@@ -85,7 +85,7 @@ export function adminPeople(){
       <div class="form-err" hidden></div>
       <button class="btn" type="submit" style="align-self:flex-start">${icon('check')}${t('inv.send')}</button>
     </form>
-    <div class="section-title">${t('inv.pending')} ${invites.length ? `<span class="count">${invites.length}</span>` : ''}</div>
+    <div class="section-title">${t('inv.pending')} ${tabNum(0, invites.length)}</div>
     ${invites.length ? `<div class="list">${invites.map(v => `<div class="box">
       <div class="box-head"><div><b dir="ltr">${esc(v.id)}</b>${whenLine('c.sentAt', v.createdAt)}</div><span class="pill warn">${t('inv.waiting')}</span></div>
       <div class="tags">${(v.offices || []).map(id => `<span class="tagchip">${esc(oname(id))}</span>`).join('')}</div>

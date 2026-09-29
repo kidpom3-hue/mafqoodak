@@ -15,7 +15,7 @@ import { FORM, subsPicker, pubPhoto, person, themePicker, textPicker, catFields,
 import { setTheme, setTextSize } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
 import { analyzePhoto, rankMatches, aiErrMsg, aiReady } from './ai.js';
-import { SETTINGS } from './config.js';
+import { SETTINGS, APP_VERSION } from './config.js';
 import { sampleItems } from './sample-data.js';
 
 /* ---------- أدوات النماذج ---------- */
@@ -659,6 +659,7 @@ const ACT = {
         <p class="hint">${icon('info')}${t('acc.shared')}</p>
         <button class="opt" data-act="nav" data-r="privacy">${icon('lock')}${t('acc.privacy')}</button>
         <button class="opt" data-act="deleteAccount" style="color:var(--bad)">${icon('trash')}${t('acc.delete')}</button>
+        <p class="app-ver">${t('ui.version', {v: APP_VERSION})}</p>
       </div>`);
   },
   deleteAccount(){

@@ -121,7 +121,6 @@ nav.bottom .count{position:absolute;top:4px;inset-inline-start:calc(50% + 6px)}
 .panel h2{font-size:17px;font-weight:700}
 .panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .section-title{font-family:var(--f-display);font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
-.section-title .count{background:var(--primary)}
 .note{font-size:13.5px;color:var(--muted);background:var(--surface-2);border-radius:12px;padding:10px 12px;display:flex;gap:8px;align-items:flex-start}
 .note svg{width:18px;height:18px;margin-top:2px}
 .note.warn{background:var(--warn-soft);color:var(--warn)}
@@ -972,3 +971,7 @@ html[data-text] .pill{white-space:normal}
   html[data-text=l] header.top{zoom:.893}
   html[data-text=xl] header.top{zoom:.8}
 }
+/* ---------- H6: رقم الإصدار ---------- */
+/* خط صغير رمادي في أسفل قائمة الحساب وفي التذييل، لتتأكد أن جوالك يعرض آخر نسخة */
+.app-ver{margin:4px 0 0;font-size:11.5px;color:var(--muted);text-align:center}
+.sf-ver{font-size:11px;color:var(--hero-muted)}
