@@ -14,7 +14,7 @@ import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor
 // (أزرار لوحة الموظف لا تظهر إلا بعد تحميلها، فهي موجودة عند النقر)
 import { mod, load } from './lazy.js';
 const SM = () => mod('staff');
-import { FORM, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, detailReq } from './views/common.js';
+import { FORM, AGAIN, saveAddPrefs, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, detailReq } from './views/common.js';
 import { setTheme, setTextSize } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
 import { aiReady } from './firebase.js';
@@ -39,11 +39,16 @@ export function onCatChange(form, catId, sub){
   const cf = form.querySelector('#cat-fields');
   if (cf){
     const memo = form.catMemo ||= {details: {}}, fd = new FormData(form);
-    if (form.querySelector('#cat-fields [name=color]')) memo.color = String(fd.get('color') || '');
-    if (form.querySelector('#cat-fields [name=brand]')) memo.brand = String(fd.get('brand') || '');
-    for (const el of cf.querySelectorAll('[name^=d_]')) memo.details[el.name.slice(2)] = el.value;
-    cf.innerHTML = catFields(catId, memo, cf.dataset.mode);
+    if (form.querySelector('[name=color]')) memo.color = String(fd.get('color') || '');
+    if (form.querySelector('[name=brand]')) memo.brand = String(fd.get('brand') || '');
+    for (const el of form.querySelectorAll('[name^=d_]')) memo.details[el.name.slice(2)] = el.value;
+    // H9: نموذج الإضافة السريعة يقسم الخانات: المطلوبة ظاهرة، والاختيارية في «تفاصيل إضافية»
+    const opt = form.querySelector('#cat-fields-opt');
+    cf.innerHTML = catFields(catId, memo, cf.dataset.mode, opt ? 'req' : '');
+    if (opt) opt.innerHTML = catFields(catId, memo, cf.dataset.mode, 'opt');
   }
+  // التصنيف المختار داخل «كل التصنيفات» المطوية: نفتحها حتى يراه الموظف
+  const picked = form.querySelector(`input[name=cat]:checked`)?.closest('#cat-all'); if (picked) picked.open = true;
   const sens = cat(catId).sensitive;
   const note = form.querySelector('#sens-note'), pf = form.querySelector('#photo-field');
   if (note) note.hidden = !sens;
@@ -82,7 +87,60 @@ async function onPhoto(input){
     form.querySelector('#pv').innerHTML = `<img src="${dataUrl}" alt="">`;
     form.querySelector('#rm-photo').hidden = false;
     const ai = form.querySelector('#ai-btn'); if (ai){ ai.disabled = false; if (st) st.textContent = t('a.aiHint'); }
-  } catch { toast(t('a.photoFail')); }
+    // H9: بعد الالتقاط يظهر النموذج والصورة في أعلاه، ويقترح الذكاء الاصطناعي الحقول (إن كان مفعّلاً)
+    if (form.dataset.quick){ quickStep(form); if (aiReady()) aiSuggest(form, blob); }
+  } catch { toast(t('a.photoFail')); if (form.dataset.quick) quickStep(form); }
+}
+
+// ما يبقى من آخر غرض حُفظ (المكان وتفاصيله والتاريخ)، يُنقل إلى AGAIN عند «أضف آخر»
+const LAST_ADD = {v: null};
+/* ---------- الإضافة السريعة (H9) ----------
+   الخطوة الأولى الكاميرا؛ بعد الصورة (أو «بلا صورة») يظهر النموذج ويذهب التركيز إلى أول خانة ناقصة */
+function quickStep(form){
+  if (form.dataset.step !== 'cam') return;
+  form.dataset.step = 'form';
+  const first = !form.querySelector('input[name=cat]:checked') ? form.querySelector('input[name=cat]') : form.querySelector('[name=title]');
+  first?.focus({preventScroll: true});
+}
+// كاميرا الجوال مباشرة: يجب أن تُفتح داخل ضغطة المستخدم نفسها (لا بعد انتظار)
+function openCam(){ const inp = document.querySelector('form[data-quick] #photo-in'); if (inp) inp.click(); }
+/* اقتراح الذكاء الاصطناعي: التصنيف والنوع والعنوان واللون، مع علامة «اقتراح» على كل خانة عُبّئت.
+   لا يُحفظ شيء تلقائياً، ولا يغيّر ما عدّله الموظف بيده. إن فشل أو تأخر أكثر من 6 ثوانٍ: يكمل الموظف يدوياً بلا رسالة خطأ */
+const AI_WAIT = 6000;
+async function aiSuggest(form, blob){
+  const st = form.querySelector('#ai-status'), mine = FORM.blob;
+  if (st) st.innerHTML = `<span class="spin" style="width:14px;height:14px"></span> ${t('a.aiSuggesting')}`;
+  let r = null;
+  try {
+    r = await Promise.race([load('ai').then(m => m.analyzePhoto(blob)), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), AI_WAIT))]);
+  } catch (e){ console.warn('[ai]', e?.message || e); }
+  if (!form.isConnected || FORM.blob !== mine){ return; }   // غادر الموظف النموذج أو غيّر الصورة
+  if (st) st.textContent = '';
+  if (!r) return;
+  const touched = form.touched || new Set(), mark = [];
+  // لا نضع ناتج الذكاء الاصطناعي في querySelector إلا إن كان من معرّفات التصنيفات والألوان المعروفة
+  if (!touched.has('cat') && CATS.some(c => c.id === r.cat)){
+    const el = form.querySelector(`input[name=cat][value="${r.cat}"]`);
+    if (el){ el.checked = true; onCatChange(form, r.cat, cat(r.cat).subs.includes(r.sub) ? r.sub : ''); mark.push(el); }
+    const sub = form.querySelector('input[name=sub]:checked'); if (sub) mark.push(sub);
+  }
+  if (!touched.has('color') && COLORS.some(c => c.id === r.color)){ const el = form.querySelector(`input[name=color][value="${r.color}"]`); if (el){ el.checked = true; mark.push(el); } }
+  const ti = form.querySelector('[name=title]');
+  if (r.title && ti && !touched.has('title') && !ti.value.trim()){ ti.value = String(r.title).slice(0, 80); mark.push(ti); }
+  for (const el of mark) markSugg(form, el);
+  if (mark.length && st) st.innerHTML = `${icon('spark')} ${t('a.aiSuggested')}`;
+}
+// علامة «اقتراح» بجانب عنوان الخانة، وعلى عنوان القسم المطوي الذي فيه (إن وُجد). تزول حين يغيّرها الموظف
+function markSugg(form, el){
+  const field = el.closest('.field'); const lab = field?.querySelector(':scope > .label, :scope > label');
+  if (lab && !lab.querySelector('.sugg')) lab.insertAdjacentHTML('beforeend', ` <span class="sugg">${t('if.sugg')}</span>`);
+  const sum = el.closest('details')?.querySelector(':scope > summary > span');
+  if (sum && !sum.querySelector('.sugg')) sum.insertAdjacentHTML('beforeend', ` <span class="sugg">${t('if.sugg')}</span>`);
+}
+function unSugg(form, el){
+  form.touched ||= new Set(); form.touched.add(el.name);
+  el.closest('.field')?.querySelector('.sugg')?.remove();
+  if (el.name === 'cat') form.querySelector('#subs-field .sugg')?.remove();
 }
 
 /* إجابات أسئلة التصنيف من النموذج: القيم غير الفارغة فقط (مُطبَّعة كما تُحفظ)، وأول سؤال إجباري ناقص.
@@ -383,7 +441,8 @@ async function submitForm(form){
       cachePhoto(id, null); cachePhoto('p_' + id, null);
     }
     // الترتيب: items أولاً (القواعد تتحقق من مكتبه)، ثم itemSecrets والصور
-    const ok = await write(() => dbx.set('items/' + id, data), existing ? t('a.itemUpdated') : t('a.itemSaved', {ref: data.ref}));
+    const quick = !!form.dataset.quick;   // H9: الإضافة السريعة (رقم القيد يظهر في نافذة «أضف آخر» بدل الرسالة)
+    const ok = await write(() => dbx.set('items/' + id, data), existing ? t('a.itemUpdated') : quick ? '' : t('a.itemSaved', {ref: data.ref}));
     if (ok) await write(() => dbx.set('itemSecrets/' + id, secret));
     if (ok && redo){
       // الأصل الواضح للموظفين، ثم النسخة العامة حسب الاختيار: واضحة، أو مموّهة حقاً (24px)، أو لا شيء
@@ -404,7 +463,10 @@ async function submitForm(form){
     busy(form, false);
     if (!ok) return;
     // قيد في سجل الحيازة، ومعه ترشيح الغرض لصاحب البلاغ أو تأكيد استلام إشعار التسليم (batch واحد)
-    const linked = await write(() => wf.itemSaved({...data, id}, {created: !existing, fromReport, fromFound}),
+    // H9: مدة الإضافة (من فتح النموذج إلى الحفظ) بالمللي ثانية، تُسجَّل مع قيد الإنشاء لمتوسطها في الإحصاءات
+    const ms = existing ? 0 : Math.max(0, Date.now() - (FORM.t0 || Date.now()));
+    if (quick){ saveAddPrefs({cat: catId, spot: val('spot')}); LAST_ADD.v = {spot: val('spot'), bldg, room, date: data.foundDate}; }
+    const linked = await write(() => wf.itemSaved({...data, id}, {created: !existing, fromReport, fromFound, ms}),
       fromReport ? t('a.reportAccepted') : fromFound ? t('hi.receivedToast') : '');
     // بريد اختياري (EmailJS): لصاحب البلاغ بأن المكتب رشّح له غرضاً، وللواجد بأن المكتب استلم ما وجده
     if (linked && fromReport) emailUser(S.reports.find(r => r.id === fromReport)?.uid);
@@ -414,10 +476,15 @@ async function submitForm(form){
     // البلاغات القديمة (أكثر من 60 يوماً دون تجديد) لا تدخل في المطابقة
     const matches = S.reports.filter(r => r.status === 'open' && !isStale(r) && r.id !== fromReport && matchScore(r, {...data, ...secret, id}) >= MATCH_MIN);
     S.hist = []; S.staffTab = fromReport || fromFound ? 'reports' : 'items'; go('staff', {}, false);
-    if (matches.length) openSheet(`<h2>${icon('bell')} ${t('a.matchesTitle', {reports: tp('n.matchReports', matches.length)})}</h2>
+    if (matches.length) openSheet(`${quick ? `<p class="muted">${icon('check')} ${t('if.savedTitle', {ref: esc(data.ref)})}</p>` : ''}<h2>${icon('bell')} ${t('a.matchesTitle', {reports: tp('n.matchReports', matches.length)})}</h2>
       <div class="list">${matches.map(r => `<div class="box"><b>${esc(r.title)}</b><span class="meta">${esc(catName(r.cat))} · ${esc(colorName(r.color))} · ${t('st.lostOn', {date: relDay(r.lostDate)})}</span>${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}</div>`).join('')}</div>
       <p class="muted">${t('a.matchesHint')}</p>
-      <div class="btn-row"><button class="btn" data-act="pickAll" data-i="${esc(id)}" data-rs="${esc(matches.map(r => r.id).join(','))}">${icon('check')}${t('a.pickAll')}</button><button class="btn ghost" data-act="closeSheet">${t('a.later')}</button></div>`);
+      <div class="btn-row"><button class="btn" data-act="pickAll" data-i="${esc(id)}" data-rs="${esc(matches.map(r => r.id).join(','))}">${icon('check')}${t('a.pickAll')}</button><button class="btn ghost" data-act="closeSheet">${t('a.later')}</button></div>
+      ${quick ? `<button class="btn soft block" data-act="addAgain">${icon('camera')}${t('if.addAgain')}</button>` : ''}`);
+    // H9: بعد الحفظ: «أضف آخر» يفتح الكاميرا مباشرة ويبقي المكان والتاريخ
+    else if (quick) openSheet(`<h2>${icon('check')} ${t('if.savedTitle', {ref: esc(data.ref)})}</h2>
+      <p class="muted">${t('if.savedHint')}</p>
+      <div class="btn-row"><button class="btn" data-act="addAgain">${icon('camera')}${t('if.addAgain')}</button><button class="btn ghost" data-act="closeSheet">${t('if.done')}</button></div>`);
     return;
   }
 
@@ -665,8 +732,10 @@ const ACT = {
     if (r === 'admin' && tab) S.adminTab = tab;
     const fromNav = !!el.closest('#nav, .top-links, .brand');
     if (fromNav) S.hist = [];
+    if (r === 'add') AGAIN.v = null;   // H9: غرض جديد من البداية (آخر تصنيف ومكان فقط)
     go(r, el.dataset.id ? {id: el.dataset.id} : {}, !fromNav);   // data-id: مثل بطاقة خدمة محددة (service)
     if (fromNav && r !== homeRoute()) tabEntry();
+    if (r === 'add') openCam();   // «أضف غرضاً» يفتح الكاميرا مباشرة
   },
   back(){ back(); },
   login(){ go('login', {next: S.route.name === 'login' ? null : S.route}); },
@@ -819,6 +888,10 @@ const ACT = {
   copy(el){ const v = el.dataset.v; navigator.clipboard?.writeText(v).then(() => toast(t('a.copied')), () => toast(v)); },
   removePhoto(el){ clearPhoto(el.closest('form')); },
   aiFill(){ if (aiReady()) aiFill(); },
+  // H9: الإضافة السريعة: فتح الكاميرا، أو المتابعة بلا صورة، أو «أضف آخر» بعد الحفظ (يبقى المكان والتاريخ)
+  camOpen(){ openCam(); },
+  noPhoto(el){ quickStep(el.closest('form')); },
+  addAgain(){ AGAIN.v = LAST_ADD.v; go('add', {}, S.route.name !== 'add'); openCam(); },
   aiMatch(el){ if (aiReady()) aiMatch(el.dataset.id); },
   // «وجدته بنفسي»: تأكيد أولاً، وتنبيه إن كان المكتب رشّح غرضاً أو ظهر غرض مشابه (فيطلب استلامه بدل الإغلاق)
   closeReport(el){
@@ -1165,6 +1238,7 @@ export function bindEvents(){
     if (t.classList.contains('num-in')) t.value = detailValue({type: 'num'}, t.value).slice(0, Number(t.maxLength) > 0 ? t.maxLength : 9);
     if (t.classList.contains('code-in')) t.value = normCode(t.value);
     if (t.name === 'idLast4' || t.name === 'rlast4' || t.name === 'last4') t.value = latinDigits(t.value).replace(/\D/g, '').slice(0, 4);
+    if (t.name === 'title' && t.closest('form[data-quick]')) unSugg(t.closest('form'), t);
   });
   app.addEventListener('change', e => {
     const t = e.target;
@@ -1184,6 +1258,8 @@ export function bindEvents(){
     if (t.type === 'date'){ const h = t.parentElement.querySelector('.date-hint'); if (h) h.hidden = !!t.value; }
     if (t.name === 'spot' && t.closest('form')) onSpotChange(t.closest('form'), t.value);
     if (t.name === 'cat' && t.closest('form')) onCatChange(t.closest('form'), t.value, '');
+    // H9: ما يغيّره الموظف بيده لا يغيّره اقتراح الذكاء الاصطناعي، وتزول عنه علامة «اقتراح»
+    const qf = t.closest?.('form[data-quick]'); if (qf && ['cat', 'sub', 'color'].includes(t.name)) unSugg(qf, t);
   });
   // تلميح الرسوم البيانية: عند المرور بالمؤشر أو التركيز بلوحة المفاتيح (النص يوضع بـ textContent)
   const tip = document.createElement('div'); tip.id = 'viz-tip'; tip.setAttribute('role', 'tooltip'); tip.hidden = true;

@@ -244,11 +244,13 @@ export async function setItemStatus(i, to, note = ''){
 /* بعد حفظ غرض (جديد أو معدَّل): قيد في السجل، ومعه في batch واحد:
    ترشيح الغرض لصاحب البلاغ (قبول بلاغ)، أو تأكيد استلام إشعار التسليم وربطه بالغرض.
    إنشاء الغرض نفسه يبقى قبل ذلك ومتسلسلاً (items ثم التفاصيل والصور) لأن قواعدها تستخدم get(). */
-export async function itemSaved(i, {created = false, fromReport = '', fromFound = ''} = {}){
+// ms (H9): مدة إضافة الغرض بالمللي ثانية، تُكتب في ملاحظة قيد الإنشاء «ms:<رقم>» فقط (بلا حقل جديد ولا تغيير في القواعد)
+export const MS_NOTE = /^ms:(\d{1,9})$/;
+export async function itemSaved(i, {created = false, fromReport = '', fromFound = '', ms = 0} = {}){
   const b = dbx.batch(); const now = Date.now();
   if (fromReport) b.update(dbx.ref('reports/' + fromReport), {staffPick: i.id, pickedAt: now});
   if (fromFound) b.update(dbx.ref('foundReports/' + fromFound), {status: 'received', receivedAt: now, receivedBy: S.uid, itemId: i.id});
-  log(b, i.officeId, created ? 'create' : fromFound ? 'receive' : 'edit', {itemId: i.id, reportId: fromReport || fromFound});
+  log(b, i.officeId, created ? 'create' : fromFound ? 'receive' : 'edit', {itemId: i.id, reportId: fromReport || fromFound, note: created && ms > 0 ? 'ms:' + Math.round(ms) : ''});
   await commit(b);
 }
 /* إشعار تسليم لم يصل صاحبه بالغرض إلى المكتب: يُغلق (يراه الواجد «مُلغى») */

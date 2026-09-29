@@ -5,7 +5,7 @@ import { t, tp } from '../i18n.js';
 import { esc, spotName } from '../utils.js';
 import { S, staffOffices } from '../state.js';
 import { backBtn } from './common.js';
-import { loadStats, computeStats, monthName, ratingStats } from '../stats.js';
+import { loadStats, computeStats, monthName, ratingStats, addTimeStats } from '../stats.js';
 
 // أعمدة أفقية (سلسلة واحدة): الطول يمثل العدد، والقيمة عند طرف العمود، والتلميح عند المرور أو التركيز
 function hbars(rows){
@@ -58,6 +58,7 @@ export function vStats(){
         </div><span class="col-x">${esc(lb)}</span></div>`; }).join('')}
     </div>
     <div class="legend"><span><i class="sw s1"></i>${t('sx.sFound')}</span><span><i class="sw s2"></i>${t('sx.sReturned')}</span></div>`;
+  const add = addTimeStats(data.addTimes);   // H9: متوسط وقت إضافة غرض
   const catRows = s.cats.map(c => ({label: c.id === '_rest' ? t('sx.rest') : catName(c.id), n: c.n, ret: c.ret, tip: t('sx.tipCat', {n: c.n, ret: c.ret})}));
   const spotRows = s.spots.map(x => ({label: x.s ? spotName(x.s, id) : t('it.unknown'), n: x.n, tip: String(x.n)}));
   return `<div class="wrap" data-view="stats">${head}
@@ -69,6 +70,7 @@ export function vStats(){
       <div class="kpi"><span class="kpi-l">${t('home.statReturned')}</span><b class="kpi-v">${s.returned}</b></div>
       <div class="kpi"><span class="kpi-l">${t('sx.avgDays')}</span><b class="kpi-v">${s.avgDays === null ? '—' : s.avgDays}</b><span class="kpi-h">${s.avgDays === null ? '' : t('sx.daysUnit')}</span></div>
       <div class="kpi"><span class="kpi-l">${t('sx.held')}</span><b class="kpi-v">${s.held}</b></div>
+      <div class="kpi" id="kpi-add"><span class="kpi-l">${t('sx.addTime')}</span><b class="kpi-v">${add.avg === null ? '—' : add.avg}</b><span class="kpi-h">${add.avg === null ? t('sx.addNone') : `${t('sx.secUnit')} · ${tp('n.addCount', add.n)}`}</span></div>
       ${s.over ? `<div class="kpi warn"><span class="kpi-l">${icon('clock')}${t('st.overKeep')}</span><b class="kpi-v">${s.over}</b></div>` : ''}
     </div>
     <figure class="panel viz"><figcaption class="section-title">${t('sx.months')}</figcaption>${months}

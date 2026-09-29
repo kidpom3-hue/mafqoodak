@@ -1,15 +1,23 @@
 // عناصر واجهة مشتركة بين الصفحات
 import { icon, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf } from '../constants.js';
 import { t, hasKey } from '../i18n.js';
-import { esc, relDay, colorDot, isBuilding, roomWord, spotText, showTitle, when, fmtDate, isoDay } from '../utils.js';
+import { LS, esc, relDay, colorDot, isBuilding, roomWord, spotText, showTitle, when, fmtDate, isoDay } from '../utils.js';
 import { aiReady } from '../firebase.js';   // H8: ai.js يُحمَّل عند الحاجة فقط
 import { THEMES, theme, TEXTS, textSize } from '../theme.js';
 import { S, isStaffHere, answered } from '../state.js';
 
 /* حالة نموذج الإدخال الحالي (الصورة المختارة) */
 // copyFrom: مفتاح صورة بلاغ تُنسخ للغرض عند قبول البلاغ (مثل r_abc)
-export const FORM = {photo: null, blob: null, removed: false, hadPhoto: false, copyFrom: null, proofs: []};   // proofs (v7): صور إثبات طلب الاستلام
-export function resetForm(hadPhoto = false, copyFrom = null){ Object.assign(FORM, {photo: null, blob: null, removed: false, hadPhoto, copyFrom, proofs: []}); }
+export const FORM = {photo: null, blob: null, removed: false, hadPhoto: false, copyFrom: null, proofs: [], t0: 0};   // proofs (v7): صور إثبات طلب الاستلام
+// t0 (H9): وقت فتح النموذج، لقياس مدة إضافة الغرض (من الفتح إلى الحفظ)
+export function resetForm(hadPhoto = false, copyFrom = null){ Object.assign(FORM, {photo: null, blob: null, removed: false, hadPhoto, copyFrom, proofs: [], t0: Date.now()}); }
+
+/* ---------- الإضافة السريعة (H9) ----------
+   آخر تصنيف ومكان عثور استخدمهما الموظف: في التخزين المحلي، لكل موظف (addPrefs:<uid>)، ويُختاران مسبقاً في غرض جديد.
+   AGAIN: ما يبقى بعد «أضف آخر» (المكان وتفاصيله والتاريخ) لهذه الجلسة فقط */
+export const addPrefs = () => LS.get('addPrefs:' + S.uid, {}) || {};
+export const saveAddPrefs = p => LS.set('addPrefs:' + S.uid, {cat: String(p.cat || ''), spot: String(p.spot || '')});
+export const AGAIN = {v: null};
 
 export const backBtn = (label = t('c.back')) => `<button class="back" data-act="back">${icon('back')}${label}</button>`;
 
@@ -71,8 +79,10 @@ export function mcard({key, id = '', open, head, pillHtml, next, tone = '', body
 }
 export const person = uid => `<span class="person"><img data-avatar="${esc(uid)}" alt="" hidden><span data-uname="${esc(uid)}"></span></span>`;
 
-export function catPicker(sel){
-  return `<div class="catpick" role="radiogroup" aria-label="${t('c.category')}">${CATS.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${sel === c.id ? 'checked' : ''}>${icon(c.icon)}<span>${esc(catName(c.id))}</span></label>`).join('')}</div>`;
+// ids (H9): جزء من التصنيفات فقط (الأزرار السريعة في نموذج الإضافة، ثم البقية داخل «كل التصنيفات»)
+export function catPicker(sel, ids = null){
+  const list = ids ? ids.map(id => CATS.find(c => c.id === id)).filter(Boolean) : CATS;
+  return `<div class="catpick" role="radiogroup" aria-label="${t('c.category')}">${list.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${sel === c.id ? 'checked' : ''}>${icon(c.icon)}<span>${esc(catName(c.id))}</span></label>`).join('')}</div>`;
 }
 export function subsPicker(catId, sel){
   const subs = catId ? cat(catId).subs : []; sel = subName(sel);   // الاسم القديم يُختار باسمه الحالي
@@ -127,16 +137,17 @@ export function photoModePicker(sel = 'blur'){
     <span class="hint">${t('c.photoModeHint')}</span>
     <span class="hint">${t('c.blurColorHint')}</span></div>`;
 }
-export function photoField(existingKey, label, extra = ''){
+// capture (H9): يفتح كاميرا الجوال الخلفية مباشرة (نموذج إضافة غرض جديد)
+export function photoField(existingKey, label, extra = '', capture = false){
   return `<div class="field" id="photo-field"><span class="label">${label}</span>
     <div class="photo-drop">
       <div class="pv" id="pv">${existingKey ? `<img data-photo="${esc(existingKey)}" alt="" hidden>` : ''}${icon('camera')}</div>
       <div class="col">
         <div class="btn-row">
-          <span class="btn sm ghost filebtn">${icon('camera')}${t('c.pickPhoto')}<input type="file" accept="image/*" id="photo-in" aria-label="${t('c.pickPhoto')}"></span>
+          <span class="btn sm ghost filebtn">${icon('camera')}${t('c.pickPhoto')}<input type="file" accept="image/*" ${capture ? 'capture="environment" ' : ''}id="photo-in" aria-label="${t('c.pickPhoto')}"></span>
           <button type="button" class="btn sm ghost" data-act="removePhoto" id="rm-photo" ${existingKey ? '' : 'hidden'}>${icon('x')}${t('c.remove')}</button>
         </div>
-        ${aiReady() ? `<button type="button" class="btn sm soft" data-act="aiFill" id="ai-btn" disabled>${icon('spark')}${t('c.aiFill')}</button>` : ''}
+        ${aiReady() && !capture ? `<button type="button" class="btn sm soft" data-act="aiFill" id="ai-btn" disabled>${icon('spark')}${t('c.aiFill')}</button>` : ''}
         <span class="ai-status" id="ai-status"></span>
       </div>
     </div>

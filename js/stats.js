@@ -1,6 +1,7 @@
 // الإحصاءات والتصدير (للموظف والإدارة): تُحسب عند فتح صفحتها فقط، من كل أغراض المكتب (قراءة لكل غرض).
 // لا اشتراك دائم، حفاظاً على حصة القراءة اليومية في الخطة المجانية.
 import { dbx } from './firebase.js';
+import { MS_NOTE } from './workflow.js';
 import { S, touch } from './state.js';
 import { catName, subLabel, statusLabel, ITEM_STATUS, oName, keepDaysOf } from './constants.js';
 import { t, locale } from './i18n.js';
@@ -12,21 +13,30 @@ export async function loadStats(officeId, force = false){
   if (!officeId || loading.has(officeId) || (S.stats[officeId] && !force)) return;
   loading.add(officeId);
   try {
-    const [items, reports, secrets, done, pub] = await Promise.all([dbx.list('items', [['officeId', '==', officeId]]), dbx.list('reports', [['officeId', '==', officeId]]).catch(() => []),
+    const [items, reports, secrets, done, pub, adds] = await Promise.all([dbx.list('items', [['officeId', '==', officeId]]), dbx.list('reports', [['officeId', '==', officeId]]).catch(() => []),
       dbx.list('itemSecrets', [['officeId', '==', officeId]]).catch(() => []),
       // الطلبات المكتملة: للتقييم فقط (مساواة فقط، فلا فهرس مركّب)
       dbx.list('claims', [['officeId', '==', officeId], ['status', '==', 'done']]).catch(() => []),
-      dbx.get('publicStats/' + officeId).catch(() => null)]);
+      dbx.get('publicStats/' + officeId).catch(() => null),
+      // H9: قيود إنشاء الأغراض (مساواة فقط): نأخذ منها مدة الإضافة «ms:<رقم>» ووقتها فقط
+      dbx.list('logs', [['officeId', '==', officeId], ['action', '==', 'create']]).catch(() => [])]);
+    const addTimes = adds.map(l => ({ms: Number(MS_NOTE.exec(l.note || '')?.[1] || 0), at: l.at || 0})).filter(x => x.ms > 0);
     // مكان العثور سري (المرحلة E5): نأخذه من itemSecrets، ونضم spot فقط (لا شيء غيره من التفاصيل السرية)
     const spotOf = Object.fromEntries(secrets.filter(x => x.spot !== undefined).map(x => [x.id, x.spot]));
     // من الطلبات نحتفظ بالتقييم فقط (لا بيانات أصحابها)
     const ratings = done.filter(c => Number.isInteger(c.rating) && c.rating >= 1 && c.rating <= 5).map(c => ({rating: c.rating, note: c.ratingNote || '', at: c.ratedAt || 0}));
-    S.stats[officeId] = {items: items.map(i => i.id in spotOf ? {...i, spot: spotOf[i.id]} : i), reports, ratings, at: Date.now()};
+    S.stats[officeId] = {items: items.map(i => i.id in spotOf ? {...i, spot: spotOf[i.id]} : i), reports, ratings, addTimes, at: Date.now()};
     publishPublic(officeId, pub);
   } catch (e){ console.warn(e); S.stats[officeId] = {items: [], reports: [], ratings: [], at: Date.now(), error: true}; }
   finally { loading.delete(officeId); touch(); }
 }
 
+/* H9: متوسط وقت إضافة غرض (بالثواني) لآخر 50 إضافة. نستبعد ما تجاوز 15 دقيقة (نموذج تُرك مفتوحاً)
+   وما قلّ عن ثانية، حتى لا يفسد رقمٌ شاذ المتوسط */
+export function addTimeStats(list = []){
+  const ok = list.filter(x => x.ms >= 1000 && x.ms <= 15 * 60e3).sort((a, b) => b.at - a.at).slice(0, 50);
+  return {n: ok.length, avg: ok.length ? Math.round(ok.reduce((a, x) => a + x.ms, 0) / ok.length / 1000) : null};
+}
 // الرضا: المتوسط (منزلة عشرية واحدة)، والعدد، والتوزيع 1–5، وآخر 10 تعليقات
 export function ratingStats(ratings = []){
   const n = ratings.length, dist = [1, 2, 3, 4, 5].map(k => ({k, n: ratings.filter(r => r.rating === k).length}));
