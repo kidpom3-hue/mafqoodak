@@ -3,13 +3,13 @@ import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, 
 import { t, tp, tAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
 import { loadStats, exportCsv } from './stats.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite } from './state.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion,
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification } from './firebase.js';
 import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar } from './ui.js';
-import { updateBrowse, RATE_DRAFT } from './views/visitor.js';
+import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor.js';
 import { updateStaff, staffItems, staffClaims, claimChecks, keepLeft, catKeepNote, foundCardStaff } from './views/staff.js';
 import { FORM, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, detailReq } from './views/common.js';
 import { setTheme, setTextSize } from './theme.js';
@@ -736,9 +736,12 @@ const ACT = {
   editClaim(el){ const c = S.myClaims.find(x => x.id === el.dataset.id); if (claimEditable(c)) go('claim', {id: c.itemId, edit: c.id}); },
   // «افتح الطلب»: الانتقال إلى بطاقة الطلب في «طلباتي»
   showClaim(el){
-    const box = document.getElementById('claim-' + el.dataset.id);
-    if (box){ box.scrollIntoView({behavior: 'smooth', block: 'center'}); box.focus({preventScroll: true}); box.classList.add('flash'); setTimeout(() => box.classList.remove('flash'), 1600); }
+    const c = S.myClaims.find(x => x.id === el.dataset.id);
+    openCard('claims', 'c:' + el.dataset.id, ['done', 'rejected', 'expired', 'cancelled'].includes(c?.status));
   },
+  /* «طلباتي» (PR 3): تبديل التبويب (يُحفظ على الجهاز)، و«افتح» في «يحتاج انتباهك» ينقل إلى البطاقة ويفتحها */
+  mineTab(el){ LS.set('mineTab', el.dataset.v); renderAll(); document.getElementById('mt-' + el.dataset.v)?.focus(); },
+  openCard(el){ openCard(el.dataset.tab, el.dataset.card, el.dataset.ended === '1'); },
   fcat(el){ S.filter.cat = el.dataset.id; updateBrowse(); },
   catGo(el){ S.filter.cat = el.dataset.id; S.filter.q = ''; S.filter.status = 'available'; go('browse'); },
   fstatus(el){ S.filter.status = el.dataset.v; updateBrowse(); },
@@ -862,6 +865,7 @@ const ACT = {
       </form>`);
   },
   claimHist(){ loadClaimHistory(); },
+  closedReps(){ loadClosedReports(); },   // «مغلقة» في تبويب البلاغات (PR 3)
   adminRefresh(){ loadAdminCounts(true); },
   // تعبئة طلب الاستلام من بلاغ المستخدم المفتوح
   useReport(el){
@@ -1011,8 +1015,24 @@ const ACT = {
 };
 
 /* ---------- ربط المستمعين ---------- */
+// ينقل إلى بطاقة في «طلباتي»: تبويبها، ثم «منتهية» إن كانت فيها، ثم يفتحها ويبرزها
+function openCard(tab, key, ended){
+  LS.set('mineTab', tab); CARD_OPEN.set(key, true); if (ended) ENDED_OPEN.set(tab, true);
+  renderAll();
+  const box = document.querySelector(`details[data-card="${CSS.escape(key)}"]`); if (!box) return;
+  box.open = true;
+  box.scrollIntoView({behavior: 'smooth', block: 'center'});
+  box.querySelector('summary')?.focus({preventScroll: true});
+  box.classList.add('flash'); setTimeout(() => box.classList.remove('flash'), 1600);
+}
 export function bindEvents(){
   const app = $('#app');
+  // تذكّر فتح البطاقات المختصرة و«منتهية» (حتى لا تُطوى عند إعادة الرسم الحيّ). حدث toggle لا ينتشر، فنلتقطه مبكراً
+  document.addEventListener('toggle', e => {
+    const d = e.target; if (!(d instanceof HTMLDetailsElement)) return;
+    if (d.dataset.card) CARD_OPEN.set(d.dataset.card, d.open);
+    else if (d.dataset.ended) ENDED_OPEN.set(d.dataset.ended, d.open);
+  }, true);
   app.addEventListener('click', e => {
     const el = e.target.closest('[data-act]'); if (!el || !app.contains(el)) return;
     const fn = ACT[el.dataset.act]; if (!fn) return;
@@ -1022,6 +1042,13 @@ export function bindEvents(){
   app.addEventListener('keydown', e => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role=button][data-act]')){ e.preventDefault(); e.target.click(); }
     if (e.key === 'Escape' && S.sheet) closeSheet();
+    // التبويبات (role="tablist"): الأسهم تنقل بين التبويبات وتفعّلها، مع مراعاة اتجاه الصفحة، وHome/End للأول والأخير
+    if (e.target.matches('[role=tab]') && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)){
+      const tabs = [...e.target.closest('[role=tablist]').querySelectorAll('[role=tab]')], k = tabs.indexOf(e.target);
+      const fwd = (e.key === 'ArrowLeft') === (document.dir === 'rtl');
+      const n = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (k + (fwd ? 1 : -1) + tabs.length) % tabs.length;
+      e.preventDefault(); tabs[n].click();
+    }
   });
   app.addEventListener('submit', e => {
     const f = e.target.closest('form[data-form]'); if (!f) return;

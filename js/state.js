@@ -274,7 +274,7 @@ let itemsKey = null, rcKey = null;
 export function ensureOfficeSubs(){
   if (!db) return;
   if (itemsKey !== S.officeId){
-    itemsKey = S.officeId; clear('items'); S.items = []; S.itemsLoaded = false; S.counts = {}; S.extraItems = {}; S.claimHist = null; S.logs = {};
+    itemsKey = S.officeId; clear('items'); S.items = []; S.itemsLoaded = false; S.counts = {}; S.extraItems = {}; S.claimHist = null; S.closedReps = null; S.logs = {};
     // الأغراض النشطة فقط (متاح ومحجوز): المُسلَّم القديم لا يُحمَّل لكل زائر
     if (S.officeId){
       subs.items.push(dbx.watch('items', [['officeId', '==', S.officeId], ['status', 'in', ACTIVE]], l => { S.items = l; S.itemsLoaded = true; watchSecrets(); changed(); },
@@ -285,7 +285,7 @@ export function ensureOfficeSubs(){
   const staffView = isStaffHere();
   const k = `${S.officeId}|${S.uid}|${staffView}`;
   if (rcKey !== k){
-    rcKey = k; clear('rc'); S.reports = []; S.claims = []; S.found = []; S.secrets = {}; S.claimHist = null;
+    rcKey = k; clear('rc'); S.reports = []; S.claims = []; S.found = []; S.secrets = {}; S.claimHist = null; S.closedReps = null;
     secSubs.forEach(u => { try { u(); } catch {} }); secSubs.clear();
     // للموظف فقط: البلاغات المفتوحة، والطلبات المفتوحة (قيد المراجعة والمقبولة)، والتفاصيل السرية لمكتبه.
     // الزائر يرى بلاغاته وطلباته من اشتراك «طلباتي» بالأعلى.
@@ -366,6 +366,12 @@ export async function loadAudit(officeId, filter, force = false){
   changed();
 }
 // للموظف: سجل الطلبات المنتهية عند الطلب
+// البلاغات المغلقة لمكتب (للموظف، عند فتح «مغلقة» في تبويب البلاغات): قراءة واحدة عند الطلب، لا اشتراك
+export async function loadClosedReports(){
+  try { S.closedReps = await dbx.list('reports', [['officeId', '==', S.officeId], ['status', '==', 'closed']]); }
+  catch (e){ errH('closed reports')(e); S.closedReps = []; }
+  changed();
+}
 export async function loadClaimHistory(){
   try { S.claimHist = await dbx.list('claims', [['officeId', '==', S.officeId], ['status', 'in', ['done', 'rejected', 'expired', 'cancelled']]]); }
   catch (e){ errH('claim history')(e); S.claimHist = []; }

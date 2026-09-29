@@ -1,9 +1,9 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
-import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, claimOf, keepDaysOf, detailValue } from '../constants.js';
+import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem } from '../state.js';
-import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt, whenLine, claimTimeline } from './common.js';
+import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, ENDED_OPEN } from './common.js';
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
 
@@ -221,7 +221,9 @@ export function qaBox(c){
     <div class="qa-a">${ok ? `<b>${t('qa.a')}</b> ${esc(c.answer)}` : `<span class="muted">${t(c.status === 'pending' ? 'qa.waiting' : 'qa.none')}</span>`}</div>
   </div>`;
 }
-export function claimCardStaff(c){
+// مدة بالساعات أو الأيام (للموظف: منذ متى ينتظر الطلب، وكم بقي على مهلة الحضور)
+const durText = ms => ms < 36e5 ? t('n.lessHour') : ms < 864e5 ? tp('n.hours', Math.round(ms / 36e5)) : tp('n.days', Math.round(ms / 864e5));
+export function claimCardStaff(c, opts){
   const i = item(c.itemId);
   // تحذير: طلبات كثيرة من المستخدم نفسه في هذا المكتب خلال 30 يوماً
   const all = [...S.claims, ...(S.claimHist || []).filter(h => !S.claims.some(x => x.id === h.id))];
@@ -242,8 +244,15 @@ export function claimCardStaff(c){
       <button class="btn sm" data-act="verify" data-id="${esc(c.id)}">${icon('shield')}${t('st.verify')}</button>
       ${late ? `<button class="btn sm ghost" data-act="release" data-id="${esc(c.id)}">${icon('swap')}${t('st.release')}</button>` : ''}
       <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}${t('st.unapprove')}</button></div>` : '';
-  return `<div class="box">
-    <div class="box-head"><div class="claim-who">${person(c.uid)}<span class="meta"><span dir="ltr" class="req-no">${esc(claimNo(c))}</span></span>${whenLine('c.sentAt', c.createdAt)}${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div>${pill(CLAIM_STATUS, c.status)}</div>
+  // الملخّص (PR 3): رقم الطلب والغرض والحالة، والخطوة التالية: مدة الانتظار، أو المهلة المتبقية للحضور (تحذير تحت يوم)
+  const left = c.pickupBy ? c.pickupBy - Date.now() : null;
+  const next = c.status === 'pending' ? t('st.waitFor', {dur: durText(Date.now() - (c.createdAt || Date.now()))})
+    : c.status === 'approved' ? (left === null ? t('st.comeNoDate') : left < 0 ? t('st.comeLate', {dur: durText(-left)}) : t('st.comeIn', {dur: durText(left)}))
+    : c.status === 'done' ? t('st.doneAt', {when: when(c.doneAt)}) : t('st.endedAt', {when: when(c.decidedAt || c.createdAt)});
+  const warn = c.status === 'approved' && left !== null && left < 864e5;
+  return mcard({key: 's:' + c.id, open: opts?.open, tone: warn ? 'warn' : '', pillHtml: pill(CLAIM_STATUS, c.status), next,
+    head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${esc(i ? showTitle(i) : claimNo(c))}</h3>${person(c.uid)}`,
+    body: `<div class="box-head"><div class="claim-who">${whenLine('c.sentAt', c.createdAt)}${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div></div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
     ${c.editedAt ? `<div class="note info edited">${icon('edit')}<span>${t('st.editedAfter', {when: when(c.editedAt)})}</span></div>` : ''}
     ${claimTimeline(c, true)}
@@ -256,8 +265,7 @@ export function claimCardStaff(c){
     ${['rejected', 'expired', 'cancelled'].includes(c.status) && c.note ? `<div class="meta">${t(c.status === 'rejected' ? 'st.rejectReason' : 'st.note')}: ${esc(noteText(c.note))}</div>` : ''}
     ${c.status === 'approved' && c.note ? `<div class="meta">${t('st.approveReason')}: ${esc(c.note)}</div>` : ''}
     ${c.status === 'done' && c.handoverNote ? `<div class="meta">${icon('idcard')}${esc(noteText(c.handoverNote))}</div>` : ''}
-    ${actions}${again}
-  </div>`;
+    ${actions}${again}`});
 }
 // البحث برقم الطلب (REQ-7K3M أو 7K3M فقط): يطابق الطلبات المفتوحة والسجل المحمّل
 const qNo = s => latinDigits(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -270,65 +278,84 @@ export function staffClaims(){
       ${hits.length ? `<div class="list">${hits.map(claimCardStaff).join('')}</div>` : `<p class="muted">${t('st.noClaimNo')}</p>`}
       ${S.claimHist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}${t('st.showHist')}</button>` : ''}`;
   }
-  const cs = S.claims.slice().sort(byLast);
-  const pend = cs.filter(c => c.status === 'pending'), appr = cs.filter(c => c.status === 'approved' && !pickupOver(c)), late = cs.filter(pickupOver);
-  const hist = (S.claimHist || []).slice().sort((a,b) => (b.decidedAt || b.doneAt || b.createdAt) - (a.decidedAt || a.doneAt || a.createdAt)).slice(0, 50);
+  // الأولوية (PR 3): بانتظار قرارك (الأقدم أولاً) ← بانتظار الحضور (الأقرب مهلة أولاً، والمتأخر أولها) ← تسليمات قادمة من الواجدين ← منتهية (مطوية)
+  const pend = S.claims.filter(c => c.status === 'pending').sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const appr = S.claims.filter(c => c.status === 'approved').sort((a, b) => (a.pickupBy || Infinity) - (b.pickupBy || Infinity));
+  const hist = (S.claimHist || []).slice().sort(byLast).slice(0, 50);
   return `
-    <div class="section-title">${t('st.awaiting')} ${pend.length ? `<span class="count">${pend.length}</span>` : ''}</div>
-    ${pend.length ? `<div class="list">${pend.map(claimCardStaff).join('')}</div>` : `<p class="muted">${t('st.noNew')}</p>`}
-    ${late.length ? `<div class="section-title">${t('st.lateTitle')} <span class="count">${late.length}</span></div>
-      <p class="muted">${t('st.lateHint')}</p>
-      <div class="list">${late.map(claimCardStaff).join('')}</div>` : ''}
-    <div class="section-title">${t('st.apprTitle')}</div>
-    ${appr.length ? `<div class="list">${appr.map(claimCardStaff).join('')}</div>` : `<p class="muted">${t('c.none')}</p>`}
-    <div class="section-title">${t('st.history')}</div>
-    ${S.claimHist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}${t('st.showHist')}</button>`
-      : hist.length ? `<div class="list">${hist.map(claimCardStaff).join('')}</div>` : `<p class="muted">${t('c.none')}</p>`}`;
+    <div class="section-title">${t('st.secDecide')} ${pend.length ? `<span class="count">${pend.length}</span>` : ''}</div>
+    ${pend.length ? `<div class="list">${pend.map((c, k) => claimCardStaff(c, {open: k === 0})).join('')}</div>` : `<p class="muted">${t('st.noNew')}</p>`}
+    <div class="section-title">${t('st.secCome')} ${appr.length ? `<span class="count">${appr.length}</span>` : ''}</div>
+    ${appr.length ? `<div class="list">${appr.map(c => claimCardStaff(c)).join('')}</div>` : `<p class="muted">${t('st.noCome')}</p>`}
+    ${handins()}
+    <details class="ended" data-ended="staffClaims" ${ENDED_OPEN.get('staffClaims') ? 'open' : ''}><summary>${t('st.secEnded')}${S.claimHist ? ` (${hist.length})` : ''}${icon('chev')}</summary>
+      ${S.claimHist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}${t('st.showHist')}</button>`
+        : hist.length ? `<div class="list">${hist.map(c => claimCardStaff(c)).join('')}</div>` : `<p class="muted">${t('c.none')}</p>`}</details>`;
 }
 /* إشعار تسليم من واجد (للموظف): «استلمته» يفتح نموذج الغرض معبّأً، و«لم يصل» يغلقه */
-export function foundCardStaff(f){
+export function foundCardStaff(f, open){
   const done = S.items.find(i => i.fromFound === f.id);   // سُجّل غرضه ولم يُحدَّث الإشعار (نادر)
-  return `<div class="box">
-    <div class="box-head"><div class="claim-who">${person(f.uid)}${whenLine('c.sentAt', f.createdAt)}${f.code ? `<span class="pill info" dir="ltr">${esc(f.code)}</span>` : ''}</div>${pill(FOUND_STATUS, f.status)}</div>
-    <div class="meta">${icon(cat(f.cat).icon)}${esc(catName(f.cat))}${f.sub ? ' — ' + esc(subLabel(f.sub)) : ''}</div>
+  return mcard({key: 'sf:' + f.id, open, pillHtml: pill(FOUND_STATUS, f.status), next: t('st.handinNext', {when: when(f.createdAt)}),
+    head: `${f.code ? `<span class="meta" dir="ltr">${esc(f.code)}</span>` : ''}<h3>${esc(f.sub ? subLabel(f.sub) : catName(f.cat))}</h3>${person(f.uid)}`,
+    body: `<div class="meta">${icon(cat(f.cat).icon)}${esc(catName(f.cat))}${f.sub ? ' — ' + esc(subLabel(f.sub)) : ''}</div>
     <div class="meta">${t('hi.foundAt', {place: esc(spotText(f) || t('it.unknown')), date: fmtDate(f.foundDate)})}</div>
     ${f.note ? `<div class="proof">${esc(f.note)}</div>` : ''}
     <div class="btn-row"><button class="btn sm" data-act="receiveFound" data-id="${esc(f.id)}">${icon('check')}${t(done ? 'hi.confirmReceived' : 'hi.receive')}</button>
-      ${done ? '' : `<button class="btn sm ghost" data-act="dropFound" data-id="${esc(f.id)}">${icon('x')}${t('hi.drop')}</button>`}</div>
-  </div>`;
+      ${done ? '' : `<button class="btn sm ghost" data-act="dropFound" data-id="${esc(f.id)}">${icon('x')}${t('hi.drop')}</button>`}</div>`});
 }
-// خانة البحث بكود إشعار التسليم تظهر فقط إذا زادت الإشعارات المعلّقة على هذا العدد
-export const CODE_SEARCH_MIN = 5;
-export function staffReports(){
-  const fs = S.found.slice().sort(byLast);
+// «تسليمات قادمة» (في تبويب الاستلام، PR 3): إشعارات التسليم المعلّقة من الواجدين، الأقدم أولاً
+function handins(){
+  const fs = S.found.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   // البحث بكود إشعار التسليم: يظهر فقط مع إشعارات كثيرة (الجهات الكبيرة)، وإلا يكفي اختيار الإشعار من القائمة
   const codeBox = fs.length <= CODE_SEARCH_MIN ? '' : `<form class="filters code-find" data-form="findCode" novalidate>
       <label class="searchbar" style="flex:1;min-width:180px">${icon('tag')}<input name="code" class="code-in" dir="ltr" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="${t('hi.codePh')}" aria-label="${t('hi.codeAria')}"></label>
       <button class="btn sm" type="submit">${icon('search')}${t('hi.codeOpen')}</button></form>`;
-  // إشعارات التسليم أولاً (أغراض في الطريق إلى المكتب)، ثم بلاغات المفقودين
-  const found = codeBox + (fs.length ? `<div class="section-title">${icon('tag')}${t('hi.staffTitle')} <span class="count">${fs.length}</span></div>
-    <p class="muted">${t('hi.staffHint')}</p><div class="list">${fs.map(foundCardStaff).join('')}</div>
-    <div class="section-title">${icon('bell')}${t('hi.lostTitle')}</div>` : '');
+  return `<div class="section-title">${t('st.secHandin')} ${fs.length ? `<span class="count">${fs.length}</span>` : ''}</div>
+    ${fs.length ? `${codeBox}<p class="muted">${t('hi.staffHint')}</p><div class="list">${fs.map((f, k) => foundCardStaff(f, k === 0)).join('')}</div>` : `<p class="muted">${t('st.noHandin')}</p>`}`;
+}
+// خانة البحث بكود إشعار التسليم تظهر فقط إذا زادت الإشعارات المعلّقة على هذا العدد
+export const CODE_SEARCH_MIN = 5;
+export function staffReports(){
+  // الترتيب (PR 3): المفتوح الذي له غرض مرشّح أولاً، ثم المفتوح، ثم «مغلقة» مطوية (تُجلب عند الطلب).
+  // إشعارات التسليم انتقلت إلى تبويب «الاستلام» (تسليمات قادمة)
   // البلاغات القديمة (أكثر من 60 يوماً دون تجديد) مخفية افتراضياً
   const open = S.reports.filter(r => r.status === 'open'), old = open.filter(isStale);
   const rs = open.filter(r => S.showStale || !isStale(r)).sort(byLast);
+  const picked = rs.filter(r => r.staffPick), rest = rs.filter(r => !r.staffPick);
   const oldBtn = old.length ? `<div class="btn-row"><button class="btn sm ghost" data-act="toggleStale" aria-pressed="${S.showStale}">${icon('clock')}${t(S.showStale ? 'st.hideOld' : 'st.showOld', {n: old.length})}</button></div>` : '';
-  if (!rs.length) return found + oldBtn + `<div class="empty">${icon('bell')}<b>${t('st.noReports')}</b><span>${t('st.noReportsSub')}</span></div>`;
-  return found + oldBtn + `<div class="list">${rs.map(r => {
-    // الموظف يقارن بالتفاصيل السرية أيضاً، والأغراض التي قال عنها صاحب البلاغ «ليس غرضي» لا تُرشَّح له من جديد (G5)
-    const cands = candidatesFor(r, 3, full);
-    const refs = [...rejectedOf(r)].map(id => { const it = item(id); if (!it) ensureItem(id); return it?.ref || ''; }).filter(Boolean);
-    return `<div class="box">
-      <div class="box-head"><div><h3>${esc(r.title)}${isStale(r) ? ` <span class="pill mute">${t('st.oldReport')}</span>` : ''}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(subLabel(r.sub)) : ''}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''}</span>${whenLine('c.sentAt', r.createdAt)}${whenLine('c.editedAt', r.editedAt)}</div></div>
+  // أول بلاغ له مرشّحون ولم يُرشَّح له بعد يُفتح تلقائياً (يحتاج قراراً)
+  const first = rest.find(r => candidatesFor(r, 1, full).length)?.id;
+  const closed = (S.closedReps || []).slice().sort(byLast).slice(0, 50);
+  return `${oldBtn}
+    ${picked.length ? `<div class="section-title">${t('st.rPicked')} <span class="count">${picked.length}</span></div>
+      <div class="list">${picked.map(r => reportCardStaff(r)).join('')}</div>` : ''}
+    <div class="section-title">${t('st.rOpen')} ${rest.length ? `<span class="count">${rest.length}</span>` : ''}</div>
+    ${rest.length ? `<div class="list">${rest.map(r => reportCardStaff(r, r.id === first)).join('')}</div>`
+      : !picked.length ? `<div class="empty">${icon('bell')}<b>${t('st.noReports')}</b><span>${t('st.noReportsSub')}</span></div>` : `<p class="muted">${t('c.none')}</p>`}
+    <details class="ended" data-ended="staffReports" ${ENDED_OPEN.get('staffReports') ? 'open' : ''}><summary>${t('st.rClosed')}${S.closedReps ? ` (${closed.length})` : ''}${icon('chev')}</summary>
+      ${S.closedReps == null ? `<button class="btn sm ghost" data-act="closedReps">${icon('clock')}${t('st.rShowClosed')}</button>`
+        : closed.length ? `<div class="list">${closed.map(r => reportCardStaff(r)).join('')}</div>` : `<p class="muted">${t('c.none')}</p>`}</details>`;
+}
+// بطاقة بلاغ للموظف (مختصرة): الملخّص فيه الخطوة التالية، والتفاصيل كما كانت
+function reportCardStaff(r, open){
+  const isOpen = r.status === 'open';
+  // الموظف يقارن بالتفاصيل السرية أيضاً، والأغراض التي قال عنها صاحب البلاغ «ليس غرضي» لا تُرشَّح له من جديد (G5)
+  const cands = isOpen ? candidatesFor(r, 3, full) : [];
+  const refs = [...rejectedOf(r)].map(id => { const it = item(id); if (!it) ensureItem(id); return it?.ref || ''; }).filter(Boolean);
+  const pickRef = r.staffPick ? (item(r.staffPick)?.ref || '') : '';
+  const next = !isOpen ? t('st.rNextClosed', {when: when(r.closedAt || r.createdAt)})
+    : r.staffPick ? t('st.rNextPicked', {ref: `<b dir="ltr">${esc(pickRef)}</b>`}) : cands.length ? t('st.rNextCands', {n: cands.length}) : t('st.rNextNone');
+  return mcard({key: 'sr:' + r.id, open, pillHtml: isStale(r) ? `<span class="pill mute">${t('st.oldReport')}</span>` : isOpen ? '' : pill(REPORT_STATUS, r.status), next,
+    head: `<span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(subLabel(r.sub)) : ''}</span><h3>${esc(r.title)}</h3>${person(r.uid)}`,
+    body: `<div>${r.color ? `<span class="meta">${colorDot(r.color)}${esc(colorName(r.color))}</span>` : ''}${whenLine('c.sentAt', r.createdAt)}${whenLine('c.editedAt', r.editedAt)}</div>
       ${r.photo ? `<div class="row-thumb" style="width:84px;height:84px">${icon('camera')}<img data-photo="r_${esc(r.id)}" alt="" hidden></div>` : ''}
       ${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}
       <div class="meta">${person(r.uid)} · ${r.spot ? t('st.lostAt', {place: esc(spotText(r)), date: fmtDate(r.lostDate)}) : t('st.lostOn', {date: fmtDate(r.lostDate)})}</div>
       ${refs.length ? `<div class="note warn">${icon('x')}<span>${t('st.rejectedBy', {refs: refs.map(x => `<b dir="ltr">${esc(x)}</b>`).join(t('c.listSep'))})}</span></div>` : ''}
-      ${acceptBtn(r)}
-      ${cands.length ? `<span class="label">${t('st.cands')}</span><div class="list">${cands.map(({i, s}) => `<div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
+      ${isOpen ? acceptBtn(r) : ''}
+      ${!isOpen ? '' : cands.length ? `<span class="label">${t('st.cands')}</span><div class="list">${cands.map(({i, s}) => `<div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
         ${r.staffPick === i.id ? `<span class="pill ok">${icon('check')}${t('st.picked')}</span>` : `<button class="btn sm soft" data-act="pickFor" data-r="${esc(r.id)}" data-i="${esc(i.id)}">${t('st.pick')}</button>`}</div>`).join('')}</div>`
-        : `<p class="muted">${t('st.noCands')}</p>`}
-    </div>`; }).join('')}</div>`;
+        : `<p class="muted">${t('st.noCands')}</p>`}`});
 }
 
 // زر قبول البلاغ: يحوّله إلى غرض في المستودع، أو يُظهر الغرض إن سبق قبوله

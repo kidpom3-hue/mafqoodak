@@ -52,6 +52,17 @@ export function claimTimeline(c, staff = false){
   return `<ol class="ctl" aria-label="${t('ctl.title')}">${ev.filter(e => typeof e[1] === 'number' && e[1] > 0)
     .map(([k, ms, future]) => `<li${future ? ' class="future"' : ''}><b>${t(k)}</b> <span>${when(ms)}</span></li>`).join('')}</ol>`;
 }
+// حالة الفتح والطي التي اختارها المستخدم (تبقى عند إعادة الرسم الحيّ): مفتاح البطاقة ← مفتوحة؟ (actions.js يحدّثها)
+export const CARD_OPEN = new Map(), ENDED_OPEN = new Map();
+const openOf = (key, dflt) => CARD_OPEN.has(key) ? CARD_OPEN.get(key) : !!dflt;
+// بطاقة مختصرة: الملخّص (عنوان، رقم، حالة، الخطوة التالية) والتفاصيل عند الفتح
+export function mcard({key, id = '', open, head, pillHtml, next, tone = '', body}){
+  return `<details class="mcard${tone === 'warn' ? ' attn' : ''}" data-card="${esc(key)}"${id ? ` id="${esc(id)}"` : ''} ${openOf(key, open) ? 'open' : ''}>
+    <summary class="mcard-sum"><span class="mcard-top"><span class="mcard-h">${head}</span>${pillHtml}</span>
+      <span class="next ${tone}">${icon(tone === 'warn' ? 'alert' : 'fwd')}<span>${next}</span></span>${icon('chev')}</summary>
+    <div class="mcard-body">${body}</div>
+  </details>`;
+}
 export const person = uid => `<span class="person"><img data-avatar="${esc(uid)}" alt="" hidden><span data-uname="${esc(uid)}"></span></span>`;
 
 export function catPicker(sel){
