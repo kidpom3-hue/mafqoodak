@@ -56,10 +56,10 @@ export function claimTimeline(c, staff = false){
 export const CARD_OPEN = new Map(), ENDED_OPEN = new Map();
 const openOf = (key, dflt) => CARD_OPEN.has(key) ? CARD_OPEN.get(key) : !!dflt;
 // بطاقة مختصرة: الملخّص (عنوان، رقم، حالة، الخطوة التالية) والتفاصيل عند الفتح
-export function mcard({key, id = '', open, head, pillHtml, next, tone = '', body}){
-  return `<details class="mcard${tone === 'warn' ? ' attn' : ''}" data-card="${esc(key)}"${id ? ` id="${esc(id)}"` : ''} ${openOf(key, open) ? 'open' : ''}>
+export function mcard({key, id = '', open, head, pillHtml, next, tone = '', body, fresh, muted}){
+  return `<details class="mcard${tone === 'warn' ? ' attn' : ''}${fresh ? ' new' : ''}${muted ? ' muted' : ''}" data-card="${esc(key)}"${id ? ` id="${esc(id)}"` : ''} ${openOf(key, open) ? 'open' : ''}>
     <summary class="mcard-sum"><span class="mcard-top"><span class="mcard-h">${head}</span>${pillHtml}</span>
-      <span class="next ${tone}">${icon(tone === 'warn' ? 'alert' : 'fwd')}<span>${next}</span></span>${icon('chev')}</summary>
+      <span class="next ${tone}">${icon(tone === 'warn' ? 'alert' : 'fwd')}<span>${next}</span></span></summary>
     <div class="mcard-body">${body}</div>
   </details>`;
 }

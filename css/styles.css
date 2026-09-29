@@ -1,7 +1,7 @@
 /* تنسيقات مفقودك — الألوان كلها في :root بالأعلى (الوضع الفاتح) وفي كتل الوضع الداكن */
 :root{
   --bg:#EFF3F1; --surface:#FFFFFF; --surface-2:#E4ECE9; --ink:#0F1F1C; --muted:#526764; --line:#D3DDD9;
-  --primary:#0A6A5D; --primary-ink:#FFFFFF; --primary-soft:#D8EEE8; --primary-line:#9DCFC4;
+  --primary:#0A6A5D; --primary-ink:#FFFFFF; --primary-soft:#D8EEE8; --primary-line:#9DCFC4; --primary-faint:#EEF7F4;
   --tag:#F2DDA8; --tag-ink:#4A380B; --tag-line:#D5B86F;
   --ok:#1B7646; --ok-soft:#DCF0E3; --warn:#9A5A0B; --warn-soft:#FAEAD2; --bad:#B0261E; --bad-soft:#F7DFDC; --info:#1D57A0; --info-soft:#DEE8F6;
   --shadow:0 1px 2px rgba(15,31,28,.05),0 6px 20px rgba(15,31,28,.06);
@@ -15,7 +15,7 @@
   :root:not([data-theme="light"]){
     color-scheme:dark;
     --bg:#0A1311; --surface:#121D1A; --surface-2:#1A2926; --ink:#E3EDEA; --muted:#8EA39F; --line:#23342F;
-    --primary:#45B8A4; --primary-ink:#04201B; --primary-soft:#123A33; --primary-line:#2A6A5E;
+    --primary:#45B8A4; --primary-ink:#04201B; --primary-soft:#123A33; --primary-line:#2A6A5E; --primary-faint:#0E1F1B;
     --tag:#3A301A; --tag-ink:#F2DDA8; --tag-line:#5C4C26;
     --ok:#62CC91; --ok-soft:#12301F; --warn:#EBAA52; --warn-soft:#33250E; --bad:#F2887D; --bad-soft:#3A1714; --info:#84B2EF; --info-soft:#13243B;
     --shadow:0 1px 2px rgba(0,0,0,.3);
@@ -25,7 +25,7 @@
 :root[data-theme="dark"]{
   color-scheme:dark;
   --bg:#0A1311; --surface:#121D1A; --surface-2:#1A2926; --ink:#E3EDEA; --muted:#8EA39F; --line:#23342F;
-  --primary:#45B8A4; --primary-ink:#04201B; --primary-soft:#123A33; --primary-line:#2A6A5E;
+  --primary:#45B8A4; --primary-ink:#04201B; --primary-soft:#123A33; --primary-line:#2A6A5E; --primary-faint:#0E1F1B;
   --tag:#3A301A; --tag-ink:#F2DDA8; --tag-line:#5C4C26;
   --ok:#62CC91; --ok-soft:#12301F; --warn:#EBAA52; --warn-soft:#33250E; --bad:#F2887D; --bad-soft:#3A1714; --info:#84B2EF; --info-soft:#13243B;
   --shadow:0 1px 2px rgba(0,0,0,.3);
@@ -384,17 +384,6 @@ form.hero-search{flex-direction:row;align-items:center;gap:8px;background:var(--
 .faq summary svg{width:18px;height:18px;color:var(--muted);transition:transform .2s ease;flex:none}
 .faq details[open] summary svg{transform:rotate(180deg)}
 .faq details p{padding-bottom:13px;color:var(--muted);font-size:14px}
-.site-foot{margin-top:16px;border-top:1px solid var(--line);padding-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:18px}
-.sf-brand{display:flex;flex-direction:column;gap:6px}
-.sf-brand svg{width:34px;height:34px}
-.sf-brand b{font-family:var(--f-display);font-size:18px}
-.sf-brand p{font-size:13px;color:var(--muted)}
-.sf-col{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
-.sf-col > b{font-size:14px}
-.sf-col > span{display:flex;gap:6px;align-items:flex-start;font-size:13px;color:var(--muted)}
-.sf-col svg{width:16px;height:16px;margin-top:2px;flex:none}
-.sf-col .link{font-size:13.5px}
-.sf-copy{grid-column:1/-1;color:var(--muted);font-size:12px}
 
 /* ================= تنقل الشاشات الكبيرة ================= */
 .top-links{display:none}
@@ -481,7 +470,7 @@ h1,h2,h3,p,dd,.row-title,.card-body h3,.hero-title{overflow-wrap:anywhere}
 @media (min-width:720px){.how.how3 li::after{display:none}}
 
 /* أهداف اللمس: روابط التذييل وزر «رجوع» و«نسيت كلمة المرور» بارتفاع مريح للإصبع دون تغيير شكلها */
-.sf-col .link,.back,[data-act="resetPass"]{min-height:36px;display:inline-flex;align-items:center}
+.back,[data-act="resetPass"]{min-height:36px;display:inline-flex;align-items:center}
 
 /* هياكل التحميل: بطاقات رمادية بلمعان خفيف بدل الدائرة الدوّارة */
 .card.skel{cursor:default}
@@ -817,14 +806,14 @@ html[data-text] .pill{white-space:normal}
 /* H3: الشريط العلوي يعطي الأولوية لاسم المكتب؛ وفي الجوال (تحت 560px، ومنه 390 و412 و430) زر الدخول أيقونة فقط (36px) */
 .top-actions>*:not(.office-chip){flex:none}
 .top-actions .office-chip{flex:0 1 auto}
-@media (max-width:559px){
+@media (max-width:599px){
   .login-btn{width:36px;height:36px;padding:0;justify-content:center}
   .login-btn .login-txt{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
   .office-chip{font-size:13px}
   .office-chip svg:first-child{display:none}   /* أيقونة نوع المكتب: يبقى الاسم كاملاً */
 }
 /* H3: بالإنجليزية الكلمة «Mafqoodak» أعرض، فتحت 560px يبقى الشعار وحده ليتسع اسم المكتب كاملاً */
-@media (max-width:559px){ html[lang=en] .wordmark{display:none} }
+@media (max-width:599px){ html[lang=en] .wordmark{display:none} }
 /* H2: خانة البحث في لوحة الموظف بعرض كامل في الجوال، فيظهر نصها كاملاً */
 /* (important لأن للخانة style="flex:1" في staff.js) */
 @media (max-width:479px){ #s-tools .filters .searchbar{flex:1 1 100%!important} }
@@ -839,10 +828,6 @@ html[data-text] .pill{white-space:normal}
 .features.compact .feat b{font-size:13.5px;line-height:1.35}
 .features.compact .feat span{grid-column:1/-1;font-size:12.5px;line-height:1.45}
 /* التذييل: الروابط في عمودين، والتفضيلات في صف واحد يلتف */
-.sf-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 14px;width:100%}
-.sf-links .link{text-align:start}
-.sf-prefs{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
-.sf-prefs .link{font-size:13.5px;min-height:36px;display:inline-flex;align-items:center}
 /* المصطلحات في فهرس الخدمات: مطوية */
 .terms-box .terms{padding-bottom:13px}
 /* ---------- PR 3: «طلباتي» ولوحات الموظف ---------- */
@@ -889,3 +874,104 @@ html[data-text] .pill{white-space:normal}
 .ended>.list,.ended>.btn,.ended>p{margin-top:8px}
 .empty.sm{padding:18px 12px;gap:10px}
 .attn-list .grow{min-width:0;overflow-wrap:anywhere}
+
+/* ---------- H4: التذييل والشريط العلوي ---------- */
+/* التذييل: بعرض الصفحة كاملاً بالأخضر الداكن لبطاقة الرئيسية. الخلفية تمتد بظل (box-shadow) مقصوص أفقياً،
+   فلا يتغير عرض الصفحة ولا يظهر تمرير أفقي */
+.site-foot{margin-top:24px;margin-bottom:-28px;background:var(--hero-bg);color:var(--hero-ink);box-shadow:0 0 0 100vmax var(--hero-bg);clip-path:inset(0 -100vmax -100vmax);padding-block:28px 18px;display:flex;flex-direction:column;gap:22px}
+.sf-top{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:24px}
+.sf-brand{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:16px;row-gap:6px;align-items:start}
+.sf-id{display:flex;align-items:center;gap:10px}
+.sf-id svg{width:34px;height:34px}
+.sf-id b{font-family:var(--f-display);font-size:19px}
+.sf-brand p{grid-column:1;font-size:13.5px;color:var(--hero-muted)}
+.sf-qr{grid-column:2;grid-row:1 / span 2;display:flex;flex-direction:column;align-items:center;gap:4px}
+.sf-qr svg{width:84px;height:84px;background:#fff;border-radius:8px;padding:4px}
+.sf-qr small{font-size:11px;color:var(--hero-muted);text-align:center;max-width:96px}
+.sf-col{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.sf-h{font-size:15px;font-weight:700;padding-bottom:8px;border-bottom:1px solid var(--hero-line);align-self:stretch}
+.sf-links{display:flex;flex-wrap:wrap;gap:4px 18px}
+.site-foot .link{color:var(--hero-ink);font-size:14px;min-height:36px;display:inline-flex;align-items:center;text-decoration:underline;text-decoration-color:var(--hero-line);text-underline-offset:4px}
+.site-foot .link:hover{text-decoration-color:currentColor}
+.sf-info{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13.5px;color:var(--hero-muted)}
+.sf-info li{display:flex;gap:8px;align-items:flex-start}
+.sf-info svg{width:16px;height:16px;margin-top:2px;flex:none;color:var(--hero-accent)}
+.sf-bottom{border-top:1px solid var(--hero-line);padding-top:14px;display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center}
+.sf-copy{font-size:12.5px;color:var(--hero-muted)}
+.sf-legal{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:0 10px;color:var(--hero-muted)}
+.sf-legal .link{font-size:13px}
+.site-foot :focus-visible{outline-color:var(--hero-accent)}
+/* زر «Aa» (المظهر وحجم الخط) بجانب زر اللغة */
+.aa-btn{min-width:40px;height:36px;padding-inline:10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:14px;font-family:var(--f-body);display:inline-grid;place-items:center;flex:none}
+.aa-btn:hover{border-color:var(--primary-line);color:var(--primary)}
+.lang-btn svg{display:none;width:18px;height:18px}
+/* تحت 480px (ومنه 360 و390 و412 و430): «Aa» واللغة والدخول أيقونات فقط (بأسمائها في aria-label)، والشعار وحده، ليظهر اسم المكتب كاملاً */
+@media (max-width:479px){
+  .aa-btn,.lang-btn{width:36px;min-width:36px;padding:0}
+  .lang-btn .lang-txt{display:none}
+  .lang-btn svg{display:block}
+  .wordmark{display:none}
+  .top-actions{gap:6px}
+}
+.sf-id svg{background:var(--surface);border-radius:9px;padding:3px}
+.sf-brand{align-content:start}
+.sf-brand p{align-self:start}
+/* ---------- H4: «طلباتي» ---------- */
+/* البطاقة كلها قابلة للنقر (بلا سهم)، والجديدة المطوية لها حدّ ملوّن يختفي عند فتحها */
+.mcard-sum{grid-template-columns:minmax(0,1fr)}
+.mcard:not([open]):hover{border-color:var(--primary-line)}
+.mcard.new:not([open]){border-color:var(--primary);box-shadow:inset 3px 0 0 var(--primary)}
+[dir=rtl] .mcard.new:not([open]){box-shadow:inset -3px 0 0 var(--primary)}
+/* المنتهية: عنوان صغير وبطاقات مضغوطة بلون أهدأ */
+.ended-h{font-size:13.5px;font-weight:700;color:var(--muted);margin-top:6px}
+.mcard.muted{background:var(--surface-2)}
+.mcard.muted .mcard-sum{padding-block:9px}
+.mcard.muted .mcard-h h3{font-size:14.5px}
+.mcard.muted .next{color:var(--muted)}
+/* التبويبات: الرقم الرمادي للجاري، والأحمر للجديد غير المقروء؛ الاسم لا ينكسر، ويُختصر على الشاشات الضيقة */
+.tabs [role=tab]{flex-wrap:nowrap;white-space:nowrap}
+.tabs .ts{display:none}
+.tab-n{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:999px;background:var(--surface-2);color:var(--muted);border:1px solid var(--line);font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+[role=tab][aria-selected=true] .tab-n{background:var(--bg)}
+@media (max-width:420px){ .tabs .tl{display:none} .tabs .ts{display:inline} .tabs [role=tab]{padding-inline:4px;gap:4px;font-size:13px} }
+/* بأكبر حجم للخط على شاشة ضيقة فقط: يُسمح للرقمين بالنزول سطراً تحت الاسم بدل خروجهما عن عرض الشاشة */
+@media (max-width:420px){ html[data-text=xl] .tabs [role=tab]{flex-wrap:wrap;row-gap:2px} }
+/* «يحتاج انتباهك»: زرا «افتح» و«لاحقاً» */
+.attn-btns{display:flex;gap:6px;flex:none}
+@media (max-width:420px){ .attn-list li{flex-wrap:wrap} .attn-list .grow{flex:1 1 180px} .attn-btns{margin-inline-start:auto} }
+/* ---------- H4: شريط الأرقام في التصفح، ولمسات الرئيسية ---------- */
+/* شريط الأرقام الثلاثة تحت العنوان: أنحف (أرقام 22px وارتفاع ~64px)، بزوايا البحث وظله، وفواصل أخف */
+[data-view=browse] .stats-band{border-radius:14px;box-shadow:var(--shadow);min-height:64px}
+[data-view=browse] .stats-band div{padding:8px 6px;justify-content:center;gap:0}
+[data-view=browse] .stats-band div + div{border-inline-start-color:var(--surface-2)}
+[data-view=browse] .stats-band b{font-size:22px;line-height:1.25}
+[data-view=browse] .stats-band span{font-size:12px;line-height:1.35}
+/* «كيف يعمل»: الخطوات في لوحة خضراء فاتحة جداً، ودوائر ممتلئة بالأخضر وأرقام بيضاء، وخط وصل متصل */
+.how-panel{background:var(--primary-faint);border:1px solid var(--primary-soft);border-radius:16px;padding:16px;gap:10px}
+.how-panel .sec-head h2{font-size:20px}
+.how-panel .how.how3 li{padding-bottom:12px}
+.how-panel .how.how3 li:last-child{padding-bottom:0}
+.how-panel .how li::before{background:var(--primary);color:var(--primary-ink);border-color:var(--primary)}
+.how-panel .how.how3 li:not(:last-child)::after{border-inline-start:2px solid var(--primary-line)}
+.how-panel .how span{font-size:13px;line-height:1.55}
+@media (min-width:720px){
+  .how-panel .how.how3 li{padding-bottom:0}
+  .how-panel .how.how3 li:not(:last-child)::after{display:block;border:0;border-top:2px solid var(--primary-line);top:15px;bottom:auto;inset-inline-start:40px;inset-inline-end:-14px}
+}
+/* «خصوصيتك أولاً»: سطر تحت العنوان، وأيقونة في دائرة خضراء فاتحة، وحدّ أخضر رفيع في بداية كل بطاقة، وارتفاع متساوٍ */
+.sec-head.sec-sub{flex-direction:column;align-items:flex-start;gap:2px}
+.sec-sub p{font-size:13px;color:var(--muted)}
+.features.compact{grid-auto-rows:1fr}
+.features.compact .feat{border-inline-start:3px solid var(--primary)}
+.features.compact .feat svg{width:32px;height:32px;padding:7px;border-radius:50%;background:var(--primary-soft);color:var(--primary)}
+/* صفّا «تفاصيل الخدمات» و«مؤشرات المكتب»: روابط هادئة بعرض كامل (أيقونة في مربع أخضر فاتح، وعنوان، ووصف قصير، وسهم) */
+.link-rows{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
+.link-row{display:flex;align-items:center;gap:12px;padding:10px 14px;text-align:start;min-height:56px}
+.link-row + .link-row{border-top:1px solid var(--line)}
+.link-row:hover{background:var(--surface-2)}
+.link-row .grow{flex:1;min-width:0;display:flex;flex-direction:column}
+.link-row b{font-size:14px;font-weight:600}
+.link-row small{font-size:12.5px;color:var(--muted)}
+.link-row > svg{color:var(--muted);width:18px;height:18px}
+.lr-ic{width:34px;height:34px;border-radius:9px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;flex:none}
+.lr-ic svg{width:18px;height:18px}

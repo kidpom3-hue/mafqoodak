@@ -2,7 +2,7 @@
 import { icon, LOGO, otype, oShort, statusLabel, MODE_LABEL } from './constants.js';
 import { t } from './i18n.js';
 import { $, $$, esc } from './utils.js';
-import { S, curOffice, modes, homeRoute, unseenCount, markSeen, candidatesFor, rejectedOf, getPhoto, getName, SHARE_RE, OFFICE_RE, full } from './state.js';
+import { S, curOffice, modes, homeRoute, unseenCount, staffKeys, getPhoto, getName, SHARE_RE, OFFICE_RE } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice } from './views/visitor.js';
 import { vStaff, updateStaff, vItemForm } from './views/staff.js';
 import { vAdmin, vOfficeForm } from './views/admin.js';
@@ -26,7 +26,7 @@ const ROUTES = {
   item: {live: true, v: vItem},
   claim: {live: false, v: vClaimForm},
   report: {live: false, v: vReportForm, after: initForm},
-  mine: {live: true, v: vMine, after: markSeen},
+  mine: {live: true, v: vMine},   // H4: التنبيهات تُقرأ بالنقر على التبويب أو فتح البطاقة، لا بمجرد الدخول
   office: {live: true, v: vOffice},
   staff: {live: true, v: vStaff, update: updateStaff},
   add: {live: false, v: vItemForm, after: initForm},
@@ -112,12 +112,15 @@ function markStuck(){
 window.addEventListener('resize', syncHeader);
 window.addEventListener('scroll', markStuck, {passive: true});
 export function refresh(){
+  // H4: إن أعاد الرسم بناء العنصر الذي عليه التركيز (مثل تبويب بعد الأسهم) نعيد التركيز إليه بمعرّفه
+  const fid = document.activeElement?.id;
   renderHeader();
   const r = ROUTES[S.route.name];
   const main = $('#main');
   if (r?.update && main.firstElementChild?.dataset.view === S.route.name) r.update();
   else if (r?.live) renderMain();
   renderNav(); hydrate();
+  if (fid && (document.activeElement === document.body || !document.activeElement)) document.getElementById(fid)?.focus({preventScroll: true});
 }
 function renderMain(){
   const main = $('#main');
@@ -139,7 +142,9 @@ function renderHeader(){
     // H3: تحت 400px يصبح زر الدخول أيقونة فقط (النص مخفي بصرياً ويبقى اسمه في aria-label)، فيتسع اسم المكتب
     : `<button class="btn sm ghost login-btn" data-act="login" aria-label="${t('ui.signIn')}">${icon('users')}<span class="login-txt">${t('ui.signIn')}</span></button>`;
   // زر اللغة: يعرض اللغة الأخرى («EN» في العربية، «عربي» في الإنجليزية)
-  const langBtn = `<button class="lang-btn" data-act="lang" lang="${t('lang.otherCode')}" aria-label="${t('lang.switch')}">${t('lang.other')}</button>`;
+  const langBtn = `<button class="lang-btn" data-act="lang" lang="${t('lang.otherCode')}" aria-label="${t('lang.switch')}"><span class="lang-txt">${t('lang.other')}</span>${icon('globe')}</button>`;
+  // H4: «Aa» يفتح نافذة العرض (المظهر وحجم الخط)
+  const aaBtn = `<button class="aa-btn" data-act="displaySheet" aria-label="${t('ui.display')}"><span aria-hidden="true">Aa</span></button>`;
   $('#hdr').innerHTML = `<div class="top-row">
       <button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="${t('app.name')} — ${t('nav.home')}">${LOGO}<span class="wordmark">${t('app.name')}</span></button>
       ${S.config && (o || S.mode === 'admin') ? `<nav class="top-links" aria-label="${t('ui.navigation')}">${navItems().map(n => {
@@ -148,7 +153,7 @@ function renderHeader(){
       }).join('')}</nav>` : ''}
       <div class="top-actions">
         ${o ? `<button class="office-chip" data-act="pickOffice" aria-label="${t('ui.changePlace')}">${icon(otype(o.type).icon)}<span>${esc(oShort(o))}</span>${icon('chev')}</button>` : ''}
-        ${langBtn}${acct}
+        ${aaBtn}${langBtn}${acct}
       </div>
     </div>
     ${S.uid && !S.verified ? `<div class="verify-bar" role="status">${icon('lock')}<span>${t('ui.verifyBar')} ${t('ui.verifyStaff')}</span>
@@ -158,10 +163,9 @@ function renderHeader(){
 }
 function navItems(){
   if (S.mode === 'staff'){
-    const pend = S.claims.filter(c => c.status === 'pending').length;
-    // الاستلام: طلبات جديدة + إشعارات تسليم معلّقة («تسليمات قادمة»، PR 3). البلاغات: التي لها مرشّح لم يُرشَّح بعد
-    const inbox = pend + S.found.length;
-    const open = S.reports.filter(r => r.status === 'open' && (!r.staffPick || rejectedOf(r).has(r.staffPick)) && candidatesFor(r, 1, full).length).length;
+    // H4: شارة «الاستلام» = عدد طلبات «قراري» الجديدة غير المقروءة فقط، و«البلاغات» = البلاغات الجديدة غير المقروءة
+    const nk = staffKeys(), uniq = sub => new Set(nk.filter(x => x.sub.startsWith(sub)).map(x => x.card)).size;
+    const inbox = uniq('claims:decide'), open = uniq('reports:');
     return [
       {r: 'staff', tab: 'items', l: t('nav.store'), i: 'box'},
       {r: 'add', l: t('nav.add'), i: 'plus'},

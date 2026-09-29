@@ -2,7 +2,7 @@
 import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf } from '../state.js';
+import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard } from '../state.js';
 import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, CARD_OPEN, ENDED_OPEN } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { claimCardStaff, rivals, dateOf, qaBox, timeline, catKeepNote } from './staff.js';
@@ -36,8 +36,8 @@ export function vBrowse(){
     <section class="hero">
       <div class="hero-kicker">${icon(otype(o.type).icon)}${esc(otypeName(o.type))}${oCity(o) ? ' · ' + esc(oCity(o)) : ''}</div>
       <h1 class="hero-title">${t('br.title', {name: esc(oName(o))})}</h1>
-      <p class="hero-sub" id="hero-count"></p>
     </section>
+    <section class="stats-band" id="br-stats" aria-label="${t('home.statsAria')}"></section>
     <div id="match-banner"></div>
     <div class="browse-bar" id="browse-bar">
       <label class="searchbar">${icon('search')}<input id="q" type="search" placeholder="${t('br.searchPh')}" value="${esc(S.filter.q)}" autocomplete="off" aria-label="${t('home.searchAria')}"></label>
@@ -82,10 +82,15 @@ export function card(i){
   </div>`;
 }
 export function updateBrowse(){
-  const avail = S.items.filter(i => i.status === 'available').length;
-  const ret = S.counts.returned || 0;
-  const hc = $('#hero-count');
-  if (hc) hc.innerHTML = !S.itemsLoaded ? t('c.loadingDots') : `${avail ? t('home.availNow', {items: `<b>${esc(tp('n.item', avail))}</b>`}) : t('br.noneNow')}${ret ? ' · ' + t('br.returned', {items: `<b>${esc(tp('n.itemAcc', ret))}</b>`}) : ''}`;
+  // H4: شريط الأرقام الثلاثة (كان في الرئيسية): أرقام المكتب كله، لا تتغير مع التصفية.
+  // «متاح للاستلام» = النشط كله (المتاح والمحجوز)، و«أُعيد لأصحابه» عدد من الخادم (getCountFromServer)
+  const o = curOffice(), keep = o?.retentionDays || 90;
+  const avail = S.items.filter(i => ACTIVE.includes(i.status)).length;
+  const st = $('#br-stats');
+  if (st) st.innerHTML = !S.itemsLoaded ? '' : `
+    <div><b>${avail}</b><span>${t('home.statAvail')}</span></div>
+    <div><b>${S.counts.returned ?? 0}</b><span>${t('home.statReturned')}</span></div>
+    <div><b>${keep}</b><span>${t('home.statKeep', {unit: tp('n.dayUnit', keep)})}</span></div>`;
   const n = unseenCount(); const mb = $('#match-banner');
   if (mb) mb.innerHTML = n ? `<button class="banner" data-act="nav" data-r="mine">${icon('bell')}<span class="grow">${t('br.alerts', {alerts: tp('n.alert', n)})}</span>${icon('fwd')}</button>` : '';
   $$('#cat-chips .chip').forEach(b => { const on = b.dataset.id === S.filter.cat; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
@@ -300,49 +305,63 @@ export function reportNeed(r){
 }
 const CLAIM_DONE = ['done', 'rejected', 'expired', 'cancelled'];
 const claimTitle = c => { const i = item(c.itemId); return i ? showTitle(i) : claimNo(c); };
+/* «يحتاج انتباهك» (H4): مهام تبقى ما دام الإجراء مطلوباً. «لاحقاً» يخفي المهمة حتى يظهر حدث جديد:
+   لكل مهمة مفتاح يتغير مع الحدث (وقت السؤال، وقت القبول، الغرض المقترح…)، والمفاتيح المؤجلة في localStorage «snoozed» */
+function attKey(n, x){
+  if (n === 'code') return `code:${x.id}:${x.decidedAt || 0}`;
+  if (n === 'answer') return `answer:${x.id}:${x.askedAt || 0}`;
+  if (n === 'rate') return `rate:${x.id}`;
+  if (n === 'sugg') return `sugg:${x.id}:${pickOf(x)?.id || ''}:${maybeFor(x, 1)[0]?.id || ''}`;
+  return `stale:${x.id}:${x.renewedAt || x.createdAt || 0}`;
+}
 function attentionBox(cls, reps){
+  const later = new Set(LS.get('snoozed', []));
   const rows = [
-    ...cls.map(c => [claimNeed(c), c]).filter(([n]) => n).map(([n, c]) => ({msg: t('att.' + n, {title: esc(claimTitle(c))}), tab: 'claims', key: 'c:' + c.id, ended: CLAIM_DONE.includes(c.status), ic: n === 'code' ? 'shield' : n === 'answer' ? 'question' : 'check'})),
-    ...reps.map(r => [reportNeed(r), r]).filter(([n]) => n).map(([n, r]) => ({msg: t('att.' + n, {title: esc(r.title)}), tab: 'reports', key: 'r:' + r.id, ended: false, ic: n === 'stale' ? 'clock' : 'bell'})),
-  ];
+    ...cls.map(c => [claimNeed(c), c]).filter(([n]) => n).map(([n, c]) => ({n, x: c, msg: t('att.' + n, {title: esc(claimTitle(c))}), tab: 'claims', key: 'c:' + c.id, ic: n === 'code' ? 'shield' : n === 'answer' ? 'question' : 'check'})),
+    ...reps.map(r => [reportNeed(r), r]).filter(([n]) => n).map(([n, r]) => ({n, x: r, msg: t('att.' + n, {title: esc(r.title)}), tab: 'reports', key: 'r:' + r.id, ic: n === 'stale' ? 'clock' : 'bell'})),
+  ].map(x => ({...x, ak: attKey(x.n, x.x)})).filter(x => !later.has(x.ak));
   if (!rows.length) return '';
   return `<section class="attn-box" aria-labelledby="att-t"><h2 class="section-title" id="att-t">${icon('bell')}${t('att.title')} <span class="count">${rows.length}</span></h2>
     <ul class="attn-list">${rows.map(x => `<li>${icon(x.ic)}<span class="grow">${x.msg}</span>
-      <button class="btn sm soft" data-act="openCard" data-tab="${x.tab}" data-card="${esc(x.key)}" ${x.ended ? 'data-ended="1"' : ''}>${t('att.open')}</button></li>`).join('')}</ul></section>`;
+      <span class="attn-btns"><button class="btn sm soft" data-act="openCard" data-tab="${x.tab}" data-card="${esc(x.key)}">${t('att.open')}</button>
+      <button class="btn sm ghost" data-act="attLater" data-k="${esc(x.ak)}">${t('att.later')}</button></span></li>`).join('')}</ul></section>`;
 }
 // اسم التبويب المحفوظ (localStorage داخل try/catch عبر LS)
 export const MINE_TABS = ['claims', 'reports', 'found'];
+// البطاقات التي فيها تنبيه غير مقروء (حدّ ملوّن ما دامت مطوية)، تُحسب مرة لكل رسم
+let FRESH = new Set();
+const isEndedOf = {claims: c => CLAIM_DONE.includes(c.status), reports: r => r.status !== 'open', found: f => f.status !== 'pending'};
 export function vMine(){
   if (!S.uid) return `<div class="wrap">${loginPrompt(t('mine.login'))}</div>`;
   const reps = myReports(), cls = myClaims(), fnd = myFound();
   const focus = S.route.params.focus;
   const lists = {claims: cls, reports: reps, found: fnd};
-  const types = MINE_TABS.filter(k => lists[k].length);
   // البلاغ أو الإشعار الذي أُنشئ للتو (focus) يُفتح في تبويبه
   if (focus){ const k = reps.some(r => r.id === focus) ? 'reports' : fnd.some(f => f.id === focus) ? 'found' : ''; if (k){ LS.set('mineTab', k); CARD_OPEN.set((k === 'reports' ? 'r:' : 'f:') + focus, true); } }
   const saved = LS.get('mineTab', '');
-  const cur = types.includes(saved) ? saved : types[0] || 'claims';
-  const dot = {claims: cls.some(claimNeed), reports: reps.some(reportNeed), found: false};
-  const tabs = types.length > 1 ? `<div class="tabs" role="tablist" aria-label="${t('mine.tabsAria')}">${types.map(k => `<button role="tab" id="mt-${k}" aria-controls="mp-${k}" aria-selected="${k === cur}" tabindex="${k === cur ? 0 : -1}" data-act="mineTab" data-v="${k}">
-      <span>${t('mine.t.' + k)}</span><span class="count">${lists[k].length}</span>${dot[k] ? `<span class="dot" aria-hidden="true"></span><span class="sr-only">${t('mine.attnDot')}</span>` : ''}</button>`).join('')}</div>` : '';
-  const panel = types.length ? mineList(cur, lists[cur], focus) : `<div class="empty">${icon('inbox')}<b>${t('mine.emptyAll')}</b><button class="btn soft" data-act="nav" data-r="browse">${icon('search')}${t('home.ctaBrowse')}</button></div>`;
+  const cur = MINE_TABS.includes(saved) ? saved : MINE_TABS.find(k => lists[k].length) || 'claims';
+  const unseen = unseenKeys(); FRESH = new Set(unseen.map(keyCard));
+  // التبويبات الثلاثة دائماً: الرقم الرمادي = الجاري فقط (يُخفى إن كان صفراً)، والأحمر = التنبيهات غير المقروءة في التبويب
+  const tabs = `<div class="tabs" role="tablist" aria-label="${t('mine.tabsAria')}">${MINE_TABS.map(k => {
+    const act = lists[k].filter(x => !isEndedOf[k](x)).length, nw = unseen.filter(x => keyTab(x) === k).length;
+    return `<button role="tab" id="mt-${k}" aria-controls="mp-${k}" aria-selected="${k === cur}" tabindex="${k === cur ? 0 : -1}" data-act="mineTab" data-v="${k}">
+      <span class="tl">${t('mine.t.' + k)}</span><span class="ts">${t('mine.ts.' + k)}</span>${act ? `<span class="tab-n">${act}</span>` : ''}${nw ? `<span class="count"><span aria-hidden="true">${nw}</span><span class="sr-only">${t('mine.newSr', {n: nw})}</span></span>` : ''}</button>`; }).join('')}</div>`;
   return `<div class="wrap" data-view="mine">
     <section class="hero"><div class="hero-kicker">${icon('inbox')}${t('mine.kicker')}</div><h1 class="hero-title">${t('nav.mine')}</h1></section>
     ${attentionBox(cls, reps)}
     ${tabs}
-    <div ${types.length > 1 ? `role="tabpanel" id="mp-${cur}" aria-labelledby="mt-${cur}" tabindex="0"` : ''} class="mine-panel">${panel}</div>
+    <div role="tabpanel" id="mp-${cur}" aria-labelledby="mt-${cur}" tabindex="0" class="mine-panel">${mineList(cur, lists[cur], focus)}</div>
   </div>`;
 }
-// قائمة نوع واحد: الجاري أولاً ثم «منتهية (n)» مطوية، وجملة وزر واحد إن لم يكن فيها شيء جارٍ
+// قائمة نوع واحد: الجاري أولاً، ثم عنوان صغير «منتهية (n)» وبطاقات مضغوطة بلون أهدأ (بلا طي).
+// التبويب الفارغ: جملة واحدة وزر واحد. وإن لم يكن فيه جارٍ تُعرض المنتهية مباشرة
 function mineList(k, arr, focus){
-  const isEnded = k === 'claims' ? c => CLAIM_DONE.includes(c.status) : k === 'reports' ? r => r.status !== 'open' : f => f.status !== 'pending';
   const card = k === 'claims' ? claimCardMine : k === 'reports' ? r => reportCardMine(r, r.id === focus) : f => foundCardMine(f, f.id === focus);
-  const act = arr.filter(x => !isEnded(x)), done = arr.filter(isEnded);
+  const act = arr.filter(x => !isEndedOf[k](x)), done = arr.filter(isEndedOf[k]);
   const empty = {claims: ['mine.emptyClaims', 'browse', 'search', 'home.ctaBrowse'], reports: ['mine.emptyReports', 'report', 'plus', 'home.ctaLost'], found: ['mine.emptyFound', 'found', 'tag', 'home.ctaFound']}[k];
-  return `${act.length ? `<div class="list">${act.map(card).join('')}</div>`
-      : `<div class="empty sm">${t(empty[0])}<button class="btn soft" data-act="nav" data-r="${empty[1]}">${icon(empty[2])}${t(empty[3])}</button></div>`}
-    ${done.length ? `<details class="ended" data-ended="${k}" ${ENDED_OPEN.get(k) ? 'open' : ''}><summary>${t('mine.ended', {n: done.length})}${icon('chev')}</summary>
-      <div class="list">${done.map(card).join('')}</div></details>` : ''}`;
+  if (!arr.length) return `<div class="empty sm">${t(empty[0])}<button class="btn soft" data-act="nav" data-r="${empty[1]}">${icon(empty[2])}${t(empty[3])}</button></div>`;
+  return `${act.length ? `<div class="list">${act.map(card).join('')}</div>` : ''}
+    ${done.length ? `<h3 class="ended-h">${t('mine.ended', {n: done.length})}</h3><div class="list ended-list">${done.map(card).join('')}</div>` : ''}`;
 }
 /* إشعار التسليم كما يراه الواجد: بانتظار تسليمه ← استلمه المكتب (برقم قيده) ← عاد لصاحبه */
 export function foundCardMine(f, focus){
@@ -360,7 +379,7 @@ export function foundCardMine(f, focus){
     : st === 'received' ? `<div class="note ok">${icon('check')}<span>${it ? t('hi.receivedRef', {ref: `<b>${esc(it.ref)}</b>`}) : t('hi.received')}</span></div>`
     : `<div class="btn-row"><button class="btn sm ghost" data-act="delFound" data-id="${esc(f.id)}">${icon('trash')}${t('c.delete')}</button></div>`;
   const next = st === 'pending' ? t('ns.hand', {place: esc(oPlace(o) || oName(o))}) : t('ns.f.' + st);
-  return mcard({key: 'f:' + f.id, open: focus, pillHtml: pill(FOUND_STATUS, st), next,
+  return mcard({key: 'f:' + f.id, open: focus, fresh: FRESH.has('f:' + f.id), muted: f.status !== 'pending', pillHtml: pill(FOUND_STATUS, st), next,
     head: `${it ? `<span class="ref">${esc(it.ref)}</span>` : f.code ? `<span class="meta" dir="ltr">${esc(f.code)}</span>` : ''}<h3>${esc(f.sub ? subLabel(f.sub) : catName(f.cat))}</h3>`,
     body: `<span class="meta">${icon(cat(f.cat).icon)}${esc([spotText(f), fmtDate(f.foundDate)].filter(Boolean).join(' · '))}</span>
       <span class="meta">${icon('building')}${esc(officeName(f.officeId))}</span>${whenLine('c.sentAt', f.createdAt)}
@@ -402,7 +421,7 @@ export function claimCardMine(c){
     : c.status === 'pending' ? t(awaitingAnswer(c) ? 'ns.answer' : 'ns.review')
     : c.status === 'approved' ? (late ? t('ns.late') : c.pickupBy ? t('ns.come', {date: esc(dateOf(c.pickupBy))}) : t('ns.comeNoDate'))
     : c.status === 'done' ? t(c.rating ? 'ns.done' : 'ns.rate') : t('ns.' + c.status);
-  return mcard({key: 'c:' + c.id, id: 'claim-' + c.id, open: !!need, tone: need || late ? 'warn' : '', pillHtml: pill(CLAIM_STATUS, c.status), next,
+  return mcard({key: 'c:' + c.id, id: 'claim-' + c.id, open: !!need, fresh: FRESH.has('c:' + c.id), muted: CLAIM_DONE.includes(c.status), tone: need || late ? 'warn' : '', pillHtml: pill(CLAIM_STATUS, c.status), next,
     head: `<span class="refs">${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<b dir="ltr" class="req-no">${esc(claimNo(c))}</b></span><h3>${esc(i ? showTitle(i) : t(gone ? 'mine.goneTitle' : 'c.loadingDots'))}</h3>`,
     body: `${top}
       <span class="meta">${icon('building')}${esc(officeName(c.officeId))}</span>
@@ -447,9 +466,9 @@ export function reportCardMine(r, focus){
   const need = reportNeed(r);
   const next = r.status !== 'open' ? t(r.closedReason === 'office' ? 'ns.closedOffice' : r.closedReason === 'self' ? 'ns.closedSelf' : 'ns.closed')
     : need === 'stale' ? t('ns.stale') : active ? t('ns.claim') : need === 'sugg' ? t('ns.sugg') : t('ns.search');
-  return mcard({key: 'r:' + r.id, open: focus || !!need, tone: need ? 'warn' : '', pillHtml: pill(REPORT_STATUS, r.status), next,
+  return mcard({key: 'r:' + r.id, open: focus || !!need, fresh: FRESH.has('r:' + r.id), muted: r.status !== 'open', tone: need ? 'warn' : '', pillHtml: pill(REPORT_STATUS, r.status), next,
     head: `<span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}</span><h3>${esc(r.title)}</h3>`,
-    body: `<div><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''} · ${t('st.lostOn', {date: relDay(r.lostDate)})}</span><span class="meta">${icon('building')}${esc(officeName(r.officeId))}</span>
+    body: `<div><span class="meta">${r.color ? colorDot(r.color) + esc(colorName(r.color)) + ' · ' : ''}${t('st.lostOn', {date: relDay(r.lostDate)})}</span><span class="meta">${icon('building')}${esc(officeName(r.officeId))}</span>
       ${whenLine('c.sentAt', r.createdAt)}${whenLine('c.editedAt', r.editedAt)}</div>
     ${r.status === 'open' && isStale(r) && !active ? `<div class="note warn stale">${icon('clock')}<span><b>${t('rc.stillQ')}</b> ${t('rc.stillHint')}</span></div>
       <div class="btn-row"><button class="btn sm" data-act="renewReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.stillYes')}</button>

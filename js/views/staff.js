@@ -2,7 +2,7 @@
 import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem } from '../state.js';
+import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys } from '../state.js';
 import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, ENDED_OPEN } from './common.js';
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
@@ -42,6 +42,8 @@ export function updateStaff(){
   const openR = S.reports.filter(r => r.status === 'open').length;
   const over = it.filter(i => i.status === 'available' && keepLeft(i) < 0).length;
   const late = S.claims.filter(pickupOver).length;
+  // H4: مربعات الأرقام في «المستودع» فقط
+  $('#s-stats').style.display = S.staffTab === 'items' ? '' : 'none';
   $('#s-stats').innerHTML = `
     <div class="stat"><b>${it.filter(i => i.status === 'available').length}</b><span>${t('home.statAvail')}</span></div>
     <div class="stat"><b>${it.filter(i => i.status === 'reserved').length}</b><span>${t('st.sReserved')}</span></div>
@@ -250,7 +252,7 @@ export function claimCardStaff(c, opts){
     : c.status === 'approved' ? (left === null ? t('st.comeNoDate') : left < 0 ? t('st.comeLate', {dur: durText(-left)}) : t('st.comeIn', {dur: durText(left)}))
     : c.status === 'done' ? t('st.doneAt', {when: when(c.doneAt)}) : t('st.endedAt', {when: when(c.decidedAt || c.createdAt)});
   const warn = c.status === 'approved' && left !== null && left < 864e5;
-  return mcard({key: 's:' + c.id, open: opts?.open, tone: warn ? 'warn' : '', pillHtml: pill(CLAIM_STATUS, c.status), next,
+  return mcard({key: 's:' + c.id, open: opts?.open, fresh: opts?.fresh, muted: !['pending', 'approved'].includes(c.status), tone: warn ? 'warn' : '', pillHtml: pill(CLAIM_STATUS, c.status), next,
     head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${esc(i ? showTitle(i) : claimNo(c))}</h3>${person(c.uid)}`,
     body: `<div class="box-head"><div class="claim-who">${whenLine('c.sentAt', c.createdAt)}${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div></div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
@@ -278,24 +280,39 @@ export function staffClaims(){
       ${hits.length ? `<div class="list">${hits.map(claimCardStaff).join('')}</div>` : `<p class="muted">${t('st.noClaimNo')}</p>`}
       ${S.claimHist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}${t('st.showHist')}</button>` : ''}`;
   }
-  // الأولوية (PR 3): بانتظار قرارك (الأقدم أولاً) ← بانتظار الحضور (الأقرب مهلة أولاً، والمتأخر أولها) ← تسليمات قادمة من الواجدين ← منتهية (مطوية)
+  // H4: تبويبات فرعية تظهر دائماً: قراري | الحضور | قادمة | منتهية. الرقم الرمادي = عدد العناصر، والأحمر = الجديد غير المقروء
   const pend = S.claims.filter(c => c.status === 'pending').sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   const appr = S.claims.filter(c => c.status === 'approved').sort((a, b) => (a.pickupBy || Infinity) - (b.pickupBy || Infinity));
-  const hist = (S.claimHist || []).slice().sort(byLast).slice(0, 50);
-  return `
-    <div class="section-title">${t('st.secDecide')} ${pend.length ? `<span class="count">${pend.length}</span>` : ''}</div>
-    ${pend.length ? `<div class="list">${pend.map((c, k) => claimCardStaff(c, {open: k === 0})).join('')}</div>` : `<p class="muted">${t('st.noNew')}</p>`}
-    <div class="section-title">${t('st.secCome')} ${appr.length ? `<span class="count">${appr.length}</span>` : ''}</div>
-    ${appr.length ? `<div class="list">${appr.map(c => claimCardStaff(c)).join('')}</div>` : `<p class="muted">${t('st.noCome')}</p>`}
-    ${handins()}
-    <details class="ended" data-ended="staffClaims" ${ENDED_OPEN.get('staffClaims') ? 'open' : ''}><summary>${t('st.secEnded')}${S.claimHist ? ` (${hist.length})` : ''}${icon('chev')}</summary>
-      ${S.claimHist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}${t('st.showHist')}</button>`
-        : hist.length ? `<div class="list">${hist.map(c => claimCardStaff(c)).join('')}</div>` : `<p class="muted">${t('c.none')}</p>`}</details>`;
+  const fs = S.found.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const hist = S.claimHist ? S.claimHist.slice().sort(byLast).slice(0, 50) : null;
+  const fresh = new Set(staffKeys().map(x => x.card));
+  const defs = [['decide', pend.length], ['come', appr.length], ['incoming', fs.length], ['ended', hist ? hist.length : null]];
+  const cur = subTab('claims', defs);
+  const body = cur === 'decide' ? (pend.length ? `<div class="list">${pend.map((c, k) => claimCardStaff(c, {open: k === 0, fresh: fresh.has('s:' + c.id)})).join('')}</div>` : `<p class="muted">${t('st.noNew')}</p>`)
+    : cur === 'come' ? (appr.length ? `<div class="list">${appr.map(c => claimCardStaff(c)).join('')}</div>` : `<p class="muted">${t('st.noCome')}</p>`)
+    : cur === 'incoming' ? handins(fs, fresh)
+    : hist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}${t('st.showHist')}</button>`
+    : hist.length ? `<div class="list">${hist.map(c => claimCardStaff(c)).join('')}</div>` : `<p class="muted">${t('c.none')}</p>`;
+  return subTabs('claims', defs, cur, body);
+}
+/* H4: التبويبات الفرعية للموظف (role="tablist" والأسهم كما في «طلباتي»). التبويب الافتراضي أول تبويب فيه عناصر،
+   والمختار يبقى ما دامت الصفحة مفتوحة (S.staffSub). الأحمر = تنبيهات staffKeys() غير المقروءة، ويختفي بالنقر على التبويب */
+function subTab(g, defs){
+  const cur = S.staffSub[g];
+  if (defs.some(([v]) => v === cur)) return cur;
+  return (defs.find(([, n]) => n) || defs[0])[0];
+}
+function subTabs(g, defs, cur, body){
+  const nw = staffKeys().reduce((m, x) => { const [gg, v] = x.sub.split(':'); if (gg === g) (m[v] ||= new Set()).add(x.card); return m; }, {});
+  return `<div class="tabs sub" role="tablist" aria-label="${t('st.subAria.' + g)}">${defs.map(([v, n]) => { const r = nw[v]?.size || 0;
+      return `<button role="tab" id="st-${g}-${v}" aria-controls="sp-${g}" aria-selected="${v === cur}" tabindex="${v === cur ? 0 : -1}" data-act="staffSub" data-g="${g}" data-v="${v}">
+        <span>${t('st.sub.' + v)}</span>${n ? `<span class="tab-n">${n}</span>` : ''}${r ? `<span class="count"><span aria-hidden="true">${r}</span><span class="sr-only">${t('mine.newSr', {n: r})}</span></span>` : ''}</button>`; }).join('')}</div>
+    <div role="tabpanel" id="sp-${g}" aria-labelledby="st-${g}-${cur}" tabindex="0" class="sub-panel">${body}</div>`;
 }
 /* إشعار تسليم من واجد (للموظف): «استلمته» يفتح نموذج الغرض معبّأً، و«لم يصل» يغلقه */
-export function foundCardStaff(f, open){
+export function foundCardStaff(f, open, fresh){
   const done = S.items.find(i => i.fromFound === f.id);   // سُجّل غرضه ولم يُحدَّث الإشعار (نادر)
-  return mcard({key: 'sf:' + f.id, open, pillHtml: pill(FOUND_STATUS, f.status), next: t('st.handinNext', {when: when(f.createdAt)}),
+  return mcard({key: 'sf:' + f.id, open, fresh, pillHtml: pill(FOUND_STATUS, f.status), next: t('st.handinNext', {when: when(f.createdAt)}),
     head: `${f.code ? `<span class="meta" dir="ltr">${esc(f.code)}</span>` : ''}<h3>${esc(f.sub ? subLabel(f.sub) : catName(f.cat))}</h3>${person(f.uid)}`,
     body: `<div class="meta">${icon(cat(f.cat).icon)}${esc(catName(f.cat))}${f.sub ? ' — ' + esc(subLabel(f.sub)) : ''}</div>
     <div class="meta">${t('hi.foundAt', {place: esc(spotText(f) || t('it.unknown')), date: fmtDate(f.foundDate)})}</div>
@@ -304,20 +321,17 @@ export function foundCardStaff(f, open){
       ${done ? '' : `<button class="btn sm ghost" data-act="dropFound" data-id="${esc(f.id)}">${icon('x')}${t('hi.drop')}</button>`}</div>`});
 }
 // «تسليمات قادمة» (في تبويب الاستلام، PR 3): إشعارات التسليم المعلّقة من الواجدين، الأقدم أولاً
-function handins(){
-  const fs = S.found.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+function handins(fs, fresh){
   // البحث بكود إشعار التسليم: يظهر فقط مع إشعارات كثيرة (الجهات الكبيرة)، وإلا يكفي اختيار الإشعار من القائمة
   const codeBox = fs.length <= CODE_SEARCH_MIN ? '' : `<form class="filters code-find" data-form="findCode" novalidate>
       <label class="searchbar" style="flex:1;min-width:180px">${icon('tag')}<input name="code" class="code-in" dir="ltr" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="${t('hi.codePh')}" aria-label="${t('hi.codeAria')}"></label>
       <button class="btn sm" type="submit">${icon('search')}${t('hi.codeOpen')}</button></form>`;
-  return `<div class="section-title">${t('st.secHandin')} ${fs.length ? `<span class="count">${fs.length}</span>` : ''}</div>
-    ${fs.length ? `${codeBox}<p class="muted">${t('hi.staffHint')}</p><div class="list">${fs.map((f, k) => foundCardStaff(f, k === 0)).join('')}</div>` : `<p class="muted">${t('st.noHandin')}</p>`}`;
+  return fs.length ? `${codeBox}<p class="muted">${t('st.handinHint')}</p><div class="list">${fs.map((f, k) => foundCardStaff(f, k === 0, fresh.has('sf:' + f.id))).join('')}</div>` : `<p class="muted">${t('st.noHandin')}</p>`;
 }
 // خانة البحث بكود إشعار التسليم تظهر فقط إذا زادت الإشعارات المعلّقة على هذا العدد
 export const CODE_SEARCH_MIN = 5;
 export function staffReports(){
-  // الترتيب (PR 3): المفتوح الذي له غرض مرشّح أولاً، ثم المفتوح، ثم «مغلقة» مطوية (تُجلب عند الطلب).
-  // إشعارات التسليم انتقلت إلى تبويب «الاستلام» (تسليمات قادمة)
+  // H4: تبويبات فرعية: لها مرشّح | مفتوحة | مغلقة (المغلقة تُجلب عند الطلب). إشعارات التسليم في «الاستلام» (قادمة)
   // البلاغات القديمة (أكثر من 60 يوماً دون تجديد) مخفية افتراضياً
   const open = S.reports.filter(r => r.status === 'open'), old = open.filter(isStale);
   const rs = open.filter(r => S.showStale || !isStale(r)).sort(byLast);
@@ -325,19 +339,18 @@ export function staffReports(){
   const oldBtn = old.length ? `<div class="btn-row"><button class="btn sm ghost" data-act="toggleStale" aria-pressed="${S.showStale}">${icon('clock')}${t(S.showStale ? 'st.hideOld' : 'st.showOld', {n: old.length})}</button></div>` : '';
   // أول بلاغ له مرشّحون ولم يُرشَّح له بعد يُفتح تلقائياً (يحتاج قراراً)
   const first = rest.find(r => candidatesFor(r, 1, full).length)?.id;
-  const closed = (S.closedReps || []).slice().sort(byLast).slice(0, 50);
-  return `${oldBtn}
-    ${picked.length ? `<div class="section-title">${t('st.rPicked')} <span class="count">${picked.length}</span></div>
-      <div class="list">${picked.map(r => reportCardStaff(r)).join('')}</div>` : ''}
-    <div class="section-title">${t('st.rOpen')} ${rest.length ? `<span class="count">${rest.length}</span>` : ''}</div>
-    ${rest.length ? `<div class="list">${rest.map(r => reportCardStaff(r, r.id === first)).join('')}</div>`
-      : !picked.length ? `<div class="empty">${icon('bell')}<b>${t('st.noReports')}</b><span>${t('st.noReportsSub')}</span></div>` : `<p class="muted">${t('c.none')}</p>`}
-    <details class="ended" data-ended="staffReports" ${ENDED_OPEN.get('staffReports') ? 'open' : ''}><summary>${t('st.rClosed')}${S.closedReps ? ` (${closed.length})` : ''}${icon('chev')}</summary>
-      ${S.closedReps == null ? `<button class="btn sm ghost" data-act="closedReps">${icon('clock')}${t('st.rShowClosed')}</button>`
-        : closed.length ? `<div class="list">${closed.map(r => reportCardStaff(r)).join('')}</div>` : `<p class="muted">${t('c.none')}</p>`}</details>`;
+  const closed = S.closedReps ? S.closedReps.slice().sort(byLast).slice(0, 50) : null;
+  const fresh = new Set(staffKeys().map(x => x.card));
+  const defs = [['picked', picked.length], ['open', rest.length], ['closed', closed ? closed.length : null]];
+  const cur = subTab('reports', defs);
+  const body = cur === 'picked' ? (picked.length ? `<div class="list">${picked.map(r => reportCardStaff(r, false, fresh.has('sr:' + r.id))).join('')}</div>` : `<p class="muted">${t('st.noPicked')}</p>`)
+    : cur === 'open' ? `${oldBtn}${rest.length ? `<div class="list">${rest.map(r => reportCardStaff(r, r.id === first, fresh.has('sr:' + r.id))).join('')}</div>` : `<p class="muted">${t('st.noReports')}</p>`}`
+    : closed === null ? `<button class="btn sm ghost" data-act="closedReps">${icon('clock')}${t('st.rShowClosed')}</button>`
+    : closed.length ? `<div class="list">${closed.map(r => reportCardStaff(r)).join('')}</div>` : `<p class="muted">${t('c.none')}</p>`;
+  return subTabs('reports', defs, cur, body);
 }
 // بطاقة بلاغ للموظف (مختصرة): الملخّص فيه الخطوة التالية، والتفاصيل كما كانت
-function reportCardStaff(r, open){
+function reportCardStaff(r, open, fresh){
   const isOpen = r.status === 'open';
   // الموظف يقارن بالتفاصيل السرية أيضاً، والأغراض التي قال عنها صاحب البلاغ «ليس غرضي» لا تُرشَّح له من جديد (G5)
   const cands = isOpen ? candidatesFor(r, 3, full) : [];
@@ -345,7 +358,7 @@ function reportCardStaff(r, open){
   const pickRef = r.staffPick ? (item(r.staffPick)?.ref || '') : '';
   const next = !isOpen ? t('st.rNextClosed', {when: when(r.closedAt || r.createdAt)})
     : r.staffPick ? t('st.rNextPicked', {ref: `<b dir="ltr">${esc(pickRef)}</b>`}) : cands.length ? t('st.rNextCands', {n: cands.length}) : t('st.rNextNone');
-  return mcard({key: 'sr:' + r.id, open, pillHtml: isStale(r) ? `<span class="pill mute">${t('st.oldReport')}</span>` : isOpen ? '' : pill(REPORT_STATUS, r.status), next,
+  return mcard({key: 'sr:' + r.id, open, fresh, muted: !isOpen, pillHtml: isStale(r) ? `<span class="pill mute">${t('st.oldReport')}</span>` : isOpen ? '' : pill(REPORT_STATUS, r.status), next,
     head: `<span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(subLabel(r.sub)) : ''}</span><h3>${esc(r.title)}</h3>${person(r.uid)}`,
     body: `<div>${r.color ? `<span class="meta">${colorDot(r.color)}${esc(colorName(r.color))}</span>` : ''}${whenLine('c.sentAt', r.createdAt)}${whenLine('c.editedAt', r.editedAt)}</div>
       ${r.photo ? `<div class="row-thumb" style="width:84px;height:84px">${icon('camera')}<img data-photo="r_${esc(r.id)}" alt="" hidden></div>` : ''}

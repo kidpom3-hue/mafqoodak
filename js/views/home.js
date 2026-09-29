@@ -4,7 +4,9 @@ import { $, esc, today } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, curOffice } from '../state.js';
 import { card, skelCards } from './visitor.js';
-import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt, themePicker, textPicker } from './common.js';
+import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt } from './common.js';
+import { qrSvg } from '../qr.js';
+import { officeUrl } from './print.js';
 import { hydrate } from '../ui.js';
 
 const TAG_ART = `<svg class="tag-art" viewBox="0 0 220 240" aria-hidden="true">
@@ -18,6 +20,8 @@ const TAG_ART = `<svg class="tag-art" viewBox="0 0 220 240" aria-hidden="true">
   </g>
 </svg>`;
 
+// H4: شريط الأرقام الثلاثة انتقل إلى صفحة التصفح. «تفاصيل الخدمات» و«مؤشرات المكتب» صفّا روابط هادئان
+// بعرض كامل بعد «خصوصيتك أولاً» وقبل التذييل
 export function vHome(){
   const o = curOffice();
   return `<div class="wrap home" data-view="home">
@@ -44,21 +48,17 @@ export function vHome(){
       <div id="home-latest"></div>
     </section>
 
-    <section class="stats-band" id="home-stats" aria-label="${t('home.statsAria')}"></section>
-
-    <section class="home-sec">
+    <section class="home-sec how-panel">
       <div class="sec-head"><h2>${t('home.how')}</h2></div>
       <ol class="how how3">
         <li><b>${t('home.how1')}</b><span>${t('home.how1d')}</span></li>
         <li><b>${t('home.how2')}</b><span>${t('home.how2d')}</span></li>
         <li><b>${t('home.how3')}</b><span>${t('home.how3d')}</span></li>
       </ol>
-      <div class="btn-row"><button class="btn sm ghost" data-act="nav" data-r="service">${icon('grid')}${t('svc.details')}</button>
-        <button class="btn sm ghost" data-act="nav" data-r="numbers">${icon('chart')}${t('num.title')}</button></div>
     </section>
 
     <section class="home-sec">
-      <div class="sec-head"><h2>${t('ofc.privacy')}</h2></div>
+      <div class="sec-head sec-sub"><h2>${t('ofc.privacy')}</h2><p>${t('home.privacySub')}</p></div>
       <div class="features compact">
         <div class="feat">${icon('lock')}<b>${t('ofc.f1')}</b><span>${t('ofc.f1d')}</span></div>
         <div class="feat">${icon('idcard')}<b>${t('ofc.f2')}</b><span>${t('ofc.f2d')}</span></div>
@@ -67,6 +67,11 @@ export function vHome(){
       </div>
     </section>
 
+    <nav class="link-rows" aria-label="${t('home.moreAria')}">
+      <button class="link-row" data-act="nav" data-r="service"><span class="lr-ic">${icon('grid')}</span><span class="grow"><b>${t('svc.details')}</b><small>${t('home.svcDesc')}</small></span>${icon('fwd')}</button>
+      <button class="link-row" data-act="nav" data-r="numbers"><span class="lr-ic">${icon('chart')}</span><span class="grow"><b>${t('num.title')}</b><small>${t('home.numDesc')}</small></span>${icon('fwd')}</button>
+    </nav>
+
     ${footer(o)}
   </div>`;
 }
@@ -74,13 +79,6 @@ export function vHome(){
 export function updateHome(){
   const o = curOffice(); if (!o) return;
   const avail = S.items.filter(i => i.status === 'available' || i.status === 'reserved');
-  const keep = o.retentionDays || 90;
-  const st = $('#home-stats');
-  // «أُعيد لأصحابه» عدد من الخادم (getCountFromServer) بدل تحميل كل الأغراض المُسلَّمة
-  if (st) st.innerHTML = !S.itemsLoaded ? '' : `
-    <div><b>${avail.length}</b><span>${t('home.statAvail')}</span></div>
-    <div><b>${S.counts.returned ?? '…'}</b><span>${t('home.statReturned')}</span></div>
-    <div><b>${keep}</b><span>${t('home.statKeep', {unit: tp('n.dayUnit', keep)})}</span></div>`;
   const cc = $('#cta-count'); if (cc && S.itemsLoaded) cc.textContent = avail.length ? t('home.availNow', {items: tp('n.item', avail.length)}) : t('home.ctaBrowseSub');
   const latest = $('#home-latest');
   if (latest){
@@ -94,31 +92,35 @@ export function updateHome(){
   hydrate();
 }
 
-/* التذييل: الروابط الأربعة الأساسية في عمودين، واللغة والمظهر وحجم الخط في صف واحد مضغوط يلتف عند الحاجة.
-   روابط التصفح والبلاغ و«وجدت غرضاً» موجودة في أعلى الصفحة والشريط السفلي، و«مؤشرات المكتب» في «كيف يعمل» وصفحة المكتب.
-   «خصوصيتك أولاً» صارت قبل التذييل في شبكة 2×2 مضغوطة (كانت في صفحة المكتب) */
+/* التذييل (H4): شريط بعرض الصفحة بالأخضر الداكن نفسه لبطاقة الرئيسية (--hero-bg) ونص أبيض.
+   الهوية (الشعار، ووصف سطر واحد، ورمز QR صغير للمكتب بخلفية بيضاء) · مجموعة «المكتب» (روابطه ومكانه وأوقاته وهاتفه)
+   · شريط أخير: «© السنة مفقودك» وتحته «الخصوصية والشروط | إمكانية الوصول». بلا أي شعار حكومي أو شعار للمؤسسة.
+   المظهر وحجم الخط انتقلا إلى زر «Aa» في الشريط العلوي، واللغة إلى زرها هناك */
 function footer(o){
   return `<footer class="site-foot">
-    <div class="sf-brand">${LOGO}<b>${t('app.name')}</b><p>${t('foot.about')}</p></div>
-    <div class="sf-col"><b>${esc(oName(o))}</b>
-      <span>${icon('pin')}${esc(oPlace(o))}</span>
-      ${oHours(o) ? `<span>${icon('clock')}${esc(oHours(o))}</span>` : ''}
-      ${o.phone ? `<span>${icon('phone')}<span dir="ltr">${esc(o.phone)}</span></span>` : ''}
-    </div>
-    <div class="sf-col"><b>${t('foot.links')}</b>
-      <div class="sf-links">
-        <button class="link" data-act="nav" data-r="office">${t('foot.office')}</button>
-        <button class="link" data-act="nav" data-r="service">${t('foot.services')}</button>
-        <button class="link" data-act="nav" data-r="a11y">${t('a11y.title')}</button>
-        <button class="link" data-act="nav" data-r="privacy">${t('foot.privacy')}</button>
+    <div class="sf-top">
+      <div class="sf-brand">
+        <div class="sf-id">${LOGO}<b>${t('app.name')}</b></div>
+        <p>${t('foot.tagline')}</p>
+        <div class="sf-qr">${qrSvg(officeUrl(o), {label: t('po.qrAria')})}<small>${t('foot.qr')}</small></div>
       </div>
+      <nav class="sf-col" aria-labelledby="sf-office">
+        <h2 class="sf-h" id="sf-office">${t('foot.officeGroup')}</h2>
+        <div class="sf-links">
+          <button class="link" data-act="nav" data-r="office">${t('foot.office')}</button>
+          <button class="link" data-act="nav" data-r="service">${t('foot.services')}</button>
+        </div>
+        <ul class="sf-info">
+          <li>${icon('pin')}<span>${esc(oPlace(o) || oName(o))}</span></li>
+          ${oHours(o) ? `<li>${icon('clock')}<span>${esc(oHours(o))}</span></li>` : ''}
+          ${o.phone ? `<li>${icon('phone')}<span dir="ltr">${esc(o.phone)}</span></li>` : ''}
+        </ul>
+      </nav>
     </div>
-    <div class="sf-prefs">
-      <button class="link" data-act="lang" lang="${t('lang.otherCode')}">${icon('globe')}${t('foot.lang')}</button>
-      ${themePicker()}
-      ${textPicker()}
+    <div class="sf-bottom">
+      <small class="sf-copy">© ${today().slice(0, 4)} ${t('app.name')}</small>
+      <div class="sf-legal"><button class="link" data-act="nav" data-r="privacy">${t('foot.legal')}</button><span aria-hidden="true">|</span><button class="link" data-act="nav" data-r="a11y">${t('foot.a11y')}</button></div>
     </div>
-    <small class="sf-copy">© ${today().slice(0, 4)} ${t('app.name')}</small>
   </footer>`;
 }
 
