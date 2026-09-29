@@ -84,3 +84,15 @@ const ver = (fs.readFileSync(path.join(root, 'js/config.js'), 'utf8').match(/APP
 const cache = (fs.readFileSync(path.join(root, 'sw.js'), 'utf8').match(/CACHE\s*=\s*'mafqoodak-v([^']+)'/) || [])[1];
 if (!ver || ver !== cache){ console.log(`✘ رقم الإصدار غير متطابق: APP_VERSION في js/config.js = ${ver}، وCACHE في sw.js = v${cache}. ارفعهما معاً إلى الرقم نفسه.`); process.exit(1); }
 console.log(`✔ رقم الإصدار ${ver} متطابق في js/config.js وsw.js.`);
+
+// H7: بصمة السكربت المضمّن في <head> (المظهر واللغة وحجم الخط) موجودة في سياسة CSP؛ وإلا يُمنع تشغيله
+{
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const { createHash } = await import('crypto');
+  const inline = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => 'sha256-' + createHash('sha256').update(m[1]).digest('base64'));
+  const csp = (html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || '';
+  const missing = inline.filter(h => !csp.includes(`'${h}'`));
+  if (!csp || missing.length){ console.log(`✘ سياسة CSP في index.html ${csp ? 'لا تحوي بصمة السكربت المضمّن: ' + missing.join(' ') : 'غير موجودة'}. انسخ البصمة إلى script-src.`); process.exit(1); }
+  if (/\son[a-z]+\s*=\s*["']/i.test(html.replace(/<!--[\s\S]*?-->/g, ''))){ console.log('✘ معالج أحداث مضمّن (onclick/onload…) في index.html: CSP يمنعه. استخدم addEventListener في الكود.'); process.exit(1); }
+  console.log(`✔ سياسة CSP تحوي بصمة ${inline.length} سكربت مضمّن، ولا معالجات مضمّنة في index.html.`);
+}

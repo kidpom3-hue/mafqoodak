@@ -3,7 +3,7 @@ import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, 
 import { t, tp, tAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
 import { loadStats, exportCsv } from './stats.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen } from './state.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion,
@@ -193,7 +193,8 @@ async function submitForm(form){
         const name = val('name') || email.split('@')[0];
         await updateProfile(cred.user, {displayName: name});
         S.me = {...(S.me || {}), name};
-        await dbx.set('users/' + cred.user.uid, {name, email, photo: '', lastSeen: Date.now()}, {merge: true}).catch(() => {});
+        // H7: البريد كما في رمز الدخول (القواعد تقبل users.email مساوياً لبريد الحساب فقط)
+        await dbx.set('users/' + cred.user.uid, {name, email: cred.user.email || '', photo: '', lastSeen: Date.now()}, {merge: true}).catch(() => {});
         // توثيق البريد: البلاغات وطلبات الاستلام تشترطه
         await sendEmailVerification(cred.user).catch(e => console.warn(e));
         toast(t('a.welcome', {name}));
@@ -270,7 +271,8 @@ async function submitForm(form){
     try {
       // خانات التصنيف فقط (الوثائق والنقود بلا لون ولا ماركة)، وإجابات أسئلته في details
       // رقم الطلب القصير يظهر للمستخدم والموظف، ويُبحث به في تبويب الاستلام
-      await dbx.set('claims/' + id, {itemId: i.id, officeId: i.officeId, uid: S.uid, no: 'REQ-' + refCode(4), proof: val('proof').slice(0, 1200), details,
+      // H7: مع حدّ الإغراق (rate/{uid} في العملية نفسها)
+      await createLimited('claims/' + id, {itemId: i.id, officeId: i.officeId, uid: S.uid, no: 'REQ-' + refCode(4), proof: val('proof').slice(0, 1200), details,
         color: q.fields.includes('color') ? val('color') : '', brand: q.fields.includes('brand') ? val('brand').slice(0, 40) : '',
         claimantName: val('claimantName').slice(0, 120), idLast4: last4,
         lostSpot: val('spot'), bldg, room, lostDate: val('lostDate'),
@@ -278,6 +280,7 @@ async function submitForm(form){
         status: 'pending', codeHash, createdAt: Date.now()});
     } catch (e){
       console.warn(e); busy(form, false);
+      if (e?.msg) return formErr(form, e.msg);   // «انتظر قليلاً ثم أعد المحاولة»
       return formErr(form, String(e?.code || '').includes('permission-denied')
         ? t('a.claimDenied')
         : t('a.claimFail'));
@@ -304,7 +307,7 @@ async function submitForm(form){
       const withPhoto = !!FORM.photo && !sens;
       // إجابات أسئلة التصنيف (اختيارية) تُحفظ لتعبئة طلب الاستلام منها لاحقاً
       const {details} = readDetails(form, catId, 'report');
-      const ok = await write(() => dbx.set('reports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), color: claimOf(catId).fields.includes('color') ? val('color') : '',
+      const ok = await write(() => createLimited('reports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), color: claimOf(catId).fields.includes('color') ? val('color') : '',
         ...(Object.keys(details).length ? {details} : {}),
         title: val('title'), desc: val('desc'), spot: val('spot'), bldg, room, lostDate: val('lostDate') || today(), photo: false, status: 'open', createdAt: Date.now()}), t('a.reportSaved'));
       if (ok && withPhoto){
@@ -476,6 +479,7 @@ async function submitForm(form){
         else await dbx.del('foundReports/' + f.id);
       }
       await dbx.del('users/' + user.uid + '/private/codes');
+      await dbx.del('rate/' + user.uid).catch(() => {});   // H7: وقت آخر إنشاء (تسمح القواعد بحذفه بعد 20 ثانية)
       await dbx.del('staffRequests/' + user.uid).catch(() => {});
       await dbx.del('users/' + user.uid);
       // 4) حذف الحساب نفسه من Firebase Authentication
@@ -499,7 +503,7 @@ async function submitForm(form){
     const id = dbx.newId('foundReports');
     // كود قصير يُريه الواجد لموظف المكتب فيفتح إشعاره مباشرة (بحروف رقم القيد نفسها)
     const code = refCode(6);
-    const ok = await write(() => dbx.set('foundReports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), spot: val('spot'), bldg, room,
+    const ok = await write(() => createLimited('foundReports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), spot: val('spot'), bldg, room,
       foundDate: val('foundDate') || today(), note: val('note').slice(0, 500), code, status: 'pending', createdAt: Date.now()}), t('hi.sent'));
     busy(form, false); if (ok){ S.hist = []; go('mine', {focus: id}, false); }
     return;
@@ -682,7 +686,7 @@ const ACT = {
     const data = {title: t('share.title', {title: showTitle(i)}), text: t('share.text', {title: showTitle(i), ref: i.ref}), url};
     if (navigator.share){ try { await navigator.share(data); return; } catch (e){ if (e?.name === 'AbortError') return; } }
     try { await navigator.clipboard.writeText(url); toast(t('share.copied')); }
-    catch { openSheet(`<h2>${icon('share')} ${t('share.link')}</h2><input class="input" dir="ltr" readonly value="${esc(url)}" onfocus="this.select()"><button class="btn ghost" data-act="closeSheet">${t('c.close')}</button>`); }
+    catch { openSheet(`<h2>${icon('share')} ${t('share.link')}</h2><input class="input share-url" dir="ltr" readonly value="${esc(url)}"><button class="btn ghost" data-act="closeSheet">${t('c.close')}</button>`); }
   },
   async signOut(){
     closeSheet(); S.mode = 'visitor'; LS.set('mode', 'visitor'); S.hist = []; S.route = {name: 'home', params: {}};
@@ -1121,6 +1125,8 @@ export function bindEvents(){
   app.addEventListener('pointerover', e => { const el = e.target.closest?.('[data-tip-v]'); if (el) showTip(el); });
   app.addEventListener('pointerout', e => { if (e.target.closest?.('[data-tip-v]') && document.activeElement !== e.target) hideTip(); });
   app.addEventListener('focusin', e => { if (e.target.matches?.('[data-tip-v]')) showTip(e.target); });
+  // H7: رابط المشاركة يُحدَّد كاملاً عند التركيز (كان onfocus مضمّناً في HTML، وسياسة CSP تمنع المعالجات المضمّنة). النافذة خارج #app
+  document.addEventListener('focusin', e => { if (e.target.matches?.('input.share-url')) e.target.select(); });
   app.addEventListener('focusout', e => { if (e.target.matches?.('[data-tip-v]')) hideTip(); });
   // التمرير يخفي تلميح المؤشر، ويُبقي تلميح العنصر المُركَّز عليه (مع إعادة تحديد مكانه)
   window.addEventListener('scroll', () => { const a = document.activeElement; if (a?.matches?.('[data-tip-v]')) showTip(a); else hideTip(); }, {passive: true});

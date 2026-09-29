@@ -149,6 +149,7 @@ export const EN = {
   "home.statAvail": "Ready to collect",
   "home.statReturned": "Returned to owners",
   "home.statKeep": "{unit} retention",
+  "err.rateWait": "Please wait a moment and try again.",
   "upd.ready": "A new update is available",
   "upd.btn": "Update",
   "ui.version": "Version {v}",

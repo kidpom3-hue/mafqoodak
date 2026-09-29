@@ -142,7 +142,8 @@ export async function askQuestion(c, q){
   const question = String(q || '').trim().slice(0, 300);
   if (question.length < 5) fail(t('wf.needQuestion'));
   const b = dbx.batch();
-  b.update(dbx.ref('claims/' + c.id), {question, askedAt: Date.now(), askedBy: S.uid});
+  // H7: السؤال الجديد يمسح الإجابة القديمة في العملية نفسها، فلا يظهر مُجاباً قبل أن يجيب صاحب الطلب عنه
+  b.update(dbx.ref('claims/' + c.id), {question, askedAt: Date.now(), askedBy: S.uid, answer: deleteField(), answeredAt: deleteField()});
   log(b, c.officeId, 'ask', {itemId: c.itemId, claimId: c.id, note: question});
   await commit(b);
 }

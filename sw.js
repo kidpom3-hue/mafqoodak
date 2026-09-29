@@ -1,7 +1,7 @@
 // Service Worker: يحفظ ملفات التطبيق ليفتح بسرعة ويعمل عند ضعف الاتصال.
 // الاستراتيجية: الشبكة أولاً (لتظهر تعديلاتك فوراً)، ثم النسخة المحفوظة إذا انقطع الاتصال.
 // عند تغيير أسماء الملفات غيّر رقم الإصدار هنا.
-const CACHE = 'mafqoodak-v23';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
+const CACHE = 'mafqoodak-v24';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
 // ملفات التطبيق نفسه فقط: ملفات Firebase من gstatic (ومنها firebase-app-check.js) لا يتعامل معها هذا العامل (مصدر آخر)
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/styles.css',

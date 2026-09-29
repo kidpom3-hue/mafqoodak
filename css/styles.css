@@ -975,3 +975,11 @@ html[data-text] .pill{white-space:normal}
 /* خط صغير رمادي في أسفل قائمة الحساب وفي التذييل، لتتأكد أن جوالك يعرض آخر نسخة */
 .app-ver{margin:4px 0 0;font-size:11.5px;color:var(--muted);text-align:center}
 .sf-ver{font-size:11px;color:var(--hero-muted)}
+/* ---------- H7: نصوص طويلة بلا مسافات (اسم مكتب أو بريد أو رقم طويل) لا تسبب تمريراً أفقياً ---------- */
+/* وجدها فحص tools/fuzz.mjs: الاسم ينكسر عند الحاجة فقط، ولا يتغير شيء في النصوص العادية */
+.office-card .grow, .office-card .grow b, .office-card .meta,
+.lb-text, .lb-text b, .lb-ref,
+label.check, .box-head, .box-head b{min-width:0;overflow-wrap:anywhere}
+.box-head > *{min-width:0}
+.labels .lb-ref{white-space:normal}
+.box-head{flex-wrap:wrap}
