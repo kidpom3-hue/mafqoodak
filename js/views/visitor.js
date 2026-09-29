@@ -3,7 +3,7 @@ import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPl
 import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard } from '../state.js';
-import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, CARD_OPEN, ENDED_OPEN } from './common.js';
+import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { claimCardStaff, rivals, dateOf, qaBox, timeline, catKeepNote } from './staff.js';
 import { aiReady } from '../ai.js';
@@ -341,11 +341,12 @@ export function vMine(){
   const saved = LS.get('mineTab', '');
   const cur = MINE_TABS.includes(saved) ? saved : MINE_TABS.find(k => lists[k].length) || 'claims';
   const unseen = unseenKeys(); FRESH = new Set(unseen.map(keyCard));
-  // التبويبات الثلاثة دائماً: الرقم الرمادي = الجاري فقط (يُخفى إن كان صفراً)، والأحمر = التنبيهات غير المقروءة في التبويب
+  // التبويبات الثلاثة دائماً، وعلى كل تبويب رقم واحد (tabNum): الأحمر = التنبيهات غير المقروءة فيه، وإلا الرمادي = الجاري.
+  // المهام المطلوبة (مثل سؤال الموظف) تبقى في «يحتاج انتباهك» وفي حدّ البطاقة، لا في شارة التبويب
   const tabs = `<div class="tabs" role="tablist" aria-label="${t('mine.tabsAria')}">${MINE_TABS.map(k => {
     const act = lists[k].filter(x => !isEndedOf[k](x)).length, nw = unseen.filter(x => keyTab(x) === k).length;
     return `<button role="tab" id="mt-${k}" aria-controls="mp-${k}" aria-selected="${k === cur}" tabindex="${k === cur ? 0 : -1}" data-act="mineTab" data-v="${k}">
-      <span class="tl">${t('mine.t.' + k)}</span><span class="ts">${t('mine.ts.' + k)}</span>${act ? `<span class="tab-n">${act}</span>` : ''}${nw ? `<span class="count"><span aria-hidden="true">${nw}</span><span class="sr-only">${t('mine.newSr', {n: nw})}</span></span>` : ''}</button>`; }).join('')}</div>`;
+      <span class="tl">${t('mine.t.' + k)}</span><span class="ts">${t('mine.ts.' + k)}</span>${tabNum(nw, act)}</button>`; }).join('')}</div>`;
   return `<div class="wrap" data-view="mine">
     <section class="hero"><div class="hero-kicker">${icon('inbox')}${t('mine.kicker')}</div><h1 class="hero-title">${t('nav.mine')}</h1></section>
     ${attentionBox(cls, reps)}
