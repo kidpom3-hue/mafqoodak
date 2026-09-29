@@ -419,8 +419,6 @@ export const linkedClaim = r => myClaims().find(c => (c.reportId === r.id || (r.
 
 /* ---------- visitor: office info ---------- */
 /* أسئلة شائعة — نصوصها في القاموسين (faq.q1… وfaq.a1…)، عدّلها كما تريد */
-// المصطلحات الموحّدة في كل الواجهة (المرحلة F): اسم واحد لكل مفهوم
-const TERMS = ['report', 'claim', 'handin', 'ref', 'reqNo', 'code'];
 const FAQ = () => [1, 2, 3, 4, 5, 6, 7].map(n => [t('faq.q' + n), t('faq.a' + n)]);
 
 export function vOffice(){
@@ -443,22 +441,8 @@ export function vOffice(){
       <button class="btn ghost" data-act="nav" data-r="numbers" style="align-self:flex-start">${icon('chart')}${t('num.title')}</button>
     </div>
     <section class="home-sec">
-      <div class="sec-head"><h2>${t('ofc.privacy')}</h2></div>
-      <div class="features">
-        <div class="feat">${icon('lock')}<b>${t('ofc.f1')}</b><span>${t('ofc.f1d')}</span></div>
-        <div class="feat">${icon('idcard')}<b>${t('ofc.f2')}</b><span>${t('ofc.f2d')}</span></div>
-        <div class="feat">${icon('shield')}<b>${t('ofc.f3')}</b><span>${t('ofc.f3d')}</span></div>
-        <div class="feat">${icon('spark')}<b>${t('ofc.f4')}</b><span>${t('ofc.f4d')}</span></div>
-      </div>
-    </section>
-
-    <section class="home-sec">
       <div class="sec-head"><h2>${t('ofc.faq')}</h2></div>
       <div class="faq">${FAQ().map(([q, a]) => `<details><summary>${esc(q)}${icon('chev')}</summary><p>${esc(a)}</p></details>`).join('')}</div>
-    </section>
-    <section class="home-sec">
-      <div class="sec-head"><h2>${t('term.title')}</h2></div>
-      <dl class="facts terms">${TERMS.map(k => `<dt>${t('term.' + k)}</dt><dd>${t('term.' + k + '.d')}</dd>`).join('')}</dl>
     </section>
     <button class="link" data-act="nav" data-r="privacy" style="align-self:center">${icon('lock')}${t('foot.privacy')}</button>
   </div>`;

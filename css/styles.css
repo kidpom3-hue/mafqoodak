@@ -831,3 +831,17 @@ html[data-text] .pill{white-space:normal}
 /* H1: مسافة بين خانات التصنيف داخل مجموعتيها (المطلوبة ظاهرة، والاختيارية في «تفاصيل إضافية») */
 #cat-fields[data-mode=claim],#cat-fields-opt{display:flex;flex-direction:column;gap:16px}
 #cat-fields[data-mode=claim]:empty,#cat-fields-opt:empty{display:none}
+/* ---------- PR 2: تنظيف صفحة المكتب والرئيسية ---------- */
+/* «خصوصيتك أولاً» في الرئيسية: شبكة 2×2 مضغوطة (أيقونة صغيرة بجانب العنوان وسطر تحته)، وعمود واحد إن ضاقت */
+.features.compact{grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:8px}
+.features.compact .feat{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;align-content:start;column-gap:7px;row-gap:2px;padding:10px 12px;border-radius:12px}
+.features.compact .feat svg{width:18px;height:18px}
+.features.compact .feat b{font-size:13.5px;line-height:1.35}
+.features.compact .feat span{grid-column:1/-1;font-size:12.5px;line-height:1.45}
+/* التذييل: الروابط في عمودين، والتفضيلات في صف واحد يلتف */
+.sf-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 14px;width:100%}
+.sf-links .link{text-align:start}
+.sf-prefs{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.sf-prefs .link{font-size:13.5px;min-height:36px;display:inline-flex;align-items:center}
+/* المصطلحات في فهرس الخدمات: مطوية */
+.terms-box .terms{padding-bottom:13px}

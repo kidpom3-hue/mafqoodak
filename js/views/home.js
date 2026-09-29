@@ -57,6 +57,16 @@ export function vHome(){
         <button class="btn sm ghost" data-act="nav" data-r="numbers">${icon('chart')}${t('num.title')}</button></div>
     </section>
 
+    <section class="home-sec">
+      <div class="sec-head"><h2>${t('ofc.privacy')}</h2></div>
+      <div class="features compact">
+        <div class="feat">${icon('lock')}<b>${t('ofc.f1')}</b><span>${t('ofc.f1d')}</span></div>
+        <div class="feat">${icon('idcard')}<b>${t('ofc.f2')}</b><span>${t('ofc.f2d')}</span></div>
+        <div class="feat">${icon('shield')}<b>${t('ofc.f3')}</b><span>${t('ofc.f3d')}</span></div>
+        <div class="feat">${icon('spark')}<b>${t('ofc.f4')}</b><span>${t('ofc.f4d')}</span></div>
+      </div>
+    </section>
+
     ${footer(o)}
   </div>`;
 }
@@ -84,6 +94,9 @@ export function updateHome(){
   hydrate();
 }
 
+/* التذييل: الروابط الأربعة الأساسية في عمودين، واللغة والمظهر وحجم الخط في صف واحد مضغوط يلتف عند الحاجة.
+   روابط التصفح والبلاغ و«وجدت غرضاً» موجودة في أعلى الصفحة والشريط السفلي، و«مؤشرات المكتب» في «كيف يعمل» وصفحة المكتب.
+   «خصوصيتك أولاً» صارت قبل التذييل في شبكة 2×2 مضغوطة (كانت في صفحة المكتب) */
 function footer(o){
   return `<footer class="site-foot">
     <div class="sf-brand">${LOGO}<b>${t('app.name')}</b><p>${t('foot.about')}</p></div>
@@ -93,14 +106,14 @@ function footer(o){
       ${o.phone ? `<span>${icon('phone')}<span dir="ltr">${esc(o.phone)}</span></span>` : ''}
     </div>
     <div class="sf-col"><b>${t('foot.links')}</b>
-      <button class="link" data-act="nav" data-r="browse">${t('home.ctaBrowse')}</button>
-      <button class="link" data-act="nav" data-r="report">${t('foot.report')}</button>
-      <button class="link" data-act="nav" data-r="found">${t('home.ctaFound')}</button>
-      <button class="link" data-act="nav" data-r="office">${t('foot.office')}</button>
-      <button class="link" data-act="nav" data-r="service">${t('foot.services')}</button>
-      <button class="link" data-act="nav" data-r="numbers">${t('num.title')}</button>
-      <button class="link" data-act="nav" data-r="a11y">${t('a11y.title')}</button>
-      <button class="link" data-act="nav" data-r="privacy">${t('foot.privacy')}</button>
+      <div class="sf-links">
+        <button class="link" data-act="nav" data-r="office">${t('foot.office')}</button>
+        <button class="link" data-act="nav" data-r="service">${t('foot.services')}</button>
+        <button class="link" data-act="nav" data-r="a11y">${t('a11y.title')}</button>
+        <button class="link" data-act="nav" data-r="privacy">${t('foot.privacy')}</button>
+      </div>
+    </div>
+    <div class="sf-prefs">
       <button class="link" data-act="lang" lang="${t('lang.otherCode')}">${icon('globe')}${t('foot.lang')}</button>
       ${themePicker()}
       ${textPicker()}
