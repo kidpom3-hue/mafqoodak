@@ -58,7 +58,7 @@ export function vHome(){
     </section>
 
     <section class="home-sec">
-      <div class="sec-head sec-sub"><h2>${t('ofc.privacy')}</h2><p>${t('home.privacySub')}</p></div>
+      <div class="sec-head"><h2>${t('ofc.privacy')}</h2></div>
       <div class="features compact">
         <div class="feat">${icon('lock')}<b>${t('ofc.f1')}</b><span>${t('ofc.f1d')}</span></div>
         <div class="feat">${icon('idcard')}<b>${t('ofc.f2')}</b><span>${t('ofc.f2d')}</span></div>

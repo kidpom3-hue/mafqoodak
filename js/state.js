@@ -188,23 +188,51 @@ export function markSeenKeys(keys){
   if (!keys?.length) return;
   const all = new Set([...LS.get('seen', []), ...keys]); LS.set('seen', [...all].slice(-400)); changed();
 }
-/* H4: تنبيهات الموظف غير المقروءة (مفاتيح notify.js نفسها): «قراري» = طلب جديد sc وإجابة عن سؤال sa،
-   «قادمة» = إشعار تسليم sf، والبلاغات = sr لكل بلاغ مفتوح جديد. sub = التبويب الفرعي، card = مفتاح البطاقة */
-export function staffKeys(){
+/* H5: أحداث الموظف الجديدة (مستقلة عن تنبيهات الزائر). كل حدث: k = المفتاح، sub = التبويب الفرعي، card = البطاقة، at = وقته.
+   «قراري»: nc = طلب استلام جديد، na = إجابة جديدة عن سؤال التحقق.  «قادمة»: nf = إشعار تسليم جديد.
+   «مفتوحة»: nr = بلاغ جديد، re = تعديل صاحب البلاغ.  «لها مرشّح»: pr = ردّ صاحب البلاغ على الترشيح
+   («ليس غرضي» أو طلب استلام الغرض المرشّح). مجرد وجود ترشيح بانتظار الرد ليس حدثاً.
+   المقروء في localStorage «staffSeen» = {since, keys}: since وقت أول استخدام، فالأحداث الأقدم منه لا تُعدّ جديدة
+   (فلا تظهر كل البطاقات جديدة في أول مرة)، وkeys ما سُجّل مقروءاً بعد ذلك، فيبقى مقروءاً بعد تحديث الصفحة */
+function staffSeen(){
+  let v = LS.get('staffSeen', null);
+  if (!v || !v.since){ v = {since: Date.now(), keys: []}; LS.set('staffSeen', v); }
+  return v;
+}
+export function staffEvents(){
   if (!isStaffHere()) return [];
-  const out = [];
+  const out = [], add = (k, sub, card, at) => out.push({k, sub, card, at});
   for (const c of S.claims){
     if (c.status !== 'pending' || c.uid === S.uid) continue;
-    out.push({k: 'sc:' + c.id, sub: 'claims:decide', card: 's:' + c.id});
-    if (answered(c)) out.push({k: `sa:${c.id}:${c.answeredAt}`, sub: 'claims:decide', card: 's:' + c.id});
+    add('nc:' + c.id, 'claims:decide', 's:' + c.id, c.createdAt);
+    if (answered(c)) add(`na:${c.id}:${c.answeredAt}`, 'claims:decide', 's:' + c.id, c.answeredAt);
   }
-  for (const f of S.found) out.push({k: 'sf:' + f.id, sub: 'claims:incoming', card: 'sf:' + f.id});
-  for (const r of S.reports) if (r.status === 'open' && !isStale(r)) out.push({k: 'sr:' + r.id, sub: r.staffPick ? 'reports:picked' : 'reports:open', card: 'sr:' + r.id});
-  const seen = new Set(LS.get('seen', []));
-  return out.filter(x => !seen.has(x.k));
+  for (const f of S.found) add('nf:' + f.id, 'claims:incoming', 'sf:' + f.id, f.createdAt);
+  for (const r of S.reports){
+    if (r.status !== 'open' || isStale(r)) continue;
+    const sub = r.staffPick ? 'reports:picked' : 'reports:open', card = 'sr:' + r.id;
+    if (!r.staffPick) add('nr:' + r.id, sub, card, r.createdAt);
+    if (r.editedAt) add(`re:${r.id}:${r.editedAt}`, sub, card, r.editedAt);
+    if (!r.staffPick) continue;
+    // ردّ صاحب البلاغ: «ليس غرضي» (لا وقت له، فيُعدّ جديداً حتى يُقرأ) أو طلب استلام للغرض المرشّح
+    if (rejectedOf(r).has(r.staffPick)) add(`pr:${r.id}:no:${r.staffPick}`, sub, card, null);
+    for (const c of S.claims) if (c.itemId === r.staffPick) add(`pr:${r.id}:claim:${c.id}`, sub, card, c.createdAt);
+  }
+  return out;
 }
-// كل التنبيهات غير المقروءة لبطاقة واحدة (للزائر وللموظف): تُسجَّل مقروءة عند فتحها
-export const unseenFor = card => [...unseenKeys().filter(k => keyCard(k) === card), ...staffKeys().filter(x => x.card === card).map(x => x.k)];
+// الأحداث التي لم تُرَ بعد
+export function staffKeys(){
+  const {since, keys} = staffSeen(), seen = new Set(keys);
+  return staffEvents().filter(x => !seen.has(x.k) && !(x.at && x.at <= since));
+}
+export function markStaffSeen(keys){
+  if (!keys?.length) return;
+  const v = staffSeen(); v.keys = [...new Set([...v.keys, ...keys])].slice(-600); LS.set('staffSeen', v); changed();
+}
+// عدد البطاقات الجديدة في تبويب رئيسي للموظف (claims أو reports) أو تبويب فرعي («claims:decide»)
+export const staffNew = prefix => new Set(staffKeys().filter(x => x.sub === prefix || x.sub.startsWith(prefix + ':')).map(x => x.card)).size;
+// كل التنبيهات غير المقروءة لبطاقة واحدة في «طلباتي»: تُسجَّل مقروءة عند فتحها
+export const unseenFor = card => unseenKeys().filter(k => keyCard(k) === card);
 export function unseenCount(){ const seen = new Set(LS.get('seen', [])); return alertKeys().filter(k => !seen.has(k)).length; }
 export function markSeen(){ const all = new Set([...LS.get('seen', []), ...alertKeys()]); LS.set('seen', [...all].slice(-400)); }
 

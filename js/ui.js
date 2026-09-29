@@ -1,8 +1,8 @@
 // هيكل الواجهة: التنقل بين الصفحات، الشريط العلوي، الشريط السفلي، النوافذ المنبثقة
-import { icon, LOGO, otype, oShort, statusLabel, MODE_LABEL } from './constants.js';
+import { icon, LOGO, statusLabel, MODE_LABEL } from './constants.js';
 import { t } from './i18n.js';
 import { $, $$, esc } from './utils.js';
-import { S, curOffice, modes, homeRoute, unseenCount, staffKeys, getPhoto, getName, SHARE_RE, OFFICE_RE } from './state.js';
+import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, SHARE_RE, OFFICE_RE } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice } from './views/visitor.js';
 import { vStaff, updateStaff, vItemForm } from './views/staff.js';
 import { vAdmin, vOfficeForm } from './views/admin.js';
@@ -145,6 +145,7 @@ function renderHeader(){
   const langBtn = `<button class="lang-btn" data-act="lang" lang="${t('lang.otherCode')}" aria-label="${t('lang.switch')}"><span class="lang-txt">${t('lang.other')}</span>${icon('globe')}</button>`;
   // H4: «Aa» يفتح نافذة العرض (المظهر وحجم الخط)
   const aaBtn = `<button class="aa-btn" data-act="displaySheet" aria-label="${t('ui.display')}"><span aria-hidden="true">Aa</span></button>`;
+  // H5: الترتيب: الشعار + «مفقودك» | Aa | اللغة | الحساب. أُزيل زر اسم المكتب (تغيير المكان في صفحة المكتب)
   $('#hdr').innerHTML = `<div class="top-row">
       <button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="${t('app.name')} — ${t('nav.home')}">${LOGO}<span class="wordmark">${t('app.name')}</span></button>
       ${S.config && (o || S.mode === 'admin') ? `<nav class="top-links" aria-label="${t('ui.navigation')}">${navItems().map(n => {
@@ -152,7 +153,6 @@ function renderHeader(){
         return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}">${n.l}${n.b ? `<span class="count">${n.b}</span>` : ''}</button>`;
       }).join('')}</nav>` : ''}
       <div class="top-actions">
-        ${o ? `<button class="office-chip" data-act="pickOffice" aria-label="${t('ui.changePlace')}">${icon(otype(o.type).icon)}<span>${esc(oShort(o))}</span>${icon('chev')}</button>` : ''}
         ${aaBtn}${langBtn}${acct}
       </div>
     </div>
@@ -163,9 +163,9 @@ function renderHeader(){
 }
 function navItems(){
   if (S.mode === 'staff'){
-    // H4: شارة «الاستلام» = عدد طلبات «قراري» الجديدة غير المقروءة فقط، و«البلاغات» = البلاغات الجديدة غير المقروءة
-    const nk = staffKeys(), uniq = sub => new Set(nk.filter(x => x.sub.startsWith(sub)).map(x => x.card)).size;
-    const inbox = uniq('claims:decide'), open = uniq('reports:');
+    // H5: شارتا «الاستلام» و«البلاغات» = عدد الجديد غير المقروء فقط، و0 والموظف داخل الصفحة نفسها (كـ«طلباتي» للزائر)
+    const here = tab => S.route.name === 'staff' && S.staffTab === tab;
+    const inbox = here('claims') ? 0 : staffNew('claims'), open = here('reports') ? 0 : staffNew('reports');
     return [
       {r: 'staff', tab: 'items', l: t('nav.store'), i: 'box'},
       {r: 'add', l: t('nav.add'), i: 'plus'},
