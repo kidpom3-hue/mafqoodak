@@ -36,6 +36,8 @@ renderAll();
 start();
 // بعد تسجيل الخروج وإعادة تحميل الصفحة (actions.js ← signOut)
 try { if (sessionStorage.getItem('mfq:signedOut')){ sessionStorage.removeItem('mfq:signedOut'); setTimeout(() => toast(t('a.signedOut')), 400); } } catch {}
+// v7: بعد «سجّل الدخول ببريد الكلية» (خروج ثم إعادة تحميل): صفحة الدخول مباشرة
+try { if (sessionStorage.getItem('mfq:thenLogin')){ sessionStorage.removeItem('mfq:thenLogin'); setTimeout(() => go('login'), 300); } } catch {}
 
 // تثبيت التطبيق على الجوال والعمل دون اتصال (PWA)
 // H6: عند وصول Service Worker جديد (نسخة أحدث من التطبيق) يظهر شريط «تحديث جديد متاح» مع زر «تحديث» يعيد تحميل الصفحة.

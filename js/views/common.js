@@ -8,8 +8,8 @@ import { S, isStaffHere, answered } from '../state.js';
 
 /* حالة نموذج الإدخال الحالي (الصورة المختارة) */
 // copyFrom: مفتاح صورة بلاغ تُنسخ للغرض عند قبول البلاغ (مثل r_abc)
-export const FORM = {photo: null, blob: null, removed: false, hadPhoto: false, copyFrom: null};
-export function resetForm(hadPhoto = false, copyFrom = null){ Object.assign(FORM, {photo: null, blob: null, removed: false, hadPhoto, copyFrom}); }
+export const FORM = {photo: null, blob: null, removed: false, hadPhoto: false, copyFrom: null, proofs: []};   // proofs (v7): صور إثبات طلب الاستلام
+export function resetForm(hadPhoto = false, copyFrom = null){ Object.assign(FORM, {photo: null, blob: null, removed: false, hadPhoto, copyFrom, proofs: []}); }
 
 export const backBtn = (label = t('c.back')) => `<button class="back" data-act="back">${icon('back')}${label}</button>`;
 
@@ -181,3 +181,16 @@ export function qaBox(c){
 }
 // رابط صفحة المكتب (رمز QR في التذييل والملصق)
 export const officeUrl = o => `${location.origin + location.pathname}#o/${o.id}`;
+
+/* v7: بريد الكلية لطلب الاستلام (إعداد لكل مكتب: offices.claimDomains، يعدّله المالك). القائمة الفارغة = بلا قيد.
+   البريد يقبل النطاق نفسه أو نطاقاً فرعياً منه (مثل stu.tvtc.edu.sa لـ tvtc.edu.sa)، لا نطاقاً يشبهه (eviltvtc.edu.sa) */
+export const claimDomainsOf = o => (Array.isArray(o?.claimDomains) ? o.claimDomains : []).map(d => String(d).toLowerCase()).filter(Boolean);
+export function claimEmailOk(o, email){
+  const ds = claimDomainsOf(o); if (!ds.length) return true;
+  const e = String(email || '').toLowerCase();
+  return ds.some(d => e.endsWith('@' + d) || (e.includes('@') && e.endsWith('.' + d)));
+}
+// النطاق كما يكتبه المالك ← صيغة صالحة فقط (أحرف وأرقام وشرطة ونقاط، بلا @)
+export const cleanDomain = d => { d = String(d || '').trim().toLowerCase().replace(/^@/, ''); return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d) ? d : ''; };
+// النمط الذي تتحقق به القواعد (claimDomainRe): البريد كاملاً ينتهي بأحد النطاقات أو نطاق فرعي منها
+export const domainRe = ds => ds.length ? `.*@([a-z0-9-]+[.])*(${ds.map(d => d.replace(/\./g, '[.]')).join('|')})` : '';

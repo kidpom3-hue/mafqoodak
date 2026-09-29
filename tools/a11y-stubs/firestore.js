@@ -24,7 +24,9 @@ export const deleteField = () => ({__del: 1});
 // H7: وقت الخادم (في البديل التجريبي: وقت الجهاز)
 export const serverTimestamp = () => Date.now();
 export const arrayUnion = (...a) => ({__union: a});
-const merged = (cur, d) => { const o = {...(cur || {})}; for (const [k, v] of Object.entries(d)) { if (v && v.__del) delete o[k]; else if (v && v.__union) o[k] = [...new Set([...(Array.isArray(o[k]) ? o[k] : []), ...v.__union])]; else o[k] = v; } return o; };
+// v7: إزالة من قائمة (حصة طلبات الاستلام)
+export const arrayRemove = (...a) => ({__remove: a});
+const merged = (cur, d) => { const o = {...(cur || {})}; for (const [k, v] of Object.entries(d)) { if (v && v.__del) delete o[k]; else if (v && v.__remove) o[k] = (Array.isArray(o[k]) ? o[k] : []).filter(x => !v.__remove.includes(x)); else if (v && v.__union) o[k] = [...new Set([...(Array.isArray(o[k]) ? o[k] : []), ...v.__union])]; else o[k] = v; } return o; };
 const after = (op, p, d, o) => op === 'set' && !o?.merge ? merged({}, d) : merged(F().db[p], d);
 const spotDeny = (p, doc) => { if (F().spotRule && p.startsWith('items/') && doc && 'spot' in doc){ const e = new Error('denied: public spot'); e.code = 'permission-denied'; throw e; } };
 export const setDoc = async (r, d, o) => { deny(r.path); const nd = after('set', r.path, d, o); spotDeny(r.path, nd); log('set', r.path, d); F().db[r.path] = nd; notify(); };

@@ -123,6 +123,7 @@ export function vOfficeForm(){
         <div class="field"><label for="o-pick">${t('of.pick')}</label><input id="o-pick" name="pickupDays" type="number" min="1" max="60" class="input" value="${esc(o?.pickupDays || 7)}"><span class="hint">${t('of.pickHint')}</span></div>
         <div class="field"><label for="o-review">${t('of.review')}</label><input id="o-review" name="reviewDays" type="number" min="1" max="30" class="input" value="${esc(o?.reviewDays || 2)}"><span class="hint">${t('of.reviewHint')}</span></div>
       </div>
+      <div class="field"><label for="o-dom">${t('of.domains')} <span class="hint">${t('c.optional')}</span></label><input id="o-dom" name="claimDomains" class="input" dir="ltr" maxlength="200" placeholder="tvtc.edu.sa" value="${esc((o?.claimDomains || []).join(', '))}"><span class="hint">${t('of.domainsHint')}</span></div>
       <div class="field"><label for="o-spots">${t('of.spots')}</label><textarea id="o-spots" name="spots" class="input" placeholder="${t('of.spotsPh')}">${esc((o?.spots || []).join('\n'))}</textarea><span class="hint">${t('of.spotsHint')}</span></div>
       <details class="en-fields" ${o?.nameEn || S.route.params.en ? 'open' : ''}>
         <summary>${icon('globe')}${t('of.enTitle')}</summary>

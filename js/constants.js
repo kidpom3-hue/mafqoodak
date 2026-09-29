@@ -85,6 +85,22 @@ export const LOGO = `<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><p
 // publicName/publicEn: الاسم في الإعلان العام بدل اسم النوع (النقود: «مبلغ مالي» دون المبلغ)
 const CB = ['color', 'brand'];
 const q = (k, type = 'text', req = '', x = {}) => ({k, type, req, ...x});
+/* v7: تقوية إثبات الملكية */
+// الأغراض الثمينة: قبول طلبها يحتاج موافقتين من موظفين مختلفين (أو موظف ثم الإدارة). نفس القائمة highValue() في firestore.rules
+export const HIGH_VALUE = ['cash', 'phones', 'jewelry'];
+// فحوص التسليم حسب التصنيف (مفاتيح نصوص في القاموسين ho.*): يعلّمها الموظف كلها قبل «تحقق وسلّم»، وتُحفظ مفاتيحها في السجل
+const HANDOVER = {
+  // «افتح الجهاز» أو «طابق IMEI» بديلان، فهما مربع واحد (كل المربعات إلزامية)
+  phones: ['ho.phones.unlock'],
+  ids: ['ho.ids.face', 'ho.ids.name'],
+  cash: ['ho.cash.amount'],
+  keys: ['ho.keys.try'],
+  wallets: ['ho.wallets.inside'],
+};
+export const handoverChecks = catId => HANDOVER[catId] || ['ho.generic'];
+export const isHighValue = catId => HIGH_VALUE.includes(catId);
+// حدود «الصيد» (نفسها في القواعد): 3 طلبات جارية، وطلب واحد لكل تصنيف كل 24 ساعة
+export const CLAIM_MAX_OPEN = 3, CLAIM_CAT_MS = 24 * 36e5;
 export const CATS = [
   {id:'ids', name:'بطاقات ووثائق', en:'Cards & documents', icon:'idcard', sensitive:true, subs:['هوية وطنية','هوية مقيم','بطاقة متدرب','رخصة قيادة','بطاقة بنكية','جواز سفر','وثيقة أخرى'], subsEn:['National ID','Resident ID (Iqama)','Trainee card','Driving licence','Bank card','Passport','Other document'],
     claim:{fields: [], details: [q('docName', 'text', 'staff', {as: 'claimantName'}), q('docLast4', 'last4', 'staff', {as: 'idLast4'}), q('issuer')], hint: 'cl.h.ids'},

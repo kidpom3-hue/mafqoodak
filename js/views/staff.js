@@ -1,9 +1,9 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
-import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue } from '../constants.js';
+import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, isHighValue } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew } from '../state.js';
-import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, qaBox, dateOf } from './common.js';
+import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist } from '../state.js';
+import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
@@ -179,7 +179,26 @@ export function claimChecks(c, f){
   // وصف الإثبات الحرّ مقابل الوصف السري: ✓ فقط إن ذكر الاثنان العدد نفسه، وبلا ✗ أبداً
   const proof = c.proof && f?.desc && sameNumber(c.proof, f.desc) ? OK : '';
   const all = [color, place, proof, ...det.map(x => x.v)];
-  return {color, place, date, proof, det, hits: all.filter(v => v === OK || v === OK2).length, total: all.filter(isRes).length};
+  // v7: بلاغ صاحب الطلب المسجَّل قبل العثور على الغرض: أقوى دليل. كل ✓ منه بوزن مضاعف في الملخص
+  const rep = priorReport(c, f), rc = rep ? reportChecks(rep, f) : [];
+  const repVals = rc.map(x => x.v);
+  const hits = all.filter(v => v === OK || v === OK2).length + 2 * repVals.filter(v => v === OKR).length;
+  const total = all.filter(isRes).length + 2 * repVals.filter(v => v === OKR || v === NO).length;
+  return {color, place, date, proof, det, rep, rc, hits, total};
+}
+/* v7: مقارنة تفاصيل البلاغ السابق (ما كتبه صاحبه قبل أن يُسجَّل الغرض) بما سجّله المكتب سراً.
+   بالمبادئ نفسها: التاريخ لا يأخذ ✓ أبداً (✗ فقط إن كان مستحيلاً)، واللون فقط إن لم تُظهره الصورة العامة، والوصف ✓ عند العدد نفسه */
+const OKR = '<span class="v ok">✓</span>';
+function reportChecks(r, f){
+  const q = claimOf(f.cat), rows = [];
+  if (r.desc) rows.push({k: 'st.cmpProof', said: esc(r.desc), truth: f.desc ? esc(f.desc) : '', v: f.desc && sameNumber(r.desc, f.desc) ? OKR : ''});
+  if (q.fields.includes('color') && r.color) rows.push({k: 'c.color', said: esc(colorName(r.color)), truth: esc(colorName(f.color) || ''), v: colorPublic(f) ? SEEN() : !f.color ? '' : r.color === f.color ? OKR : NO});
+  if (r.spot) rows.push({k: 'st.cmpPlace', said: esc(spotText(r)), truth: esc(spotText(f) || ''), v: !f.spot ? '' : r.spot === f.spot ? OKR : NO});
+  if (r.lostDate){ const g = f.foundDate ? dayNum(f.foundDate) - dayNum(r.lostDate) : null;
+    rows.push({k: 'st.cmpDate', said: esc(fmtDate(r.lostDate)), truth: f.foundDate ? esc(fmtDate(f.foundDate)) : '', v: g !== null && (g < 0 || g > 14) ? NO : ''}); }
+  for (const d of q.details){ const said = r.details?.[d.k] || '', truth = f.details?.[d.k] || ''; if (!said) continue;
+    const v = detailCheck(d, said, truth); rows.push({label: dfLabel(f.cat, d.k), said: esc(said), truth: esc(truth), v: v === OK || v === OK2 ? OKR : v}); }
+  return rows;
 }
 // تنبيه تضارب المصالح: صاحب الطلب هو من سلّم الغرض للمكتب، أو الموظف الذي سجّله
 export const conflictNote = kind => kind ? `<div class="note bad conflict" role="alert">${icon('alert')}<span><b>${t(kind === 'finder' ? 'st.conflictFinder' : 'st.conflictRecorder')}</b></span></div>` : '';
@@ -189,7 +208,7 @@ function claimCompare(c, f){
   // اللون: مطابقة تلقائية إن لم تكن الصورة العامة تُظهره · المكان: ✓ المنطقة نفسها، ✓✓ والمبنى نفسه
   // التاريخ: ظاهر للعامة، فلا ✓ له، و✗ فقط إن كان مستحيلاً
   // أسئلة التصنيف: إجابة صاحب الطلب بجانب ما سجّله الموظف (الغرض القديم بلا إجابات: «—» بلا نتيجة)
-  const {color, place, date, proof, det, hits, total} = claimChecks(c, f);
+  const {color, place, date, proof, det, rep, rc, hits, total} = claimChecks(c, f);
   const q = claimOf(f.cat), kind = conflictOf(c, f);
   const row = (k, a, b, v = '') => `<div class="cmp-row"><b>${k}</b><span>${a}</span><span>${b}</span>${v || '<span class="v"></span>'}</div>`;
   const card = `<span class="muted">${t('st.onCard')}</span>`;
@@ -210,7 +229,9 @@ function claimCompare(c, f){
     ${q.fields.includes('brand') ? row(t('st.cmpBrand'), said(c.brand), truth(f.brand)) : ''}
     ${row(t('st.cmpProof'), said(c.proof), truth(f.desc), proof)}
     ${c.question ? row(`${t('st.cmpQA')}: <span class="cmp-q">${esc(c.question)}</span>`, answered(c) ? esc(c.answer) : `<span class="muted">${t(c.status === 'pending' ? 'qa.waiting' : 'qa.none')}</span>`, '<span class="muted">—</span>') : ''}
-    <div class="cmp-sum">${t('st.cmpSum', {n: hits, total})}</div>
+    ${rep ? `<div class="cmp-row cmp-head cmp-rep"><b>${icon('bell')}${t('st.fromPrior')}</b><span>${t('st.cmpInReport')}</span><span>${t('st.cmpTruth')}</span><span class="v"></span></div>
+      ${rc.map(x => row(x.label || t(x.k), x.said || '<span class="muted">—</span>', x.truth || '<span class="muted">—</span>', x.v ? x.v.replace('✓</span>', `✓ <small>${t('st.fromReport')}</small></span>`) : '')).join('')}` : ''}
+    <div class="cmp-sum">${t('st.cmpSum', {n: hits, total})}${rep ? ` <span class="muted">${t('st.priorWeight')}</span>` : ''}</div>
   </div>`;
 }
 // سؤال التحقق وإجابته (للموظف ولصاحب الطلب)
@@ -218,6 +239,9 @@ function claimCompare(c, f){
 const durText = ms => ms < 36e5 ? t('n.lessHour') : ms < 864e5 ? tp('n.hours', Math.round(ms / 36e5)) : tp('n.days', Math.round(ms / 864e5));
 export function claimCardStaff(c, opts){
   const i = item(c.itemId);
+  // v7: الغرض الثمين: الموافقات حتى الآن (الأولى تبقي الطلب قيد المراجعة حتى الموافقة الثانية)
+  const apps = Array.isArray(c.approvals) ? c.approvals : [];
+  const hv = !!i && isHighValue(i.cat) && c.status === 'pending';
   // تحذير: طلبات كثيرة من المستخدم نفسه في هذا المكتب خلال 30 يوماً
   const all = [...S.claims, ...(S.claimHist || []).filter(h => !S.claims.some(x => x.id === h.id))];
   const month = c.uid === 'deleted' ? 0 : all.filter(x => x.uid === c.uid && x.createdAt >= Date.now() - 30 * 864e5).length;
@@ -230,7 +254,7 @@ export function claimCardStaff(c, opts){
   const again = !own && ['expired', 'cancelled'].includes(c.status) && c.uid !== 'deleted' ? `<div class="btn-row"><button class="btn sm soft" data-act="reactivate" data-id="${esc(c.id)}">${icon('swap')}${t('st.reactivate')}</button></div>` : '';
   const actions = own && ['pending', 'approved'].includes(c.status) ? `<div class="note">${icon('info')}<span>${t('st.ownClaim')}</span></div>`
     : c.status === 'pending' ? `<div class="btn-row">
-      <button class="btn sm" data-act="approve" data-id="${esc(c.id)}">${icon('check')}${t('st.approve')}</button>
+      ${hv && apps.includes(S.uid) ? '' : `<button class="btn sm" data-act="approve" data-id="${esc(c.id)}">${icon('check')}${t(hv && apps.length ? 'st.approveSecond' : 'st.approve')}</button>`}
       <button class="btn sm ghost" data-act="ask" data-id="${esc(c.id)}">${icon('question')}${t(c.question ? 'qa.askAgain' : 'qa.ask')}</button>
       <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}${t('c.reject')}</button></div>`
     : c.status === 'approved' ? `<div class="btn-row">
@@ -243,8 +267,20 @@ export function claimCardStaff(c, opts){
     : c.status === 'approved' ? (left === null ? t('st.comeNoDate') : left < 0 ? t('st.comeLate', {dur: durText(-left)}) : t('st.comeIn', {dur: durText(left)}))
     : c.status === 'done' ? t('st.doneAt', {when: when(c.doneAt)}) : t('st.endedAt', {when: when(c.decidedAt || c.createdAt)});
   const warn = c.status === 'approved' && left !== null && left < 864e5;
+  // v7: بلاغ سابق للعثور، وسجل صاحب الطلب في هذا المكتب (قراءة واحدة عند فتح البطاقة)، وصور الإثبات، والموافقة الثانية للأغراض الثمينة
+  const prior = i && c.reportId ? priorReport(c, i) : null;
+  const hist = claimerHist(c, opts?.open || CARD_OPEN.get('s:' + c.id));
+  const histLine = hist ? `<div class="meta claimer-hist${hist.rejected >= 2 ? ' flag' : ''}">${icon('users')}${t('st.claimerHist', {n: tp('n.prevClaims', hist.n), m: tp('n.rejectedClaims', hist.rejected)})}</div>` : '';
+  const nProofs = Number(c.proofs) || 0;
+  const proofs = nProofs && ['pending', 'approved'].includes(c.status) ? `<div class="proof-cmp">
+      ${i && ['clear', 'blur', 'none'].includes(i.photo) ? `<figure><div class="row-thumb">${icon('camera')}<img data-photo="p_${esc(i.id)}" alt="" hidden></div><figcaption>${t('st.itemPhoto')}</figcaption></figure>` : ''}
+      ${Array.from({length: nProofs}, (_, k) => `<figure><div class="row-thumb">${icon('camera')}<img data-photo="cp_${esc(c.id)}_${k}" alt="" hidden></div><figcaption>${t('st.proofPhoto', {n: k + 1})}</figcaption></figure>`).join('')}
+    </div>` : '';
+  const appNote = !hv ? '' : apps.includes(S.uid) ? `<div class="note info">${icon('check')}<span>${t('st.approvedWaiting')}</span></div>`
+    : apps.length ? `<div class="note warn">${icon('users')}<span>${t('st.secondNeeded', {who: `<b data-uname="${esc(apps[0])}">…</b>`})}</span></div>`
+    : `<div class="note info">${icon('shield')}<span>${t('st.highValue')}</span></div>`;
   return mcard({key: 's:' + c.id, open: opts?.open, fresh: opts?.fresh, muted: !['pending', 'approved'].includes(c.status), tone: warn ? 'warn' : '', pillHtml: pill(CLAIM_STATUS, c.status), next,
-    head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${esc(i ? showTitle(i) : claimNo(c))}</h3>${person(c.uid)}`,
+    head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${esc(i ? showTitle(i) : claimNo(c))}</h3>${person(c.uid)}${prior ? `<span class="pill ok prior">${icon('bell')}${t('st.priorReport')}</span>` : ''}${hv && apps.length && !apps.includes(S.uid) ? `<span class="pill warn">${t('st.yourSecond')}</span>` : ''}`,
     body: `<div class="box-head"><div class="claim-who">${whenLine('c.sentAt', c.createdAt)}${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div></div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
     ${c.editedAt ? `<div class="note info edited">${icon('edit')}<span>${t('st.editedAfter', {when: when(c.editedAt)})}</span></div>` : ''}
@@ -252,8 +288,9 @@ export function claimCardStaff(c, opts){
     ${c.status === 'approved' && c.pickupBy ? `<div class="meta ${late ? 'flag' : ''}">${t(late ? 'st.pickupEnded' : 'st.pickupUntil', {date: dateOf(c.pickupBy)})}</div>` : ''}
     ${conflictNote(kind)}
     ${rv ? `<div class="note warn">${icon('info')}<span>${t('st.rivalNote')}</span></div>` : ''}
-    ${tip}
+    ${tip}${histLine}${appNote}
     ${i ? claimCompare(c, full(i)) : `<div class="proof">${esc(c.proof)}</div>`}
+    ${proofs}
     ${i ? '' : qaBox(c)}
     ${['rejected', 'expired', 'cancelled'].includes(c.status) && c.note ? `<div class="meta">${t(c.status === 'rejected' ? 'st.rejectReason' : 'st.note')}: ${esc(noteText(c.note))}</div>` : ''}
     ${c.status === 'approved' && c.note ? `<div class="meta">${t('st.approveReason')}: ${esc(c.note)}</div>` : ''}

@@ -1,11 +1,12 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
-import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, claimOf, claimHasRequired, detailValue } from './constants.js';
+import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS } from './constants.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen } from './state.js';
+import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
-  signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion,
+  signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification } from './firebase.js';
 import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar } from './ui.js';
 import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor.js';
@@ -62,6 +63,15 @@ function clearPhoto(form){
   const rm = form.querySelector('#rm-photo'); if (rm) rm.hidden = true;
   const ai = form.querySelector('#ai-btn'); if (ai) ai.disabled = true;
   const inp = form.querySelector('#photo-in'); if (inp) inp.value = '';
+}
+/* v7: صور إثبات طلب الاستلام (اختيارية، صورتان على الأكثر): صورة قديمة للغرض أو فاتورته، يراها الموظف فقط.
+   تُضغط بدالة الصور نفسها (< 350KB) وتُحفظ مع الطلب في العملية نفسها (claimProofs) */
+async function onProofs(input){
+  const files = [...(input.files || [])].slice(0, 2); if (!files.length) return;
+  try { FORM.proofs = (await Promise.all(files.map(f => compress(f)))).map(x => x.dataUrl).filter(d => d.length < 350000); }
+  catch { toast(t('a.photoFail')); FORM.proofs = []; }
+  const pv = input.closest('form').querySelector('#proof-pv');
+  if (pv) pv.innerHTML = FORM.proofs.map(d => `<img src="${d}" alt="">`).join('') + (FORM.proofs.length ? `<button type="button" class="link" data-act="rmProofs">${icon('x')}${t('c.remove')}</button>` : '');
 }
 async function onPhoto(input){
   const f = input.files?.[0]; if (!f) return;
@@ -267,6 +277,12 @@ async function submitForm(form){
     if (S.myClaims.some(c => c.id === id)) return formErr(form, dup);
     busy(form, true);
     if (await dbx.get('claims/' + id).catch(() => null)){ busy(form, false); return formErr(form, dup); }
+    // v7: حدود «الصيد» على الجهاز أولاً (القواعد تفرضها أيضاً): 3 طلبات جارية، وطلب واحد لكل تصنيف كل 24 ساعة
+    if (S.myClaims.filter(c => ['pending', 'approved'].includes(c.status)).length >= CLAIM_MAX_OPEN){ busy(form, false); return formErr(form, t('cl.quotaFull', {n: CLAIM_MAX_OPEN})); }
+    if (S.myClaims.some(c => (c.createdAt || 0) > Date.now() - CLAIM_CAT_MS && item(c.itemId)?.cat === i.cat)){ busy(form, false); return formErr(form, t('cl.quotaCat', {cat: esc(catName(i.cat))})); }
+    // v7: مكتب يشترط بريد الكلية
+    if (!claimEmailOk(S.offices.find(o => o.id === i.officeId), S.me?.email)){ busy(form, false); return formErr(form, t('cl.domainNeed')); }
+    const proofs = (FORM.proofs || []).slice(0, 2);
     const code = genCode(); const codeHash = await sha(id + ':' + code);
     LS.set('codes', {...LS.get('codes', {}), [id]: code});
     await dbx.set('users/' + S.uid + '/private/codes', {codes: {[id]: code}}, {merge: true}).catch(e => console.warn(e));
@@ -279,7 +295,13 @@ async function submitForm(form){
         claimantName: val('claimantName').slice(0, 120), idLast4: last4,
         lostSpot: val('spot'), bldg, room, lostDate: val('lostDate'),
         ...(val('reportId') ? {reportId: val('reportId').slice(0, 100)} : {}),
-        status: 'pending', codeHash, createdAt: Date.now()});
+        ...(proofs.length ? {proofs: proofs.length} : {}),
+        status: 'pending', codeHash, createdAt: Date.now()},
+        // v7: في العملية نفسها: الحصة (قائمة الطلبات الجارية ووقت آخر طلب في هذا التصنيف) وصور الإثبات
+        (b, ref) => {
+          b.set(ref('claimQuota/' + S.uid), {open: arrayUnion(id), lastByCat: {[i.cat]: serverTimestamp()}}, {merge: true});
+          proofs.forEach((data, k) => b.set(ref(`claimProofs/${id}_${k}`), {claimId: id, officeId: i.officeId, uid: S.uid, data, createdAt: Date.now()}));
+        });
     } catch (e){
       console.warn(e); busy(form, false);
       if (e?.msg) return formErr(form, e.msg);   // «انتظر قليلاً ثم أعد المحاولة»
@@ -422,6 +444,10 @@ async function submitForm(form){
       reviewDays: Math.max(1, Math.min(30, parseInt(val('reviewDays'), 10) || 2)),
       spots: val('spots').split('\n').map(s => s.trim()).filter(Boolean).slice(0, 40),
       active: old ? old.active !== false : true, createdAt: old?.createdAt || Date.now()};
+    // v7: نطاقات بريد الكلية لطلب الاستلام (فارغة = بلا قيد)، والنمط المحسوب منها الذي تتحقق به القواعد
+    const doms = [...new Set(val('claimDomains').split(/[\s,\u060C]+/).map(cleanDomain).filter(Boolean))].slice(0, 5);
+    if (val('claimDomains').trim() && !doms.length) return formErr(form, t('of.domainsBad'), 'claimDomains');
+    data.claimDomains = doms; data.claimDomainRe = domainRe(doms);
     // الأسماء بالإنجليزية (اختيارية): الفارغ يعني «اعرض العربي». أماكن spotsEn بنفس ترتيب spots
     for (const k of ['nameEn', 'shortEn', 'cityEn', 'placeEn', 'hoursEn']) data[k] = val(k);
     const en = val('spotsEn').split('\n').map(s => s.trim()).slice(0, data.spots.length);
@@ -443,7 +469,10 @@ async function submitForm(form){
     busy(form, true);
     // التسليم فقط للطلب الذي حُجز له الغرض، وتُغلق بقية طلباته في العملية نفسها
     let res = null; const it = item(c.itemId);   // قبل التسليم: الغرض المُسلَّم يخرج من قائمة النشطة
-    const ok = await write(async () => { res = await wf.verifyHandover(c, {name: val('rname'), last4: val('rlast4')}); }, t('a.handedOver'));
+    // v7: فحوص التسليم حسب التصنيف: كلها معلّمة، وتُحفظ مفاتيحها في السجل
+    const checks = fd.getAll('hc').map(String), need = handoverChecks(it?.cat);
+    if (!need.every(k => checks.includes(k))){ busy(form, false); return formErr(form, t('ho.needAll')); }
+    const ok = await write(async () => { res = await wf.verifyHandover(c, {name: val('rname'), last4: val('rlast4')}, need); }, t('a.handedOver'));
     busy(form, false); if (!ok) return;
     emailFinder(it);
     closeSheet(); refreshCounts(); ownNotice(res); return;
@@ -472,7 +501,14 @@ async function submitForm(form){
         // الاسم وآخر 4 أرقام وملاحظة التسليم تُمسح أيضاً (القواعد تسمح بذلك)
         if (['done', 'rejected', 'expired', 'cancelled'].includes(c.status)) await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '',
           ...(c.answer ? {answer: ''} : {}), ...(c.claimantName ? {claimantName: ''} : {}), ...(c.idLast4 ? {idLast4: ''} : {}), ...(c.handoverNote ? {handoverNote: ''} : {}), ...(c.details ? {details: {}} : {}), ...(c.ratingNote ? {ratingNote: ''} : {}), anonymizedAt: Date.now()});
-        else if (c.status === 'pending') await dbx.del('claims/' + c.id);
+        else if (c.status === 'pending'){
+          // v7: الطلب قيد المراجعة يُحذف مع صور إثباته، ويُزال من حصة الطلبات الجارية، في عملية واحدة
+          const b = dbx.batch();
+          for (let k = 0; k < (Number(c.proofs) || 0); k++) b.delete(dbx.ref(`claimProofs/${c.id}_${k}`));
+          b.delete(dbx.ref('claims/' + c.id));
+          b.set(dbx.ref('claimQuota/' + user.uid), {open: arrayRemove(c.id)}, {merge: true});
+          await b.commit();
+        }
       }
       // إشعارات التسليم: المستلَم يبقى سجلاً للمكتب بلا بيانات صاحبه، والبقية تُحذف
       const found = await dbx.list('foundReports', [['uid', '==', user.uid]]);
@@ -611,8 +647,11 @@ async function delItemParts(i){
 const needLogin = () => { if (S.uid) return false; go('login', {next: S.route}); return true; };
 // القبول ثم بريد اختياري لصاحب الطلب. reason: سبب القبول (تضارب المصالح)
 async function doApprove(c, reason = ''){
-  const ok = await write(() => wf.approveClaim(c, {reason}), t('a.approved'));
-  if (ok) emailUser(c.uid);
+  // v7: الغرض الثمين: الموافقة الأولى تنتظر موافقة ثانية (لا بريد لصاحب الطلب حتى القبول الفعلي)
+  let res = '';
+  const ok = await write(async () => { res = await wf.approveClaim(c, {reason}); });
+  if (ok) toast(t(res === 'first' ? 'a.approvedFirst' : 'a.approved'));
+  if (ok && res !== 'first') emailUser(c.uid);
   return ok;
 }
 // تسجيل الخروج على جهاز مشترك: نمسح رموز الاستلام والتنبيهات المقروءة وتفعيل الإشعارات من المتصفح،
@@ -690,6 +729,9 @@ const ACT = {
     try { await navigator.clipboard.writeText(url); toast(t('share.copied')); }
     catch { openSheet(`<h2>${icon('share')} ${t('share.link')}</h2><input class="input share-url" dir="ltr" readonly value="${esc(url)}"><button class="btn ghost" data-act="closeSheet">${t('c.close')}</button>`); }
   },
+  rmProofs(el){ FORM.proofs = []; const f = el.closest('form'); f.querySelector('#proof-pv').innerHTML = ''; const inp = f.querySelector('#proof-in'); if (inp) inp.value = ''; },
+  // v7: «سجّل الدخول ببريد الكلية»: خروج من الحساب الحالي ثم صفحة الدخول بعد إعادة التحميل
+  collegeLogin(){ try { sessionStorage.setItem('mfq:thenLogin', '1'); } catch {} ACT.signOut(); },
   async signOut(){
     closeSheet(); S.mode = 'visitor'; LS.set('mode', 'visitor'); S.hist = []; S.route = {name: 'home', params: {}};
     wipeDevice();
@@ -963,7 +1005,7 @@ const ACT = {
       <dl class="facts id-facts"><dt>${t('st.cmpName')}</dt><dd>${c.claimantName ? esc(c.claimantName) : `<span class="muted">${t('st.notSaid')}</span>`}</dd>
         <dt>${t('st.cmpLast4')}</dt><dd>${c.idLast4 ? `<b dir="ltr">${esc(c.idLast4)}</b>` : `<span class="muted">${t('st.notSaid')}</span>`}</dd></dl>
       <div class="note warn">${icon('idcard')}<span>${t('a.matchId')}</span></div>${tip}
-      <form data-form="verify" data-id="${esc(c.id)}" novalidate>
+      <form data-form="verify" data-id="${esc(c.id)}" data-allcheck="1" novalidate>
         <input name="code" class="input code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" aria-label="${t('mine.code')}">
         <div class="two">
           <div class="field"><label for="vf-name">${t('a.receiverName')}</label><input id="vf-name" name="rname" class="input" maxlength="120" autocomplete="off" value="${esc(c.claimantName || '')}"></div>
@@ -971,8 +1013,10 @@ const ACT = {
         </div>
         <span class="hint">${t('a.receiverHint')}</span>
         <label class="check"><input type="checkbox" name="matched" required><span><b>${t('a.matched')}</b></span></label>
+        <fieldset class="ho-checks"><legend>${t('ho.title')}</legend>
+          ${handoverChecks(i?.cat).map(k => `<label class="check"><input type="checkbox" name="hc" value="${k}" required><span>${t(k)}</span></label>`).join('')}</fieldset>
         <div class="form-err" hidden></div>
-        <div class="btn-row"><button class="btn" type="submit">${icon('check')}${t('a.verifyBtn')}</button><button type="button" class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>
+        <div class="btn-row"><button class="btn" type="submit" disabled>${icon('check')}${t('a.verifyBtn')}</button><button type="button" class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>
       </form>`);
   },
   acceptReport(el){ go('add', {fromReport: el.dataset.id}); },
@@ -1087,7 +1131,8 @@ export function bindEvents(){
     // H4: فتح بطاقة مختصرة بيد المستخدم يسجّل تنبيهاتها مقروءة (فيختفي حدّها الملوّن)
     const sum = e.target.closest('details[data-card] > summary');
     if (sum){ const d = sum.parentElement, card = d.dataset.card;
-      setTimeout(() => { if (!d.open) return; markSeenKeys(unseenFor(card)); markStaffSeen(staffKeys().filter(x => x.card === card).map(x => x.k)); }, 0); }
+      setTimeout(() => { if (!d.open) return; markSeenKeys(unseenFor(card)); markStaffSeen(staffKeys().filter(x => x.card === card).map(x => x.k));
+        if (card.startsWith('s:')) openClaimCard(card.slice(2)); }, 0); }   // v7: سجل صاحب الطلب يُقرأ عند فتح بطاقته
     const el = e.target.closest('[data-act]'); if (!el || !app.contains(el)) return;
     const fn = ACT[el.dataset.act]; if (!fn) return;
     if (el.tagName === 'A') e.preventDefault();
@@ -1130,6 +1175,9 @@ export function bindEvents(){
       if (t.value !== 'active') loadExtraItems(t.value);
     }
     if (t.id === 'photo-in') onPhoto(t);
+    if (t.id === 'proof-in') onProofs(t);
+    // v7: نموذج فيه قائمة فحوص (التسليم): الزر يعمل فقط بعد تعليم كل المربعات
+    const af = t.closest?.('form[data-allcheck]'); if (af) af.querySelector('[type=submit]').disabled = ![...af.querySelectorAll('input[type=checkbox]')].every(x => x.checked);
     // «سجل العمليات»: تغيير المكتب أو الفلتر يجلب القيود المطلوبة فقط
     if (t.id === 'au-office' || t.id === 'au-filter'){ const p = {office: $('#au-office').value, filter: $('#au-filter').value}; S.route.params = p; renderAll(); }
     // تلميح خانة التاريخ الاختيارية يظهر فقط وهي فارغة

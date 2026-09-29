@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v6 (المرحلة H7: فحص أمني)
+// قواعد حماية بيانات مفقودك — الإصدار v7 (تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -63,6 +63,31 @@ service cloud.firestore {
     function rateOk() {
       return getAfter(rateDoc()).data.at == request.time
         && (!exists(rateDoc()) || get(rateDoc()).data.at < request.time - duration.value(20, 's'));
+    }
+    // ── v7: تقوية إثبات الملكية ──
+    // الأغراض الثمينة: قبولها يحتاج موافقتين من شخصين مختلفين (نفس القائمة HIGH_VALUE في js/constants.js — عدّلهما معاً)
+    function highValue() { return ['cash', 'phones', 'jewelry']; }
+    function claimDoc(id) { return /databases/$(database)/documents/claims/$(id); }
+    function apps(d) { return d.get('approvals', []); }
+    // قائمة الموافقات لا تتغير، أو تكبر بموافقة من يكتب الآن فقط (لا يوافق الموظف مرتين)
+    function approvalsOk() {
+      return apps(request.resource.data) == apps(resource.data)
+        || (apps(request.resource.data).size() == apps(resource.data).size() + 1
+            && apps(request.resource.data).hasAll(apps(resource.data))
+            && apps(request.resource.data).removeAll(apps(resource.data)) == [me()]);
+    }
+    // الانتقال إلى «مقبول» لغرض ثمين: موافقتان على الأقل من شخصين مختلفين، وليس بينهما صاحب الطلب
+    function dualOk(itemId) {
+      return !(get(/databases/$(database)/documents/items/$(itemId)).data.cat in highValue())
+        || (apps(request.resource.data).size() >= 2
+            && apps(request.resource.data)[0] != apps(request.resource.data)[1]
+            && !(resource.data.uid in apps(request.resource.data)));
+    }
+    // بريد الكلية: إن كان للمكتب نمط نطاقات (claimDomainRe يحسبه التطبيق من claimDomains) فالبريد الموثّق يطابقه
+    function domainOk(officeId) {
+      return get(/databases/$(database)/documents/offices/$(officeId)).data.get('claimDomainRe', '') == ''
+        || (('email' in request.auth.token) && request.auth.token.email is string
+            && request.auth.token.email.lower().matches(get(/databases/$(database)/documents/offices/$(officeId)).data.claimDomainRe));
     }
     function smallImage() { return request.resource.data.data is string && request.resource.data.data.size() < 350000; }
 
@@ -260,7 +285,11 @@ service cloud.firestore {
     match /claims/{claimId} {
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
       allow create: if verified()
-        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'details', 'no', 'status', 'codeHash', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'details', 'no', 'status', 'codeHash', 'createdAt', 'proofs'])
+        // v7: عدد صور الإثبات المرفقة (0–2)، وحدّ الطلبات الجارية وحدّ التصنيف (claimQuota في العملية نفسها)، ونطاق بريد الكلية
+        && (!('proofs' in request.resource.data) || (request.resource.data.proofs is int && request.resource.data.proofs >= 0 && request.resource.data.proofs <= 2))
+        && claimId in getAfter(/databases/$(database)/documents/claimQuota/$(me())).data.open
+        && domainOk(request.resource.data.officeId)
         && validDetails(request.resource.data)
         // رقم الطلب القصير (مثل REQ-7K3M) يظهر للمستخدم والموظف
         && strMax(request.resource.data, 'no', 16)
@@ -287,12 +316,15 @@ service cloud.firestore {
       allow update: if (isStaffOf(resource.data.officeId)
           // فصل المهام: الموظف لا يقرر في طلب أرسله هو
           && resource.data.uid != me()
-          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote', 'answer', 'answeredAt'])
+          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote', 'answer', 'answeredAt', 'approvals', 'proofs'])
+          // v7: موافقة الموظف تُضاف مرة واحدة، وعدد الصور يصير 0 فقط (عند حذفها مع إغلاق الطلب)
+          && approvalsOk()
+          && (request.resource.data.get('proofs', 0) == resource.data.get('proofs', 0) || request.resource.data.get('proofs', 0) == 0)
           // H7: الموظف لا يكتب إجابة: يحذف الإجابة القديمة فقط عند سؤال جديد (أو يتركها كما هي)
           && (!('answer' in request.resource.data) || request.resource.data.answer == resource.data.get('answer', null))
           && (!('answeredAt' in request.resource.data) || request.resource.data.answeredAt == resource.data.get('answeredAt', null))
           && request.resource.data.status in ['pending', 'approved', 'done', 'rejected', 'expired', 'cancelled']
-          && (request.resource.data.status != 'approved' || resource.data.status == 'approved' || approveOk(claimId, resource.data.itemId))
+          && (request.resource.data.status != 'approved' || resource.data.status == 'approved' || (approveOk(claimId, resource.data.itemId) && dualOk(resource.data.itemId)))
           && (request.resource.data.status != 'done' || resource.data.status == 'done' || doneOk(claimId, resource.data.itemId))
           && strMax(request.resource.data, 'note', 600) && strMax(request.resource.data, 'question', 600)
           && strMax(request.resource.data, 'handoverNote', 600))
@@ -383,7 +415,9 @@ service cloud.firestore {
             && !exists(/databases/$(database)/documents/staff/$(me()))
             && request.resource.data.officeId in getAfter(/databases/$(database)/documents/staff/$(me())).data.offices))
         && request.resource.data.by == me()
-        && request.resource.data.keys().hasOnly(['officeId', 'itemId', 'claimId', 'reportId', 'action', 'by', 'at', 'note'])
+        && request.resource.data.keys().hasOnly(['officeId', 'itemId', 'claimId', 'reportId', 'action', 'by', 'at', 'note', 'checks'])
+        // v7: فحوص التسليم التي علّمها الموظف (مفاتيح نصوص فقط، بلا بيانات شخصية)
+        && (!('checks' in request.resource.data) || (request.resource.data.checks is list && request.resource.data.checks.size() <= 10))
         && request.resource.data.action is string && request.resource.data.action.size() <= 40
         && request.resource.data.at is number
         && strMax(request.resource.data, 'itemId', 100) && strMax(request.resource.data, 'claimId', 200)
@@ -391,6 +425,69 @@ service cloud.firestore {
       allow update: if false;
       // H7: سجل الحيازة لا يُمحى من التطبيق أبداً (التنظيف من Firebase Console فقط)
       allow delete: if false;
+    }
+
+    // v7: حدّ «الصيد»: قائمة طلبات الاستلام الجارية لكل حساب (3 على الأكثر في كل المكاتب) ووقت آخر طلب لكل تصنيف (واحد كل 24 ساعة).
+    // تُحدَّث في العملية نفسها مع إنشاء الطلب (الإضافة لصاحبها فقط). الإزالة لأي حساب بشرط أن يكون الطلب قد أُغلق أو حُذف فعلاً،
+    // فلا يستطيع أحد تفريغ القائمة دون إغلاق طلباته
+    match /claimQuota/{userId} {
+      function qa() { return request.resource.data; }
+      function lb(d) { return d.get('lastByCat', {}); }
+      function cAfter(id) { return getAfter(claimDoc(id)).data; }
+      function gone(id) { return !existsAfter(claimDoc(id)) || cAfter(id).status in ['done', 'rejected', 'expired', 'cancelled']; }
+      function catOf(id) { return get(/databases/$(database)/documents/items/$(cAfter(id).itemId)).data.cat; }
+      // bOpen / bLb: القائمة ووقت آخر طلب لكل تصنيف قبل العملية (فارغة عند الإنشاء الأول)
+      function addOk(bOpen, bLb, id) {
+        return userId == me() && qa().open.size() <= 3
+          && !exists(claimDoc(id)) && existsAfter(claimDoc(id)) && cAfter(id).uid == me()
+          && lb(qa()).diff(bLb).affectedKeys().hasOnly([catOf(id)])
+          && lb(qa())[catOf(id)] == request.time
+          && (!(catOf(id) in bLb) || bLb[catOf(id)] < request.time - duration.value(24, 'h'));
+      }
+      function removeOk(rem) {
+        return rem.size() <= 3
+          && (rem.size() < 1 || gone(rem[0]))
+          && (rem.size() < 2 || gone(rem[1]))
+          && (rem.size() < 3 || gone(rem[2]));
+      }
+      function quotaOk(bOpen, bLb) {
+        return qa().keys().hasOnly(['open', 'lastByCat']) && qa().open is list && lb(qa()) is map
+          && (
+            // إضافة: صاحب الحساب ينشئ طلباً جديداً الآن (لا أكثر من 3 جارية، ولا طلبين في التصنيف نفسه خلال 24 ساعة)
+            (qa().open.removeAll(bOpen).size() == 1 && bOpen.removeAll(qa().open).size() == 0
+              && addOk(bOpen, bLb, qa().open.removeAll(bOpen)[0]))
+            // إزالة: طلبات أُغلقت أو حُذفت في العملية نفسها (الموظف عند القرار، أو صاحب الطلب عند حذف حسابه)
+            || (qa().open.removeAll(bOpen).size() == 0 && lb(qa()) == bLb && removeOk(bOpen.removeAll(qa().open)))
+          );
+      }
+      allow read: if signedIn() && userId == me();
+      allow create: if signedIn() && quotaOk([], {});
+      allow update: if signedIn() && quotaOk(resource.data.open, lb(resource.data));
+      allow delete: if false;
+    }
+
+    // v7: صور إثبات اختيارية لطلب الاستلام (صورة قديمة للغرض أو فاتورته، صورتان على الأكثر): claimProofs/{claimId}_{0|1}.
+    // يراها صاحب الطلب وموظفو المكتب فقط، ولا تظهر في أي صفحة عامة. تُحذف مع إغلاق الطلب
+    match /claimProofs/{proofId} {
+      allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['claimId', 'officeId', 'uid', 'data', 'createdAt'])
+        && request.resource.data.uid == me() && smallImage()
+        && fresh(request.resource.data, 'createdAt')
+        && (proofId == request.resource.data.claimId + '_0'
+            || (proofId == request.resource.data.claimId + '_1' && getAfter(claimDoc(request.resource.data.claimId)).data.get('proofs', 0) >= 2))
+        && getAfter(claimDoc(request.resource.data.claimId)).data.uid == me()
+        && getAfter(claimDoc(request.resource.data.claimId)).data.officeId == request.resource.data.officeId
+        && getAfter(claimDoc(request.resource.data.claimId)).data.get('proofs', 0) >= 1;
+      allow update: if false;
+      allow delete: if isAdmin()
+        // صاحب الطلب قبل قرار الموظف (أو مع حذف الطلب نفسه)
+        || (signedIn() && resource.data.uid == me()
+            && (!existsAfter(claimDoc(resource.data.claimId)) || getAfter(claimDoc(resource.data.claimId)).data.status == 'pending'))
+        // الموظف عند إغلاق الطلب (تسليم أو رفض أو إلغاء أو انتهاء) في العملية نفسها
+        || (isStaffOf(resource.data.officeId)
+            && (!existsAfter(claimDoc(resource.data.claimId))
+                || getAfter(claimDoc(resource.data.claimId)).data.status in ['done', 'rejected', 'expired', 'cancelled']));
     }
 
     // H7: حدّ الإغراق: وثيقة لكل حساب فيها وقت آخر إنشاء (وقت الخادم فقط). لا تُحذف قبل مرور 20 ثانية،

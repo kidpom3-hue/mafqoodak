@@ -1,7 +1,8 @@
 // انتقالات حالة المفقودات وطلبات الاستلام في مكان واحد.
 // كل انتقال يُكتب في writeBatch واحد (الغرض + الطلبات + قيد في السجل logs)،
 // فإما ينجح كله أو لا يُكتب منه شيء، حتى لا تبقى البيانات ناقصة إذا انقطع الاتصال.
-import { dbx, deleteField } from './firebase.js';
+import { dbx, deleteField, arrayRemove } from './firebase.js';
+import { isHighValue } from './constants.js';
 import { S, full, item } from './state.js';
 import { SETTINGS } from './config.js';
 import { pubPhoto } from './views/common.js';
@@ -22,7 +23,7 @@ const PENDING_LOGS = new WeakMap();
 function log(b, officeId, action, x = {}){
   const id = dbx.newId('logs');
   const e = {officeId, itemId: x.itemId || '', claimId: x.claimId || '', reportId: x.reportId || '',
-    action, by: S.uid, at: Date.now(), note: String(x.note || '').slice(0, 600)};
+    action, by: S.uid, at: Date.now(), note: String(x.note || '').slice(0, 600), ...(x.checks?.length ? {checks: x.checks} : {})};
   b.set(dbx.ref('logs/' + id), e);
   PENDING_LOGS.set(b, [...(PENDING_LOGS.get(b) || []), {id, ...e}]);
 }
@@ -30,9 +31,27 @@ function log(b, officeId, action, x = {}){
 // guarded: عملية تحرسها القواعد على الخادم (القبول، والتسليم بالرمز، وإعادة التفعيل). رفضها بعد تزامن
 // يعني أن موظفاً آخر سبق بقرار على الغرض نفسه، فنعرض ذلك بوضوح بدل «ليست لديك صلاحية».
 async function commit(b, guarded = false){
+  flushQuota(b);
   try { await b.commit(); }
   catch (e){ if (guarded && String(e?.code || '').includes('permission-denied')) fail(t('wf.race')); throw e; }
   for (const e of PENDING_LOGS.get(b) || []) if (Array.isArray(S.logs[e.itemId])) S.logs[e.itemId] = [...S.logs[e.itemId], e];
+}
+/* v7: إغلاق طلب (رفض، تسليم، انتهاء، إلغاء) في الـ batch نفسه مع:
+   - حذف صور الإثبات (claimProofs) وتصفير عددها، لتقليل البيانات الشخصية؛
+   - إزالته من حصة الطلبات الجارية لصاحبه (claimQuota.open). تُجمع الإزالات لكل صاحب طلب في كتابة واحدة عند commit */
+const QUOTA = new WeakMap();
+function closeClaim(b, c, patch){
+  const n = Number(c.proofs) || 0;
+  b.update(dbx.ref('claims/' + c.id), {...patch, ...(n ? {proofs: 0} : {})});
+  for (let k = 0; k < n; k++) b.delete(dbx.ref(`claimProofs/${c.id}_${k}`));
+  if (c.uid && c.uid !== 'deleted'){
+    const m = QUOTA.get(b) || new Map(); QUOTA.set(b, m);
+    m.set(c.uid, [...(m.get(c.uid) || []), c.id]);
+  }
+}
+function flushQuota(b){
+  for (const [uid, ids] of QUOTA.get(b) || []) b.set(dbx.ref('claimQuota/' + uid), {open: arrayRemove(...ids)}, {merge: true});
+  QUOTA.delete(b);
 }
 // التفاصيل السرية كما هي في itemSecrets (دون حقل id الذي يضيفه الاشتراك)
 function secretOf(i){ const {id, ...s} = S.secrets[i.id] || {}; return {...s, officeId: i.officeId}; }
@@ -70,7 +89,7 @@ function closeOthers(b, itemId, exceptId, status, note){
   for (const o of openClaimsOf(itemId)){
     if (o.id === exceptId) continue;
     if (o.uid === S.uid){ skippedOwn = true; continue; }
-    b.update(dbx.ref('claims/' + o.id), {status, note, decidedAt: Date.now(), decidedBy: S.uid});
+    closeClaim(b, o, {status, note, decidedAt: Date.now(), decidedBy: S.uid});
   }
   return skippedOwn;
 }
@@ -83,6 +102,20 @@ export async function approveClaim(c, {reason = ''} = {}){
   notMine(c);
   if (c.status !== 'pending') fail(t('wf.notPending'));
   const i = await freshItem(c.itemId);
+  /* v7: الغرض الثمين يحتاج موافقتين من شخصين مختلفين. الموافقة الأولى تُحفظ في approvals ويبقى الطلب قيد المراجعة؛
+     الثانية (موظف آخر أو الإدارة) تقبله. القواعد تفرض ذلك (dualOk) */
+  const apps = Array.isArray(c.approvals) ? c.approvals : [];
+  if (isHighValue(i.cat)){
+    if (apps.includes(S.uid)) fail(t('wf.alreadyApproved'));
+    if (!apps.length){
+      const note0 = String(reason || '').trim().slice(0, 600);
+      const b1 = dbx.batch();
+      b1.update(dbx.ref('claims/' + c.id), {approvals: [S.uid], ...(note0 ? {note: note0} : {})});
+      log(b1, i.officeId, 'approve1', {itemId: i.id, claimId: c.id, note: note0});
+      await commit(b1, true);
+      return 'first';
+    }
+  }
   const holder = i.status === 'reserved' && S.claims.find(x => x.id === i.reservedFor && x.status === 'approved');
   if (!(i.status === 'available' || (i.status === 'reserved' && !holder))) fail(t('wf.notAvailable'));
   if (i.status === 'reserved'){
@@ -95,10 +128,12 @@ export async function approveClaim(c, {reason = ''} = {}){
   const pickupBy = Date.now() + pickupDays(o) * 864e5;
   const note = String(reason || '').trim().slice(0, 600);
   const b = dbx.batch();
-  b.update(dbx.ref('claims/' + c.id), {status: 'approved', decidedAt: Date.now(), decidedBy: S.uid, pickupBy, ...(note ? {note} : {})});
+  b.update(dbx.ref('claims/' + c.id), {status: 'approved', decidedAt: Date.now(), decidedBy: S.uid, pickupBy, ...(note ? {note} : {}),
+    ...(isHighValue(i.cat) ? {approvals: [...apps, S.uid]} : {})});
   itemUpdate(b, i, {status: 'reserved', reservedFor: c.id, updatedAt: Date.now()});
   log(b, i.officeId, 'approve', {itemId: i.id, claimId: c.id, note});
   await commit(b, true);
+  return 'approved';
 }
 
 /* إعادة تفعيل طلب منتهٍ أو ملغى (من سجل الطلبات عند الموظف):
@@ -111,7 +146,9 @@ export async function reactivateClaim(c){
   if (!['available', 'reserved'].includes(i.status)) fail(t('wf.cantReactivate'));
   const now = Date.now(), b = dbx.batch();
   let to = 'pending';
-  if (i.status === 'available'){
+  // v7: الغرض الثمين يعود «مقبولاً» مباشرة فقط إن كانت له موافقتان من قبل؛ وإلا يعود قيد المراجعة
+  const dual = !isHighValue(i.cat) || new Set(c.approvals || []).size >= 2;
+  if (i.status === 'available' && dual){
     to = 'approved';
     const o = S.offices.find(x => x.id === i.officeId);
     b.update(dbx.ref('claims/' + c.id), {status: 'approved', note: '', decidedAt: now, decidedBy: S.uid, pickupBy: now + pickupDays(o) * 864e5});
@@ -127,7 +164,7 @@ export async function reactivateClaim(c){
 export async function rejectClaim(c, note){
   notMine(c);
   const b = dbx.batch();
-  b.update(dbx.ref('claims/' + c.id), {status: 'rejected', note: String(note || '').slice(0, 200), decidedAt: Date.now(), decidedBy: S.uid});
+  closeClaim(b, c, {status: 'rejected', note: String(note || '').slice(0, 200), decidedAt: Date.now(), decidedBy: S.uid});
   const i = S.items.find(x => x.id === c.itemId);
   if (c.status === 'approved' && i?.reservedFor === c.id) itemUpdate(b, i, {status: 'available', reservedFor: '', updatedAt: Date.now()});
   log(b, c.officeId, 'reject', {itemId: c.itemId, claimId: c.id, note});
@@ -149,18 +186,19 @@ export async function askQuestion(c, q){
 }
 
 /* التسليم بعد التحقق من الرمز: فقط للطلب المقبول الذي حُجز له الغرض.
-   receiver: {name, last4} من طابق الموظف بطاقته (المستلم الفعلي، وقد يكون مفوّضاً)، تُحفظ في handoverNote بالطلب */
-export async function verifyHandover(c, receiver = {}){
+   receiver: {name, last4} من طابق الموظف بطاقته (المستلم الفعلي، وقد يكون مفوّضاً)، تُحفظ في handoverNote بالطلب.
+   checks (v7): مفاتيح فحوص التسليم حسب التصنيف التي علّمها الموظف كلها؛ تُحفظ في قيد السجل بلا أي بيانات شخصية */
+export async function verifyHandover(c, receiver = {}, checks = []){
   notMine(c);
   const i = await freshItem(c.itemId);
   if (c.status !== 'approved' || i.status !== 'reserved' || i.reservedFor !== c.id) fail(t('wf.notReserved'));
   const name = String(receiver.name || '').trim().slice(0, 120), last4 = String(receiver.last4 || '').trim();
   if (name.length < 3 || !/^\d{4}$/.test(last4)) fail(t('wf.needReceiver'));
   const b = dbx.batch();
-  b.update(dbx.ref('claims/' + c.id), {status: 'done', doneAt: Date.now(), doneBy: S.uid, handoverNote: tAr('sys.receivedBy', {name, last4})});
+  closeClaim(b, c, {status: 'done', doneAt: Date.now(), doneBy: S.uid, handoverNote: tAr('sys.receivedBy', {name, last4})});
   itemUpdate(b, i, {status: 'returned', returnedAt: Date.now(), updatedAt: Date.now()});
   const skippedOwn = closeOthers(b, i.id, c.id, 'rejected', tAr('sys.handedVerified'));
-  log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id, note: tAr('sys.receivedBy', {name, last4})});
+  log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id, note: tAr('sys.receivedBy', {name, last4}), checks: checks.map(String).slice(0, 10)});
   await commit(b, true);
   return {skippedOwn};
 }
@@ -169,7 +207,7 @@ export async function verifyHandover(c, receiver = {}){
 export async function releaseReservation(c, note = tAr('sys.pickupEnded')){
   notMine(c);
   const b = dbx.batch();
-  b.update(dbx.ref('claims/' + c.id), {status: 'expired', note, decidedAt: Date.now(), decidedBy: S.uid});
+  closeClaim(b, c, {status: 'expired', note, decidedAt: Date.now(), decidedBy: S.uid});
   const i = S.items.find(x => x.id === c.itemId);
   if (i?.reservedFor === c.id) itemUpdate(b, i, {status: 'available', reservedFor: '', updatedAt: Date.now()});
   log(b, c.officeId, 'release', {itemId: c.itemId, claimId: c.id, note});
@@ -187,7 +225,7 @@ export async function setItemStatus(i, to, note = ''){
     const held = S.claims.find(x => x.id === i.reservedFor && x.status === 'approved');
     if (held){
       if (held.uid === S.uid) fail(t('wf.heldForOwn'));
-      b.update(dbx.ref('claims/' + held.id), {status: 'expired', note: tAr('sys.madeAvailable'), decidedAt: now, decidedBy: S.uid});
+      closeClaim(b, held, {status: 'expired', note: tAr('sys.madeAvailable'), decidedAt: now, decidedBy: S.uid});
     }
   } else if (to === 'returned'){
     if (String(note).trim().length < 6) fail(t('wf.needHandoverNote'));
