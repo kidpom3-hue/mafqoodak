@@ -2,7 +2,7 @@
 import { auth, db, dbx, configured, onAuthStateChanged, getRedirectResult } from './firebase.js';
 import { LS, matchScore, toast, dayNum, subKey, setSpotHook, tokens, norm } from './utils.js';
 import { t, LANG, saved, setLang } from './i18n.js';
-import { oName, spotLabel, cat, catName, COLORS, autoSuggestOk, SUGG_STOP } from './constants.js';
+import { oName, spotLabel, cat, catName, COLORS, autoSuggestOk, SUGG_STOP, claimOf, GROUP_DAYS, AMOUNT_TOL } from './constants.js';
 import { SETTINGS } from './config.js';
 
 // رابط مشاركة غرض: ./#item/<رقم المكتب>/<رقم الغرض> يفتح صفحة الغرض مباشرة
@@ -25,6 +25,7 @@ export const S = {
   // items: الأغراض النشطة (متاح ومحجوز) فقط. البقية تُجلب عند الحاجة حفاظاً على حصة القراءة اليومية
   items: [], itemsLoaded: false, reports: [], claims: [], allItems: [],
   myReports: [], myClaims: [],   // بلاغات المستخدم وطلباته في كل المكاتب
+  links: {},                    // H11: ربط الطلبات المجمّعة بأغراض (claimLinks، للموظف فقط): {claimId: {itemId, by, at}}
   myFound: [], found: [],        // إشعارات التسليم: ما أبلغ المستخدم أنه وجده، وللموظف: المعلّقة في مكتبه
   itemCache: {},                 // غرض مفرد جُلب عند الحاجة (مُسلَّم أو من مكتب آخر): رقم ← غرض أو null
   extraItems: {},                // للموظف: المُسلَّم والمؤرشف والمُتصرَّف فيه عند اختيار الفلتر
@@ -210,6 +211,61 @@ export const staffCands = (r, n = 3) => candidatesFor(r, 10, full).filter(x => a
 // «مرشّح محتمل»: بلاغ مفتوح بلا ترشيح، وأفضل مرشّح له (≥ MATCH_MIN) يطابق تفصيلاً سرياً
 export const strongFor = r => r?.status === 'open' && !isStale(r) && !r.staffPick ? staffCands(r, 10).find(x => secretHit(r, x.i)) || null : null;
 
+/* ---------- H11: الطلب المجمّع (بالوصف، بلا اختيار غرض) ----------
+   صاحب الطلب يصف ما فقده في تصنيف مجمّع (نقود، بطاقات، محافظ، مفاتيح)، والموظف يربطه بالغرض الصحيح (claimLinks).
+   itemId يبقى فارغاً في الطلب حتى القبول، فلا يرى صاحبه الغرض ولا المرشّحين قبل ذلك */
+export const isGroupClaim = c => !!c?.grouped;
+export const linkOf = c => (c && S.links[c.id]) || null;
+// رقم الغرض عند الموظف: المكتوب في الطلب (بعد القبول)، أو المربوط في claimLinks (قبله)
+export const claimItemId = c => c?.itemId || linkOf(c)?.itemId || '';
+// الطلب بصيغة البلاغ لمقارنته بالأغراض (matchScore): الوصف، ومكان الفقد، وإجابات التصنيف (ومنها الاسم وآخر 4 أرقام للوثائق)
+function groupRep(c){
+  const det = {...(c.details || {})};
+  for (const d of claimOf(c.cat).details) if (d.as && c[d.as] && !det[d.k]) det[d.k] = String(c[d.as]);
+  return {cat: c.cat, sub: '', color: c.color || '', brand: c.brand || '', title: '', desc: c.proof || '', spot: c.lostSpot || '', bldg: c.bldg || '', lostDate: c.lostDate || '', details: det};
+}
+const amountOf = x => { const n = Number(String(x?.details?.amount || '').replace(/[^\d.]/g, '')); return n > 0 ? n : null; };
+/* المرشّحون للطلب المجمّع (للموظف): فلاتر إلزامية ثم الترتيب بالمقارنة السرية، 3 على الأكثر:
+   نفس المكتب والتصنيف، متاح، عُثر عليه بين يوم قبل الفقد و14 يوماً بعده، والمبلغ ضمن ±10% إن ذُكر في الطلب والغرض */
+export function groupCands(c, n = 3){
+  if (!isGroupClaim(c)) return [];
+  const r = groupRep(c), a = amountOf(r);
+  return S.items.filter(i => i.officeId === c.officeId && i.cat === c.cat && i.status === 'available')
+    .map(i => full(i))
+    .filter(i => {
+      const d = dayNum(i.foundDate) - dayNum(r.lostDate);
+      if (!isNaN(d) && (d < -1 || d > GROUP_DAYS)) return false;
+      const b = amountOf(i);
+      return !(a && b) || Math.abs(a - b) <= a * AMOUNT_TOL;
+    })
+    .map(i => ({i, s: matchScore(r, i)})).sort((x, y) => y.s - x.s).slice(0, n);
+}
+// الإجابة الرقمية الأساسية للتصنيف (المبلغ، عدد المفاتيح، آخر 4 أرقام من الوثيقة)
+const keyNum = c => { const r = groupRep(c); for (const k of ['amount', 'keyCount', 'docLast4']) if (r.details[k]) return [k, r.details[k]]; return null; };
+/* «مطابقة مؤكدة»: مرشّح واحد قوي فقط: إجابته الرقمية مطابقة تماماً + نفس المبنى أو المكان السري، ولا منافس ضمن 15 نقطة */
+export function groupStrong(c, cands = groupCands(c)){
+  const [top, second] = cands; if (!top) return null;
+  const kn = keyNum(c); if (!kn || String(top.i.details?.[kn[0]] || '') !== String(kn[1])) return null;
+  const r = groupRep(c);
+  const place = (r.spot && top.i.spot && r.spot === top.i.spot) || (r.bldg && top.i.bldg && r.bldg === top.i.bldg);
+  return place && (!second || second.s < top.s - 15) ? top : null;
+}
+/* سؤال تحقق جاهز يفرّق بين مرشّحين متقاربين (ضمن 15 نقطة): أول تفصيل سري مختلف بينهم لم يجب عنه صاحب الطلب
+   (الفئات، الحاوية، الميدالية…)، وإلا المكان إن اختلف، وإلا سؤال عام. يرجع مفتاح السؤال في القاموس (gq.<k>) */
+export function groupQuestion(c, cands = groupCands(c)){
+  const close = cands.filter(x => x.s >= (cands[0]?.s || 0) - 15);
+  if (close.length < 2) return '';
+  const r = groupRep(c);
+  for (const d of claimOf(c.cat).details){
+    if (d.as || r.details[d.k]) continue;
+    const vals = close.map(x => norm(String(x.i.details?.[d.k] || ''))).filter(Boolean);
+    if (vals.length >= 2 && new Set(vals).size > 1) return 'gq.' + d.k;
+  }
+  const spots = close.map(x => x.i.spot || '').filter(Boolean);
+  if (new Set(spots).size > 1) return 'gq.spot';
+  return 'gq.any';
+}
+
 /* تنبيهات الزائر: ترشيح الموظف، وتغيّر حالة الطلب، والاقتراح الآلي الحالي لكل بلاغ (H10: يتغيّر مفتاحه مع الاقتراح الحالي فقط) */
 export function alertKeys(){
   const keys = [];
@@ -270,6 +326,8 @@ export function staffEvents(){
     // v7: غرض ثمين وافق عليه موظف آخر: «بانتظار موافقتك الثانية» (بلا وقت، فيبقى جديداً حتى يُقرأ)
     const ap = Array.isArray(c.approvals) ? c.approvals : [];
     if (ap.length === 1 && !ap.includes(S.uid)) add(`ap:${c.id}:${ap[0]}`, 'claims:decide', 's:' + c.id, null);
+    // H11: طلب مجمّع لم يُربط: أفضل مرشّح له حدث جديد (بوقت تسجيل الغرض)، فغرض جديد مطابق يظهر جديداً
+    if (isGroupClaim(c) && !claimItemId(c)){ const top = groupCands(c, 1)[0]; if (top) add(`gm:${c.id}:${top.i.id}`, 'claims:decide', 's:' + c.id, top.i.createdAt || null); }
   }
   for (const f of S.found) add('nf:' + f.id, 'claims:incoming', 'sf:' + f.id, f.createdAt);
   for (const r of S.reports){
@@ -439,7 +497,7 @@ export function ensureOfficeSubs(){
   const staffView = isStaffHere();
   const k = `${S.officeId}|${S.uid}|${staffView}`;
   if (rcKey !== k){
-    rcKey = k; clear('rc'); S.reports = []; S.claims = []; S.found = []; S.secrets = {}; S.claimHist = null; S.closedReps = null;
+    rcKey = k; clear('rc'); S.reports = []; S.claims = []; S.found = []; S.links = {}; S.secrets = {}; S.claimHist = null; S.closedReps = null;
     secSubs.forEach(u => { try { u(); } catch {} }); secSubs.clear();
     // للموظف فقط: البلاغات المفتوحة، والطلبات المفتوحة (قيد المراجعة والمقبولة)، والتفاصيل السرية لمكتبه.
     // الزائر يرى بلاغاته وطلباته من اشتراك «طلباتي» بالأعلى.
@@ -449,6 +507,8 @@ export function ensureOfficeSubs(){
       subs.rc.push(dbx.watch('claims', [o, ['status', 'in', ['pending', 'approved']]], l => { S.claims = l; changed(); }, errH('claims')));
       // إشعارات التسليم المعلّقة: من وجد غرضاً وسيسلّمه للمكتب
       subs.rc.push(dbx.watch('foundReports', [o, ['status', '==', 'pending']], l => { S.found = l; changed(); }, errH('found')));
+      // H11: روابط الطلبات المجمّعة بأغراض المكتب (الموظف وحده يراها)
+      subs.rc.push(dbx.watch('claimLinks', [o], l => { S.links = Object.fromEntries(l.map(x => [x.id, x])); changed(); }, errH('links')));
       watchSecrets();
     }
   }

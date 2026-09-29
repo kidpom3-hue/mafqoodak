@@ -3,7 +3,7 @@ import { icon, LOGO, otype, otypeName, oName, oPlace, oHours, oCity } from '../c
 import { $, esc, today } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, curOffice } from '../state.js';
-import { card, skelCards } from './visitor.js';
+import { card, skelCards, groupCard, groupEntries, groupedHere } from './visitor.js';
 import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt } from './common.js';
 import { APP_VERSION } from '../config.js';
 import { officeUrl } from './common.js';
@@ -85,8 +85,11 @@ export function updateHome(){
   if (latest){
     if (!S.itemsLoaded) latest.innerHTML = `<div class="hscroll" aria-busy="true" aria-label="${t('c.loading')}">${skelCards()}</div>`;
     else {
-      const arr = avail.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 8);
-      latest.innerHTML = arr.length ? `<div class="hscroll">${arr.map(card).join('')}</div>`
+      // H11: أغراض التصنيفات المجمّعة (نقود، بطاقات…) بطاقة واحدة لكل تصنيف، مرتّبة مع غيرها بآخر تسجيل
+      const rows = [...groupEntries(avail).map(g => ({at: g.last, html: groupCard(g)})),
+        ...avail.filter(i => !groupedHere(i.cat)).map(i => ({at: i.createdAt || 0, html: card(i)}))];
+      const arr = rows.sort((a, b) => b.at - a.at).slice(0, 8);
+      latest.innerHTML = arr.length ? `<div class="hscroll">${arr.map(x => x.html).join('')}</div>`
         : `<div class="empty">${icon('box')}<b>${t('home.empty')}</b><span>${t('home.emptySub')}</span></div>`;
     }
   }

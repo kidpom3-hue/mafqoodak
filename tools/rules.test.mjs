@@ -48,7 +48,8 @@ async function mk(db, path, data, {keepQuota = false} = {}){
   await setRate(uid, Date.now() - 60000);
   const isClaim = path.startsWith('claims/');
   if (isClaim && !keepQuota) await setQuota(uid, {open: []});
-  const cat = isClaim ? await itemCat(data.itemId) : '';
+  // v8: الطلب المجمّع تصنيفه مكتوب فيه (بلا غرض)
+  const cat = isClaim ? (data.grouped ? data.cat : await itemCat(data.itemId)) : '';
   return batch(db, (b, r) => { b.set(r(path), data); b.set(r('rate/' + uid), {at: serverTimestamp()});
     if (isClaim) b.set(r('claimQuota/' + uid), {open: arrayUnion(path.split('/')[1]), lastByCat: {[cat]: serverTimestamp()}}, {merge: true}); });
 }
@@ -503,6 +504,59 @@ await t('v7-4: قيد التسليم مع checks (مفاتيح فقط)', setDoc(
 await t('v7-4: checks ليست قائمة مرفوضة', setDoc(doc(A, 'logs/' + lid()), {...logDoc('staffA', 'handover', {itemId: 'hv1'}), checks: 'x'}), false);
 // البيانات القديمة
 await t('v7: قراءة طلب قديم (بلا proofs ولا approvals)', getDoc(doc(A, 'claims/i6_alice')));
+
+// ── v8 (H11): الطلب المجمّع بالوصف (بلا اختيار غرض) وربطه بغرض عند الموظف ──
+await env.withSecurityRulesDisabled(async c => {
+  const d = c.firestore();
+  for (const [k, cat, st] of [['m1', 'cash', 'available'], ['m2', 'cash', 'available'], ['m3', 'bags', 'available'], ['m4', 'cash', 'reserved']]){
+    await setDoc(doc(d, 'items/' + k), {...pub(k, cat), status: st}); await setDoc(doc(d, 'itemSecrets/' + k), sec);
+  }
+  await setDoc(doc(d, 'items/mx'), {...pub('mx', 'cash'), officeId: 'dom'});
+});
+const gc = (uid, cat = 'cash', at = now, x = {}) => ({itemId: '', cat, grouped: true, officeId: O, uid, proof: '', color: '', brand: '', lostSpot: 'المكتبة', bldg: '', room: '',
+  lostDate: '2026-09-19', claimantName: 'اسم كامل', idLast4: '1234', details: {amount: '150'}, status: 'pending', codeHash: 'a'.repeat(64), createdAt: at, ...x});
+const gid = (uid, cat, at) => `g_${uid}_${cat}_${at}`;
+const T1 = now, T2 = now + 1, T3 = now + 2;
+await t('v8: طلب مجمّع للنقود (بلا غرض) مقبول', mk(alice, 'claims/' + gid('alice', 'cash', T1), gc('alice', 'cash', T1)));
+await t('v8: طلب مجمّع لتصنيف غير مجمّع (حقائب) مرفوض', mk(bob, 'claims/' + gid('bob', 'bags', T1), gc('bob', 'bags', T1)), false);
+await t('v8: طلب مجمّع برقم لا يطابق النمط مرفوض', mk(bob, 'claims/g_bob_cash_1', gc('bob', 'cash', T1)), false);
+await t('v8: طلب مجمّع باسم مستخدم آخر مرفوض', mk(bob, 'claims/' + gid('carol', 'cash', T1), gc('carol', 'cash', T1)), false);
+await t('v8: طلب مجمّع فيه itemId مرفوض', mk(bob, 'claims/' + gid('bob', 'cash', T1), gc('bob', 'cash', T1, {itemId: 'm1'})), false);
+await t('v8: grouped بلا true (طلب عادي فيه cat) مرفوض', mk(bob, 'claims/m1_bob', {...claim('m1', 'bob'), cat: 'cash'}), false);
+await t('v8: طلب مجمّع ثانٍ في التصنيف نفسه خلال 24 ساعة مرفوض (الحصة)', mk(alice, 'claims/' + gid('alice', 'cash', T2), gc('alice', 'cash', T2), {keepQuota: true}), false);
+await t('v8: طلب مجمّع للبطاقات من الحساب نفسه (تصنيف آخر) مقبول', mk(alice, 'claims/' + gid('alice', 'ids', T3), gc('alice', 'ids', T3, {details: {docLast4: '5678'}}), {keepQuota: true}));
+const G = gid('alice', 'cash', T1);
+await t('v8: صاحب الطلب يقرأ طلبه المجمّع', getDoc(doc(alice, 'claims/' + G)));
+// الربط: للموظف فقط، ومرة واحدة، بغرض متاح من المكتب والتصنيف نفسيهما
+const link = (db, by, itemId, x = {}) => setDoc(doc(db, 'claimLinks/' + G), {officeId: O, itemId, by, at: now, ...x});
+await t('v8: صاحب الطلب لا يربط itemId بنفسه (claimLinks)', link(alice, 'alice', 'm1'), false);
+await t('v8: صاحب الطلب لا يكتب itemId في طلبه', updateDoc(doc(alice, 'claims/' + G), {itemId: 'm1'}), false);
+await t('v8: الموظف لا يكتب itemId في الطلب مباشرة (دون قبول)', updateDoc(doc(A, 'claims/' + G), {itemId: 'm1'}), false);
+await t('v8: ربط بغرض من تصنيف آخر (حقائب) مرفوض', link(A, 'staffA', 'm3'), false);
+await t('v8: ربط بغرض غير متاح (محجوز) مرفوض', link(A, 'staffA', 'm4'), false);
+await t('v8: ربط بغرض من مكتب آخر مرفوض', link(A, 'staffA', 'mx'), false);
+await t('v8: ربط باسم موظف آخر مرفوض', link(A, 'staffB', 'm1'), false);
+await t('v8: الموظف يربط الطلب بغرض متاح من التصنيف نفسه', link(A, 'staffA', 'm1'));
+await t('v8: لا يُعدَّل الربط (مرة واحدة)', link(B, 'staffB', 'm2'), false);
+await t('v8: صاحب الطلب لا يقرأ الربط (لا يرى الغرض قبل القبول)', getDoc(doc(alice, 'claimLinks/' + G)), false);
+await t('v8: الموظف يقرأ الربط', getDoc(doc(A, 'claimLinks/' + G)));
+// القبول: itemId = الغرض المربوط، مع حجزه، وموافقتان (النقود ثمينة)
+const gApprove = (db, by, itemId, apps) => batch(db, (b, r) => {
+  b.update(r('claims/' + G), {status: 'approved', itemId, approvals: apps, decidedAt: now, decidedBy: by, pickupBy: now + 7 * 864e5});
+  b.update(r('items/' + itemId), {status: 'reserved', reservedFor: G, updatedAt: now});
+});
+await t('v8: الموافقة الأولى (تبقى قيد المراجعة، بلا itemId)', updateDoc(doc(A, 'claims/' + G), {approvals: ['staffA']}));
+await t('v8: قبول بغرض غير المربوط مرفوض', gApprove(B, 'staffB', 'm2', ['staffA', 'staffB']), false);
+await t('v8: قبول بموافقة واحدة مرفوض (ثمين)', gApprove(A, 'staffA', 'm1', ['staffA']), false);
+await t('v8: القبول الثاني يكتب itemId المربوط ويحجز الغرض', gApprove(B, 'staffB', 'm1', ['staffA', 'staffB']));
+await t('v8: بعد القبول لا يتغير itemId', updateDoc(doc(A, 'claims/' + G), {itemId: 'm2'}), false);
+await t('v8: التسليم بالرمز للطلب المجمّع بعد قبوله', batch(A, (b, r) => {
+  b.update(r('claims/' + G), {status: 'done', doneAt: now, doneBy: 'staffA', handoverNote: 'أليس — 1234'});
+  b.update(r('items/m1'), {status: 'returned', returnedAt: now, updatedAt: now}); }));
+// رفض وانتهاء: يبقيان متاحين دون ربط
+const G2 = gid('alice', 'ids', T3);
+await t('v8: رفض طلب مجمّع بلا ربط مع سبب', updateDoc(doc(A, 'claims/' + G2), {status: 'rejected', note: 'لا يطابق', decidedAt: now, decidedBy: 'staffA'}));
+await t('v8: طلب عادي قديم (بلا cat ولا grouped) ما زال يُقرأ', getDoc(doc(A, 'claims/i6_alice')));
 
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

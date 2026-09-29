@@ -68,6 +68,10 @@ service cloud.firestore {
     // الأغراض الثمينة: قبولها يحتاج موافقتين من شخصين مختلفين (نفس القائمة HIGH_VALUE في js/constants.js — عدّلهما معاً)
     function highValue() { return ['cash', 'phones', 'jewelry']; }
     function claimDoc(id) { return /databases/$(database)/documents/claims/$(id); }
+    // ── v8 (H11): الطلب المجمّع (بالوصف، بلا اختيار غرض) للتصنيفات ذات العنوان العام العام
+    // (نفس القائمة GROUP_CATS في js/constants.js — عدّلهما معاً)
+    function groupCats() { return ['cash', 'ids', 'wallets', 'keys']; }
+    function linkDoc(id) { return /databases/$(database)/documents/claimLinks/$(id); }
     function apps(d) { return d.get('approvals', []); }
     // قائمة الموافقات لا تتغير، أو تكبر بموافقة من يكتب الآن فقط (لا يوافق الموظف مرتين)
     function approvalsOk() {
@@ -285,7 +289,7 @@ service cloud.firestore {
     match /claims/{claimId} {
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
       allow create: if verified()
-        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'details', 'no', 'status', 'codeHash', 'createdAt', 'proofs'])
+        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'details', 'no', 'status', 'codeHash', 'createdAt', 'proofs', 'cat', 'grouped'])
         // v7: عدد صور الإثبات المرفقة (0–2)، وحدّ الطلبات الجارية وحدّ التصنيف (claimQuota في العملية نفسها)، ونطاق بريد الكلية
         && (!('proofs' in request.resource.data) || (request.resource.data.proofs is int && request.resource.data.proofs >= 0 && request.resource.data.proofs <= 2))
         && claimId in getAfter(/databases/$(database)/documents/claimQuota/$(me())).data.open
@@ -297,8 +301,6 @@ service cloud.firestore {
         && strMax(request.resource.data, 'claimantName', 120)
         && (!('idLast4' in request.resource.data) || request.resource.data.idLast4.matches('[0-9]{4}'))
         && request.resource.data.uid == me()
-        // طلب واحد فقط لكل مستخدم على كل غرض: رقم الطلب = رقم الغرض_رقم المستخدم
-        && claimId == request.resource.data.itemId + '_' + me()
         && request.resource.data.status == 'pending'
         && request.resource.data.codeHash is string && request.resource.data.codeHash.size() <= 128
         && strMax(request.resource.data, 'proof', 5000)
@@ -310,13 +312,29 @@ service cloud.firestore {
         && (!('reportId' in request.resource.data) || request.resource.data.reportId == ''
             || get(/databases/$(database)/documents/reports/$(request.resource.data.reportId)).data.uid == me())
         && fresh(request.resource.data, 'createdAt') && rateOk()
-        // المحجوز يقبل طلباً منافساً: صاحبه الحقيقي يستطيع الاعتراض قبل التسليم
-        && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.status in ['available', 'reserved']
-        && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.officeId == request.resource.data.officeId;
+        && (
+          // طلب على غرض محدد: طلب واحد فقط لكل مستخدم على كل غرض (رقم الطلب = رقم الغرض_رقم المستخدم)،
+          // والمحجوز يقبل طلباً منافساً: صاحبه الحقيقي يستطيع الاعتراض قبل التسليم
+          (request.resource.data.get('grouped', false) == false && !('cat' in request.resource.data)
+            && claimId == request.resource.data.itemId + '_' + me()
+            && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.status in ['available', 'reserved']
+            && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.officeId == request.resource.data.officeId)
+          // v8: طلب مجمّع بالوصف: بلا غرض، لتصنيف مجمّع فقط، ورقمه g_<المستخدم>_<التصنيف>_<وقت الإنشاء>
+          // (يربطه الموظف بغرض لاحقاً في claimLinks، ولا يُكتب itemId في الطلب إلا عند القبول)
+          || (request.resource.data.grouped == true && request.resource.data.itemId == ''
+            && request.resource.data.cat in groupCats()
+            && claimId == 'g_' + me() + '_' + request.resource.data.cat + '_' + string(request.resource.data.createdAt)
+            && officeExists(request.resource.data.officeId))
+        );
       allow update: if (isStaffOf(resource.data.officeId)
           // فصل المهام: الموظف لا يقرر في طلب أرسله هو
           && resource.data.uid != me()
-          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote', 'answer', 'answeredAt', 'approvals', 'proofs'])
+          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote', 'answer', 'answeredAt', 'approvals', 'proofs', 'itemId'])
+          // v8: رقم الغرض لا يتغير، إلا في الطلب المجمّع عند قبوله: يُكتب مرة واحدة = الغرض المربوط في claimLinks
+          && (request.resource.data.itemId == resource.data.itemId
+              || (resource.data.get('grouped', false) == true && resource.data.itemId == ''
+                  && request.resource.data.status == 'approved'
+                  && request.resource.data.itemId == get(linkDoc(claimId)).data.itemId))
           // v7: موافقة الموظف تُضاف مرة واحدة، وعدد الصور يصير 0 فقط (عند حذفها مع إغلاق الطلب)
           && approvalsOk()
           && (request.resource.data.get('proofs', 0) == resource.data.get('proofs', 0) || request.resource.data.get('proofs', 0) == 0)
@@ -324,7 +342,7 @@ service cloud.firestore {
           && (!('answer' in request.resource.data) || request.resource.data.answer == resource.data.get('answer', null))
           && (!('answeredAt' in request.resource.data) || request.resource.data.answeredAt == resource.data.get('answeredAt', null))
           && request.resource.data.status in ['pending', 'approved', 'done', 'rejected', 'expired', 'cancelled']
-          && (request.resource.data.status != 'approved' || resource.data.status == 'approved' || (approveOk(claimId, resource.data.itemId) && dualOk(resource.data.itemId)))
+          && (request.resource.data.status != 'approved' || resource.data.status == 'approved' || (approveOk(claimId, request.resource.data.itemId) && dualOk(request.resource.data.itemId)))
           && (request.resource.data.status != 'done' || resource.data.status == 'done' || doneOk(claimId, resource.data.itemId))
           && strMax(request.resource.data, 'note', 600) && strMax(request.resource.data, 'question', 600)
           && strMax(request.resource.data, 'handoverNote', 600))
@@ -435,7 +453,8 @@ service cloud.firestore {
       function lb(d) { return d.get('lastByCat', {}); }
       function cAfter(id) { return getAfter(claimDoc(id)).data; }
       function gone(id) { return !existsAfter(claimDoc(id)) || cAfter(id).status in ['done', 'rejected', 'expired', 'cancelled']; }
-      function catOf(id) { return get(/databases/$(database)/documents/items/$(cAfter(id).itemId)).data.cat; }
+      // v8: تصنيف الطلب المجمّع مكتوب فيه (بلا غرض)، وتصنيف الطلب العادي من غرضه
+      function catOf(id) { return cAfter(id).get('grouped', false) == true ? cAfter(id).cat : get(/databases/$(database)/documents/items/$(cAfter(id).itemId)).data.cat; }
       // bOpen / bLb: القائمة ووقت آخر طلب لكل تصنيف قبل العملية (فارغة عند الإنشاء الأول)
       function addOk(bOpen, bLb, id) {
         return userId == me() && qa().open.size() <= 3
@@ -468,6 +487,23 @@ service cloud.firestore {
 
     // v7: صور إثبات اختيارية لطلب الاستلام (صورة قديمة للغرض أو فاتورته، صورتان على الأكثر): claimProofs/{claimId}_{0|1}.
     // يراها صاحب الطلب وموظفو المكتب فقط، ولا تظهر في أي صفحة عامة. تُحذف مع إغلاق الطلب
+    // v8 (H11): ربط الطلب المجمّع بغرض: للموظفين فقط (صاحب الطلب لا يرى الغرض ولا المرشّحين قبل القبول)
+    // موظف المكتب يربطه مرة واحدة (لا تعديل)، بغرض متاح من المكتب والتصنيف نفسيهما، وليس في طلب أرسله هو
+    match /claimLinks/{claimId} {
+      function cl() { return get(claimDoc(claimId)).data; }
+      function it() { return get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data; }
+      allow read: if isStaffOf(resource.data.officeId);
+      allow create: if isStaffOf(request.resource.data.officeId)
+        && request.resource.data.keys().hasOnly(['officeId', 'itemId', 'by', 'at'])
+        && request.resource.data.by == me() && fresh(request.resource.data, 'at')
+        && request.resource.data.itemId is string && request.resource.data.itemId.size() > 0 && request.resource.data.itemId.size() <= 100
+        && cl().get('grouped', false) == true && cl().itemId == '' && cl().status == 'pending'
+        && cl().officeId == request.resource.data.officeId && cl().uid != me()
+        && it().officeId == request.resource.data.officeId && it().cat == cl().cat && it().status == 'available';
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
     match /claimProofs/{proofId} {
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
       allow create: if signedIn()

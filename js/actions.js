@@ -1,9 +1,9 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
-import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS } from './constants.js';
+import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS } from './constants.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard } from './state.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
@@ -303,23 +303,26 @@ async function submitForm(form){
   }
 
   if (kind === 'claim'){
-    const i = item(form.dataset.id);
+    // H11: طلب مجمّع بالوصف (بلا غرض): التصنيف من النموذج، والمكتب الحالي (أو مكتب الطلب عند التعديل)
+    const gcat = form.dataset.gcat || '';
+    const i = gcat ? null : item(form.dataset.id);
     // G3: «تعديل الطلب»: الطلب نفسه ما دام قيد المراجعة ولم يُسأل صاحبه
     const ed = form.dataset.edit ? S.myClaims.find(c => c.id === form.dataset.edit) : null;
     if (form.dataset.edit && !claimEditable(ed)) return formErr(form, t('cl.noEdit'));
     // المتاح والمحجوز يقبلان الطلب (المحجوز: طلب منافس يراجعه المكتب قبل التسليم)
-    if (!i || !ACTIVE.includes(i.status)) return formErr(form, t('cl.unavailable'));
+    if (gcat ? !isGrouped(gcat) : (!i || !ACTIVE.includes(i.status))) return formErr(form, t('cl.unavailable'));
+    const catId = gcat || i.cat, officeId = i?.officeId || ed?.officeId || S.officeId;
     if (!S.verified) return formErr(form, t('a.verifyFirst'));
     // هوية صاحب الطلب: الاسم كما في البطاقة وآخر 4 أرقام منها (يطابقها الموظف عند التسليم)
     if (val('claimantName').length < 3) return formErr(form, t('a.needClaimantName'), 'claimantName');
     const last4 = latinDigits(val('idLast4'));
     if (!/^\d{4}$/.test(last4)) return formErr(form, t('a.needLast4'), 'idLast4');
     // أسئلة التصنيف: الإجبارية منها (مثل المبلغ للنقود)، والماركة للجوالات
-    const q = claimOf(i.cat), {details, missing, missingKey} = readDetails(form, i.cat, 'claim');
+    const q = claimOf(catId), {details, missing, missingKey} = readDetails(form, catId, 'claim');
     if (q.req.includes('brand') && !val('brand')) return formErr(form, t('a.needDetail', {label: t('if.brand')}), 'brand');
     if (missing) return formErr(form, t('a.needDetail', {label: missing}), missingKey);
     // الإثبات الحر: إجباري إلا في التصنيفات التي فيها سؤال إجباري («تفاصيل أخرى تثبت أنه لك»)
-    if (!claimHasRequired(i.cat) && val('proof').length < 15) return formErr(form, t('a.proofShort'), 'proof');
+    if (!claimHasRequired(catId) && val('proof').length < 15) return formErr(form, t('a.proofShort'), 'proof');
     if (!fd.get('pledge')) return formErr(form, t('a.needPledge'), 'pledge');
     if (ed){
       // الحقول التي يعدّلها صاحب الطلب فقط (القواعد لا تقبل غيرها) + وقت التعديل
@@ -331,16 +334,18 @@ async function submitForm(form){
       return;
     }
     // طلب واحد فقط لكل مستخدم على كل غرض: رقم الطلب ثابت = رقم الغرض_رقم المستخدم
-    const id = `${i.id}_${S.uid}`;
+    // H11: المجمّع: g_<المستخدم>_<التصنيف>_<وقت الإنشاء> (القواعد تفرض هذا الشكل)، وطلب جارٍ واحد لكل تصنيف
+    const createdAt = Date.now();
+    const id = gcat ? `g_${S.uid}_${gcat}_${createdAt}` : `${i.id}_${S.uid}`;
     const dup = t('cl.already');
-    if (S.myClaims.some(c => c.id === id)) return formErr(form, dup);
+    if (gcat ? S.myClaims.some(c => c.grouped && c.cat === gcat && c.officeId === officeId && ['pending', 'approved'].includes(c.status)) : S.myClaims.some(c => c.id === id)) return formErr(form, dup);
     busy(form, true);
-    if (await dbx.get('claims/' + id).catch(() => null)){ busy(form, false); return formErr(form, dup); }
+    if (!gcat && await dbx.get('claims/' + id).catch(() => null)){ busy(form, false); return formErr(form, dup); }
     // v7: حدود «الصيد» على الجهاز أولاً (القواعد تفرضها أيضاً): 3 طلبات جارية، وطلب واحد لكل تصنيف كل 24 ساعة
     if (S.myClaims.filter(c => ['pending', 'approved'].includes(c.status)).length >= CLAIM_MAX_OPEN){ busy(form, false); return formErr(form, t('cl.quotaFull', {n: CLAIM_MAX_OPEN})); }
-    if (S.myClaims.some(c => (c.createdAt || 0) > Date.now() - CLAIM_CAT_MS && item(c.itemId)?.cat === i.cat)){ busy(form, false); return formErr(form, t('cl.quotaCat', {cat: esc(catName(i.cat))})); }
+    if (S.myClaims.some(c => (c.createdAt || 0) > Date.now() - CLAIM_CAT_MS && (c.cat || item(c.itemId)?.cat) === catId)){ busy(form, false); return formErr(form, t('cl.quotaCat', {cat: esc(catName(catId))})); }
     // v7: مكتب يشترط بريد الكلية
-    if (!claimEmailOk(S.offices.find(o => o.id === i.officeId), S.me?.email)){ busy(form, false); return formErr(form, t('cl.domainNeed')); }
+    if (!claimEmailOk(S.offices.find(o => o.id === officeId), S.me?.email)){ busy(form, false); return formErr(form, t('cl.domainNeed')); }
     const proofs = (FORM.proofs || []).slice(0, 2);
     const code = genCode(); const codeHash = await sha(id + ':' + code);
     LS.set('codes', {...LS.get('codes', {}), [id]: code});
@@ -349,17 +354,18 @@ async function submitForm(form){
       // خانات التصنيف فقط (الوثائق والنقود بلا لون ولا ماركة)، وإجابات أسئلته في details
       // رقم الطلب القصير يظهر للمستخدم والموظف، ويُبحث به في تبويب الاستلام
       // H7: مع حدّ الإغراق (rate/{uid} في العملية نفسها)
-      await createLimited('claims/' + id, {itemId: i.id, officeId: i.officeId, uid: S.uid, no: 'REQ-' + refCode(4), proof: val('proof').slice(0, 1200), details,
+      await createLimited('claims/' + id, {itemId: i?.id || '', officeId, uid: S.uid, no: 'REQ-' + refCode(4), proof: val('proof').slice(0, 1200), details,
+        ...(gcat ? {grouped: true, cat: gcat} : {}),
         color: q.fields.includes('color') ? val('color') : '', brand: q.fields.includes('brand') ? val('brand').slice(0, 40) : '',
         claimantName: val('claimantName').slice(0, 120), idLast4: last4,
         lostSpot: val('spot'), bldg, room, lostDate: val('lostDate'),
         ...(val('reportId') ? {reportId: val('reportId').slice(0, 100)} : {}),
         ...(proofs.length ? {proofs: proofs.length} : {}),
-        status: 'pending', codeHash, createdAt: Date.now()},
+        status: 'pending', codeHash, createdAt},
         // v7: في العملية نفسها: الحصة (قائمة الطلبات الجارية ووقت آخر طلب في هذا التصنيف) وصور الإثبات
         (b, ref) => {
-          b.set(ref('claimQuota/' + S.uid), {open: arrayUnion(id), lastByCat: {[i.cat]: serverTimestamp()}}, {merge: true});
-          proofs.forEach((data, k) => b.set(ref(`claimProofs/${id}_${k}`), {claimId: id, officeId: i.officeId, uid: S.uid, data, createdAt: Date.now()}));
+          b.set(ref('claimQuota/' + S.uid), {open: arrayUnion(id), lastByCat: {[catId]: serverTimestamp()}}, {merge: true});
+          proofs.forEach((data, k) => b.set(ref(`claimProofs/${id}_${k}`), {claimId: id, officeId, uid: S.uid, data, createdAt: Date.now()}));
         });
     } catch (e){
       console.warn(e); busy(form, false);
@@ -368,7 +374,7 @@ async function submitForm(form){
         ? t('a.claimDenied')
         : t('a.claimFail'));
     }
-    busy(form, false); toast(t('a.claimSent')); S.hist = []; go('mine', {}, false);
+    busy(form, false); toast(t(gcat ? 'gc.sent' : 'a.claimSent')); S.hist = []; go('mine', {}, false);
     return;
   }
 
@@ -895,6 +901,17 @@ const ACT = {
   removePhoto(el){ clearPhoto(el.closest('form')); },
   aiFill(){ if (aiReady()) aiFill(); },
   // H9: الإضافة السريعة: فتح الكاميرا، أو المتابعة بلا صورة، أو «أضف آخر» بعد الحفظ (يبقى المكان والتاريخ)
+  // H11: البطاقة المجمّعة في المفقودات: «أثبت أنه لك» يفتح الطلب بالوصف (بعد الدخول)
+  gclaim(el){ const cat = el.dataset.cat; if (!S.uid) return go('login', {next: {name: 'gclaim', params: {cat}}}); go('gclaim', {cat}); },
+  // H11 (الموظف): ربط الطلب المجمّع بالغرض المختار، أو إرسال سؤال التحقق المقترح بضغطة
+  async linkClaim(el){
+    const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return;
+    if (await write(() => wf.linkClaim(c, el.dataset.i), t('gc.linked'))) SM()?.updateStaff?.();
+  },
+  async askSugg(el){
+    const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return;
+    await write(() => wf.askQuestion(c, el.dataset.q), t('qa.sent'));
+  },
   noPhoto(el){ const f = el.closest('form'); photoState(f, 'none'); focusNext(f); },
   photoPick(el){ const f = el.closest('form'); photoState(f, 'pick'); f.querySelector('.qp-btn input, .qp-btn')?.focus(); },
   // «أضف آخر»: نموذج جديد بالأزرار الثلاثة، يبقى فيه التصنيف والمكان والتاريخ، ولا يُفتح شيء تلقائياً
@@ -962,8 +979,8 @@ const ACT = {
   },
   async approve(el){
     const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return;
-    const i = item(c.itemId);
-    if (!i){ toast(t('it.gone')); return; }
+    const i = item(claimItemId(c));   // H11: الطلب المجمّع: الغرض المربوط (claimLinks)
+    if (!i){ toast(t(c.grouped ? 'wf.needLink' : 'it.gone')); return; }
     // تضارب مصالح (صاحب الطلب سلّم الغرض أو سجّله): القبول يحتاج سبباً مكتوباً يُحفظ في الطلب والسجل
     const kind = conflictOf(c, full(i));
     if (kind) return openSheet(`<h2>${icon('alert')} ${t('a.conflictTitle')}</h2>
@@ -1052,8 +1069,8 @@ const ACT = {
   },
   // سؤال تحقق: اقتراحات جاهزة حسب تصنيف الغرض، ويكتب الموظف سؤاله
   ask(el){
-    const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return; const i = item(c.itemId);
-    const sugs = [...(i ? t('qa.sug.' + i.cat).split('|') : []), t('qa.sugAny')].filter(Boolean);
+    const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return; const i = item(claimItemId(c)), catId = i?.cat || c.cat || '';
+    const sugs = [...(catId ? t('qa.sug.' + catId).split('|') : []), t('qa.sugAny')].filter(Boolean);
     openSheet(`<h2>${icon('question')} ${t('qa.askTitle')}</h2>
       <p class="muted">${t('qa.askHint')}</p>
       <form data-form="ask" data-id="${esc(c.id)}" novalidate>

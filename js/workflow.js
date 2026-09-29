@@ -98,10 +98,37 @@ function closeOthers(b, itemId, exceptId, status, note){
    القواعد تشترط أن يكون الغرض «متاحاً» قبل القبول، وأن يُحجز لهذا الطلب في العملية نفسها (approveOk)،
    فلا يُقبل طلبان معاً من جهازين. «المحجوز» دون طلب مقبول (بيانات قديمة) يُعاد متاحاً أولاً في batch مستقل.
    reason: سبب القبول، إلزامي إذا كان صاحب الطلب هو من سلّم الغرض أو سجّله (تضارب مصالح)؛ يُحفظ في note والسجل */
+/* H11: ربط طلب مجمّع (بالوصف) بغرض: موظف المكتب يختاره من المرشّحين، مرة واحدة (claimLinks، لا يراه صاحب الطلب).
+   الغرض متاح ومن المكتب والتصنيف نفسيهما (القواعد تفرض ذلك). بعده يكمل الطلب التدفق العادي: سؤال، قبول، رمز، تسليم */
+export async function linkClaim(c, itemId){
+  notMine(c);
+  if (!c?.grouped || c.itemId || c.status !== 'pending') fail(t('wf.notPending'));
+  if (S.links[c.id]) fail(t('wf.alreadyLinked'));
+  const i = await freshItem(itemId);
+  if (i.status !== 'available' || i.officeId !== c.officeId || i.cat !== c.cat) fail(t('wf.notAvailable'));
+  const b = dbx.batch(), link = {officeId: c.officeId, itemId: i.id, by: S.uid, at: Date.now()};
+  b.set(dbx.ref('claimLinks/' + c.id), link);
+  log(b, c.officeId, 'link', {itemId: i.id, claimId: c.id});
+  await commit(b, true);
+  S.links = {...S.links, [c.id]: {id: c.id, ...link}};
+}
+/* H11: طلب مجمّع بلا مطابقة بعد 30 يوماً: يُغلق «منتهياً» (عند فتح لوحة الموظف)، ويُبلَّغ صاحبه */
+export async function expireGroupClaim(c){
+  if (!c?.grouped || c.itemId || c.status !== 'pending' || S.links[c.id] || c.uid === S.uid) return false;
+  const b = dbx.batch();
+  closeClaim(b, c, {status: 'expired', note: tAr('sys.noMatch'), decidedAt: Date.now(), decidedBy: S.uid});
+  log(b, c.officeId, 'expire', {claimId: c.id, note: tAr('sys.noMatch')});
+  await commit(b);
+  return true;
+}
+
 export async function approveClaim(c, {reason = ''} = {}){
   notMine(c);
   if (c.status !== 'pending') fail(t('wf.notPending'));
-  const i = await freshItem(c.itemId);
+  // H11: الطلب المجمّع يُقبل بعد ربطه بغرض فقط؛ ويُكتب رقم الغرض في الطلب عند القبول النهائي (لا قبله)
+  const linked = c.grouped && !c.itemId ? S.links[c.id]?.itemId || '' : '';
+  if (c.grouped && !c.itemId && !linked) fail(t('wf.needLink'));
+  const i = await freshItem(c.itemId || linked);
   /* v7: الغرض الثمين يحتاج موافقتين من شخصين مختلفين. الموافقة الأولى تُحفظ في approvals ويبقى الطلب قيد المراجعة؛
      الثانية (موظف آخر أو الإدارة) تقبله. القواعد تفرض ذلك (dualOk) */
   const apps = Array.isArray(c.approvals) ? c.approvals : [];
@@ -129,7 +156,7 @@ export async function approveClaim(c, {reason = ''} = {}){
   const note = String(reason || '').trim().slice(0, 600);
   const b = dbx.batch();
   b.update(dbx.ref('claims/' + c.id), {status: 'approved', decidedAt: Date.now(), decidedBy: S.uid, pickupBy, ...(note ? {note} : {}),
-    ...(isHighValue(i.cat) ? {approvals: [...apps, S.uid]} : {})});
+    ...(isHighValue(i.cat) ? {approvals: [...apps, S.uid]} : {}), ...(linked ? {itemId: linked} : {})});
   itemUpdate(b, i, {status: 'reserved', reservedFor: c.id, updatedAt: Date.now()});
   log(b, i.officeId, 'approve', {itemId: i.id, claimId: c.id, note});
   await commit(b, true);
