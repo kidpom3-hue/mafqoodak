@@ -4,13 +4,13 @@ import { icon, LOGO, cat, catName, subLabel, oName, oShort, oPlace, oHours } fro
 import { t, locale, isEn } from '../i18n.js';
 import { esc, fmtDate, isoDay, $, TZ } from '../utils.js';
 import { S, item, full, curOffice, ensureItem } from '../state.js';
-import { backBtn } from './common.js';
+import { backBtn, officeUrl } from './common.js';
 import { qrSvg } from '../qr.js';
 
 // رابط التطبيق الحالي (يعمل على GitHub Pages وعلى جهازك)
 const base = () => location.origin + location.pathname;
 export const itemUrl = i => `${base()}#item/${i.officeId}/${i.id}`;
-export const officeUrl = o => `${base()}#o/${o.id}`;
+export { officeUrl };   // H8: في common.js
 
 const toolbar = (title, hint) => `<div class="no-print">${backBtn()}
     <section class="hero"><div class="hero-kicker">${icon('print')}${t('lb.kicker')}</div><h1 class="hero-title">${title}</h1><p class="hero-sub">${hint}</p></section>

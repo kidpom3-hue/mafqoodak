@@ -269,7 +269,7 @@ function onUser(user){
   if (user){
     dbx.set('users/' + user.uid, {name: S.me.name, email: S.me.email, photo: S.me.photo, lastSeen: Date.now(), ...(saved() ? {lang: LANG} : {})}, {merge: true}).catch(errH('users'));
     // لغة المستخدم المحفوظة في حسابه تُطبَّق إن لم يختر لغة على هذا الجهاز
-    if (!saved()) dbx.get('users/' + user.uid).then(d => { if (d?.lang && d.lang !== LANG){ setLang(d.lang); if (auth) auth.languageCode = d.lang; reset(); } }).catch(() => {});
+    if (!saved()) dbx.get('users/' + user.uid).then(async d => { if (d?.lang && d.lang !== LANG){ await setLang(d.lang); if (auth) auth.languageCode = d.lang; reset(); } }).catch(() => {});
     subs.user.push(dbx.watchDoc('admins/' + user.uid, d => {
       const was = S.isAdmin; S.isAdmin = !!d; S.adminLoaded = true;
       if (S.isAdmin && !was) startAdmin();
@@ -412,6 +412,7 @@ export async function ensureLogs(i){
 export const AUDIT = {
   handover: ['status:returned'], delete: ['delete'], dispose: ['dispose'],
   perms: ['perm:grant', 'perm:revoke', 'perm:admin', 'perm:unadmin'],
+  backup: ['backup'],   // H8: من صدّر نسخة احتياطية ومتى
 };
 export async function loadAudit(officeId, filter, force = false){
   const k = officeId + '|' + filter; if (!db || !officeId || (S.audit[k] && !force)) return;

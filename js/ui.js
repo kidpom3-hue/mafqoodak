@@ -1,19 +1,15 @@
 // هيكل الواجهة: التنقل بين الصفحات، الشريط العلوي، الشريط السفلي، النوافذ المنبثقة
 import { icon, LOGO, statusLabel, MODE_LABEL } from './constants.js';
 import { t } from './i18n.js';
-import { $, $$, esc } from './utils.js';
+import { $, $$, esc, toast } from './utils.js';
 import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, SHARE_RE, OFFICE_RE } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice } from './views/visitor.js';
-import { vStaff, updateStaff, vItemForm } from './views/staff.js';
-import { vAdmin, vOfficeForm } from './views/admin.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
 import { vHome, updateHome, vFound, vHandin } from './views/home.js';
 import { vPrivacy } from './views/privacy.js';
 import { tabNum } from './views/common.js';   // H6: كل شارة رقمية تمرّ بها (رقم واحد: أحمر للجديد أو رمادي للعدد)
-import { vLabels, vPoster, vThanks, fillThanks } from './views/print.js';
-import { vStats } from './views/stats.js';
-import { vAudit } from './views/audit.js';
-import { vService, vNumbers, vA11y } from './views/gov.js';
+// H8: صفحات الموظف والإدارة والإحصاءات والسجل والطباعة والخدمات تُحمَّل عند أول فتح لها فقط (lazy.js)
+import { need, loadingHtml, setLazyHooks } from './lazy.js';
 import { SETTINGS } from './config.js';
 import { cat } from './constants.js';
 
@@ -29,23 +25,35 @@ const ROUTES = {
   report: {live: false, v: vReportForm, after: initForm},
   mine: {live: true, v: vMine},   // H4: التنبيهات تُقرأ بالنقر على التبويب أو فتح البطاقة، لا بمجرد الدخول
   office: {live: true, v: vOffice},
-  staff: {live: true, v: vStaff, update: updateStaff},
-  add: {live: false, v: vItemForm, after: initForm},
-  admin: {live: true, v: vAdmin},
-  officeForm: {live: false, v: vOfficeForm},
+  // lazy: اسم الوحدة في lazy.js، وv/update/after أسماء الدوال فيها
+  staff: {live: true, lazy: 'staff', v: 'vStaff', update: 'updateStaff'},
+  add: {live: false, lazy: 'staff', v: 'vItemForm', after: initForm},
+  admin: {live: true, lazy: 'admin', v: 'vAdmin'},
+  officeForm: {live: false, lazy: 'admin', v: 'vOfficeForm'},
   login: {live: false, v: vLogin},
   setup: {live: false, v: vSetup},
   privacy: {live: false, v: vPrivacy},
-  labels: {live: false, v: vLabels},
-  poster: {live: false, v: vPoster},
-  stats: {live: true, v: vStats},
-  audit: {live: true, v: vAudit},
+  labels: {live: false, lazy: 'print', v: 'vLabels'},
+  poster: {live: false, lazy: 'print', v: 'vPoster'},
+  stats: {live: true, lazy: 'statsView', v: 'vStats'},
+  audit: {live: true, lazy: 'audit', v: 'vAudit'},
   // المرحلة F: بطاقة الخدمة، ومؤشرات المكتب، وبيان إمكانية الوصول، وشهادة الشكر (print.js)
-  service: {live: false, v: vService},
-  numbers: {live: true, v: vNumbers},
-  a11y: {live: false, v: vA11y},
-  thanks: {live: false, v: vThanks, after: fillThanks},
+  service: {live: false, lazy: 'gov', v: 'vService'},
+  numbers: {live: true, lazy: 'gov', v: 'vNumbers'},
+  a11y: {live: false, lazy: 'gov', v: 'vA11y'},
+  thanks: {live: false, lazy: 'print', v: 'vThanks', after: 'fillThanks'},
 };
+/* H8: دوال المسار الفعلية. للمسار الكسول: من وحدته إن كانت محمّلة، وإلا null (يظهر مؤشر التحميل ويبدأ التحميل).
+   after قد تكون دالة محلية (initForm) أو اسم دالة في الوحدة */
+function routeFns(r){
+  if (!r?.lazy) return r;
+  const m = need(r.lazy); if (!m) return null;
+  const f = k => typeof r[k] === 'string' ? m[r[k]] : r[k];
+  return {live: r.live, v: f('v'), update: f('update'), after: f('after')};
+}
+// بعد وصول الوحدة: نرسم الصفحة إن كانت ما زالت مفتوحة. وعند الفشل (دون اتصال ولم تُحفظ بعد): رسالة ونعود للصفحة الرئيسية للمسار
+setLazyHooks(name => { if (ROUTES[S.route.name]?.lazy === name) renderAll(); else renderNav(); },
+  () => { toast(t('err.offline')); if (ROUTES[S.route.name]?.lazy) $('#main').innerHTML = `<div class="empty">${icon('info')}<b>${t('err.offline')}</b></div>`; });
 
 export function initForm(){
   const f = $('form[data-form=item],form[data-form=report],form[data-form=handin]'); if (!f) return;
@@ -116,10 +124,10 @@ export function refresh(){
   // H4: إن أعاد الرسم بناء العنصر الذي عليه التركيز (مثل تبويب بعد الأسهم) نعيد التركيز إليه بمعرّفه
   const fid = document.activeElement?.id;
   renderHeader();
-  const r = ROUTES[S.route.name];
+  const r = routeFns(ROUTES[S.route.name]);
   const main = $('#main');
   if (r?.update && main.firstElementChild?.dataset.view === S.route.name) r.update();
-  else if (r?.live) renderMain();
+  else if (r?.live || (!r && ROUTES[S.route.name])) renderMain();
   renderNav(); hydrate();
   if (fid && (document.activeElement === document.body || !document.activeElement)) document.getElementById(fid)?.focus({preventScroll: true});
 }
@@ -131,7 +139,8 @@ function renderMain(){
   if (!S.config){ main.innerHTML = S.route.name === 'login' ? vLogin() : S.route.name === 'privacy' ? vPrivacy() : vSetup(); return; }
   // لا مكان مختار (أو لم يصل بعد من قاعدة البيانات): نعرض قائمة الأماكن دون تغيير الصفحة المطلوبة
   if (!curOffice() && !['pick', 'admin', 'officeForm', 'audit', 'login', 'privacy', 'a11y'].includes(S.route.name)){ main.innerHTML = vPick(); return; }
-  const r = ROUTES[S.route.name] || ROUTES.home;
+  const r = routeFns(ROUTES[S.route.name] || ROUTES.home);
+  if (!r){ main.innerHTML = loadingHtml(); return; }   // H8: الوحدة في الطريق
   main.innerHTML = r.v();
   if (r.update) r.update();
   if (r.after) r.after();

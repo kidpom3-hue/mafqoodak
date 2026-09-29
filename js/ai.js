@@ -1,12 +1,12 @@
 // الذكاء الاصطناعي (اختياري) عبر Firebase AI Logic و Gemini
 // يعمل فقط إذا كانت SETTINGS.enableAI = true في js/config.js
 import { SETTINGS } from './config.js';
-import { app } from './firebase.js';
+import { app, aiReady } from './firebase.js';
 import { CATS, COLORS, catName, colorName } from './constants.js';
 import { spotText } from './utils.js';
 import { t } from './i18n.js';
 
-export const aiReady = () => !!(SETTINGS.enableAI && app);
+export { aiReady };
 
 let modelPromise = null;
 function model(){

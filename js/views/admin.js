@@ -59,6 +59,7 @@ export function adminOffices(){
           <button class="link" data-act="stats" data-id="${esc(o.id)}">${icon('chart')}${t('sx.btn')}</button>
           <button class="link" data-act="poster" data-id="${esc(o.id)}">${icon('print')}${t('po.btn')}</button>
           <button class="link" data-act="audit" data-id="${esc(o.id)}">${icon('clock')}${t('au.btn')}</button>
+          <button class="link" data-act="backup" data-id="${esc(o.id)}">${icon('download')}${t('bk.btn')}</button>
         </span>
       </div>`; }).join('') || `<div class="empty">${icon('pin')}<b>${t('adm.noOffices')}</b></div>`}</div>`;
 }

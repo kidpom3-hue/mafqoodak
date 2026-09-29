@@ -3,10 +3,10 @@ import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPl
 import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard } from '../state.js';
-import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN } from './common.js';
+import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
-import { claimCardStaff, rivals, dateOf, qaBox, timeline, catKeepNote } from './staff.js';
-import { aiReady } from '../ai.js';
+import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
+import { aiReady } from '../firebase.js';
 import { hydrate } from '../ui.js';
 import { msgOf } from '../notify.js';
 
@@ -112,6 +112,9 @@ export function vItem(){
   const c = cat(i.cat); const o = S.offices.find(x => x.id === i.officeId) || curOffice();
   // الموظف يرى التفاصيل السرية (full)، والزائر يرى الإعلان العام فقط
   const staffMode = staffView(); const f = staffMode ? full(i) : i;
+  // H8: أدوات الموظف (بطاقة الطلب، السجل…) في staff.js تُحمَّل عند الحاجة؛ حتى تصل يظهر مؤشر التحميل
+  const SM = staffMode ? need('staff') : null;
+  if (staffMode && !SM) return loadingHtml();
   const keepDays = keepDaysOf(i.cat, o) - daysAgo(i.foundDate);   // مدة التصنيف إن كانت أقصر من مدة المكتب
   const mine = S.myClaims.find(cl => cl.itemId === i.id);   // طلب سابق (بأي حالة)
   const claimBtn = S.uid ? `<button class="btn block" data-act="goClaim" data-id="${esc(i.id)}">${icon('shield')}${t('it.claim')}</button>
@@ -126,8 +129,8 @@ export function vItem(){
         <button class="btn ghost" data-act="labels" data-ids="${esc(i.id)}">${icon('qr')}${t('lb.one')}</button>
         <button class="btn danger" data-act="delItem" data-id="${esc(i.id)}">${icon('trash')}${t('c.delete')}</button>
       </div>
-      ${rivals(i).length ? `<div class="note warn">${icon('info')}<span>${t('it.rival')}</span></div>` : ''}
-      ${cls.length ? `<div class="section-title">${t('it.claims')}</div><div class="list">${cls.map(c => claimCardStaff(c, {open: true})).join('')}</div>` : ''}`;
+      ${SM.rivals(i).length ? `<div class="note warn">${icon('info')}<span>${t('it.rival')}</span></div>` : ''}
+      ${cls.length ? `<div class="section-title">${t('it.claims')}</div><div class="list">${cls.map(c => SM.claimCardStaff(c, {open: true})).join('')}</div>` : ''}`;
   } else if (i.status === 'disposed'){
     actions = `<div class="note">${icon('clock')}<span>${t('it.disposed')}</span></div>`;
   } else if (mine && ['expired', 'cancelled'].includes(mine.status)){
@@ -173,14 +176,14 @@ export function vItem(){
           ${i.status === 'disposed' && i.disposal ? `<dt>${t('a.method')}</dt><dd>${disposalLabel(i.disposal)}${i.disposedAt ? ` <span class="muted">(${fmtDate(isoDay(i.disposedAt))})</span>` : ''}</dd>` : ''}
           ${staffMode && f.disposalNote ? `<dt>${t('it.disposalNote')}</dt><dd>${esc(f.disposalNote)}</dd>` : ''}
           ${staffMode && f.handoverNote ? `<dt>${t('it.handoverNote')}</dt><dd>${esc(noteText(f.handoverNote))}</dd>` : ''}
-          ${i.status === 'available' || i.status === 'reserved' ? `<dt>${t('setup.keep')}</dt><dd>${keepDays > 0 ? t('it.keepLeft', {days: daysWord(keepDays, true)}) : `<span class="flag">${t('it.keepOver')}</span>`}${staffMode && catKeepNote(i) ? ` <span class="muted">(${catKeepNote(i)})</span>` : ''}</dd>` : ''}
+          ${i.status === 'available' || i.status === 'reserved' ? `<dt>${t('setup.keep')}</dt><dd>${keepDays > 0 ? t('it.keepLeft', {days: daysWord(keepDays, true)}) : `<span class="flag">${t('it.keepOver')}</span>`}${staffMode && SM.catKeepNote(i) ? ` <span class="muted">(${SM.catKeepNote(i)})</span>` : ''}</dd>` : ''}
           ${staffMode && f.finderNote ? `<dt>${t('if.finder')}</dt><dd>${esc(f.finderNote)}</dd>` : ''}
         </dl>
         ${actions}
         <button class="btn ghost" data-act="share" data-id="${esc(i.id)}">${icon('share')}${t('it.share')}</button>
       </div>
     </div>
-    ${staffMode ? timeline(i) : ''}
+    ${staffMode ? SM.timeline(i) : ''}
     ${o ? `<div class="panel"><div class="section-title">${icon('building')}${t('it.whereCollect')}</div>
       <dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl></div>` : ''}
   </div>`;

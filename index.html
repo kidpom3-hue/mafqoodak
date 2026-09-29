@@ -55,28 +55,19 @@
   <link rel="modulepreload" href="js/config.js">
   <link rel="modulepreload" href="js/i18n.js">
   <link rel="modulepreload" href="js/i18n/ar.js">
-  <link rel="modulepreload" href="js/i18n/en.js">
   <link rel="modulepreload" href="js/constants.js">
   <link rel="modulepreload" href="js/utils.js">
   <link rel="modulepreload" href="js/workflow.js">
-  <link rel="modulepreload" href="js/migrate.js">
-  <link rel="modulepreload" href="js/ai.js">
   <link rel="modulepreload" href="js/notify.js">
+  <link rel="modulepreload" href="js/lazy.js">
+  <!-- H8: ملفات الموظف والإدارة والإحصاءات والطباعة والخدمات وQR والذكاء الاصطناعي والأمثلة والقاموس الإنجليزي
+       لا تُحمَّل هنا: يحمّلها js/lazy.js عند الحاجة فقط (وsw.js يحفظها كلها للعمل دون اتصال) -->
   <link rel="modulepreload" href="js/theme.js">
-  <link rel="modulepreload" href="js/stats.js">
-  <link rel="modulepreload" href="js/qr.js">
-  <link rel="modulepreload" href="js/sample-data.js">
   <link rel="modulepreload" href="js/views/common.js">
   <link rel="modulepreload" href="js/views/home.js">
   <link rel="modulepreload" href="js/views/visitor.js">
-  <link rel="modulepreload" href="js/views/staff.js">
-  <link rel="modulepreload" href="js/views/admin.js">
   <link rel="modulepreload" href="js/views/auth.js">
   <link rel="modulepreload" href="js/views/privacy.js">
-  <link rel="modulepreload" href="js/views/print.js">
-  <link rel="modulepreload" href="js/views/stats.js">
-  <link rel="modulepreload" href="js/views/audit.js">
-  <link rel="modulepreload" href="js/views/gov.js">
   <!-- المظهر واللغة المحفوظان على الجهاز يُطبَّقان قبل رسم الصفحة، حتى لا يومض المظهر أو الاتجاه الآخر -->
   <script>try{var h=document.documentElement,s=localStorage,t=JSON.parse(s.getItem('mfq:theme')||'null'),l=JSON.parse(s.getItem('mfq:lang')||'null'),x=JSON.parse(s.getItem('mfq:text')||'null');if(t==='light'||t==='dark')h.setAttribute('data-theme',t);if(l==='en'){h.lang='en';h.dir='ltr'}if(x==='l'||x==='xl')h.setAttribute('data-text',x)}catch(e){}</script>
 </head>
@@ -90,7 +81,8 @@
     <div id="sheet" hidden></div>
     <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   </div>
-  <noscript><div class="noscript">يحتاج تطبيق مفقودك إلى تفعيل JavaScript في المتصفح.</div></noscript>
+  <!-- H8: الرسالة باللغتين (لا يعمل سكربت اختيار اللغة دون JavaScript) -->
+  <noscript><div class="noscript"><p lang="ar" dir="rtl">يحتاج تطبيق مفقودك إلى تفعيل JavaScript في المتصفح.</p><p lang="en" dir="ltr">Mafqoodak needs JavaScript to be enabled in your browser.</p></div></noscript>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

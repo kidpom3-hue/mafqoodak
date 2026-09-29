@@ -983,3 +983,6 @@ label.check, .box-head, .box-head b{min-width:0;overflow-wrap:anywhere}
 .box-head > *{min-width:0}
 .labels .lb-ref{white-space:normal}
 .box-head{flex-wrap:wrap}
+/* H8: مكان رمز QR في التذييل محجوز بحجمه حتى يصل qr.js (فلا تقفز الصفحة) */
+.sf-qr .qr-slot{display:block;width:84px;height:84px;background:var(--qr-bg);border-radius:8px}
+.sf-qr .qr-slot svg{display:block}

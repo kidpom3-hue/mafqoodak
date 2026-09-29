@@ -30,6 +30,8 @@ export const appCheck = (() => {
     return initializeAppCheck(app, {provider: new ReCaptchaV3Provider(c.siteKey), isTokenAutoRefreshEnabled: true});
   } catch (e){ console.warn(e); return null; }
 })();
+// H8: هل الذكاء الاصطناعي مفعّل؟ (هنا لا في ai.js، حتى لا يُحمَّل ai.js إلا عند استخدامه)
+export const aiReady = () => !!(SETTINGS.enableAI && app);
 export const auth = app ? getAuth(app) : null;
 if (auth) auth.languageCode = LANG;   // لغة رسائل Firebase تتبع لغة الواجهة
 

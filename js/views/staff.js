@@ -3,7 +3,8 @@ import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STA
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew } from '../state.js';
-import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN } from './common.js';
+import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, qaBox, dateOf } from './common.js';
+export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
 
@@ -33,8 +34,6 @@ export const catKeepNote = i => { const d = keepDaysOf(i.cat, curOffice()); retu
 export const rivals = i => i?.status === 'reserved' ? S.claims.filter(c => c.itemId === i.id && c.status === 'pending' && c.id !== i.reservedFor) : [];
 // انتهت مهلة الاستلام للطلب المقبول؟
 export const pickupOver = c => c.status === 'approved' && c.pickupBy && Date.now() > c.pickupBy;
-const dateOf = ms => fmtDate(isoDay(ms));
-export { dateOf };
 
 export function updateStaff(){
   const it = S.items;
@@ -215,14 +214,6 @@ function claimCompare(c, f){
   </div>`;
 }
 // سؤال التحقق وإجابته (للموظف ولصاحب الطلب)
-export function qaBox(c){
-  if (!c.question) return '';
-  const ok = answered(c);
-  return `<div class="qa">
-    <div class="qa-q">${icon('question')}<span><b>${t('qa.q')}</b> ${esc(c.question)}</span></div>
-    <div class="qa-a">${ok ? `<b>${t('qa.a')}</b> ${esc(c.answer)}` : `<span class="muted">${t(c.status === 'pending' ? 'qa.waiting' : 'qa.none')}</span>`}</div>
-  </div>`;
-}
 // مدة بالساعات أو الأيام (للموظف: منذ متى ينتظر الطلب، وكم بقي على مهلة الحضور)
 const durText = ms => ms < 36e5 ? t('n.lessHour') : ms < 864e5 ? tp('n.hours', Math.round(ms / 36e5)) : tp('n.days', Math.round(ms / 864e5));
 export function claimCardStaff(c, opts){
