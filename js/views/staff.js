@@ -2,7 +2,7 @@
 import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, isHighValue } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist } from '../state.js';
+import { S, curOffice, item, full, staffCands, strongFor, secretHit, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist } from '../state.js';
 import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
@@ -366,15 +366,17 @@ export function staffReports(){
   // البلاغات القديمة (أكثر من 60 يوماً دون تجديد) مخفية افتراضياً
   const open = S.reports.filter(r => r.status === 'open'), old = open.filter(isStale);
   const rs = open.filter(r => S.showStale || !isStale(r)).sort(byLast);
-  const picked = rs.filter(r => r.staffPick), rest = rs.filter(r => !r.staffPick);
+  // H10: «مرشّح محتمل» = بلا ترشيح وأفضل مرشّح له يطابق تفصيلاً سرياً (المبلغ، آخر 4 أرقام، الماركة، المكان…)
+  const picked = rs.filter(r => r.staffPick), likely = rs.filter(r => !r.staffPick && strongFor(r)), rest = rs.filter(r => !r.staffPick && !likely.includes(r));
   const oldBtn = old.length ? `<div class="btn-row"><button class="btn sm ghost" data-act="toggleStale" aria-pressed="${S.showStale}">${icon('clock')}${t(S.showStale ? 'st.hideOld' : 'st.showOld', {n: old.length})}</button></div>` : '';
   // أول بلاغ له مرشّحون ولم يُرشَّح له بعد يُفتح تلقائياً (يحتاج قراراً)
-  const first = rest.find(r => candidatesFor(r, 1, full).length)?.id;
+  const first = likely[0]?.id || rest.find(r => staffCands(r, 1).length)?.id;
   const closed = S.closedReps ? S.closedReps.slice().sort(byLast).slice(0, 50) : null;
   const fresh = new Set(staffKeys().map(x => x.card));
-  const defs = [['picked', picked.length], ['open', rest.length], ['closed', closed ? closed.length : null]];
+  const defs = [['picked', picked.length], ['likely', likely.length], ['open', rest.length], ['closed', closed ? closed.length : null]];
   const cur = subTab('reports', defs);
   const body = cur === 'picked' ? (picked.length ? `<div class="list">${picked.map(r => reportCardStaff(r, false, fresh.has('sr:' + r.id))).join('')}</div>` : `<p class="muted">${t('st.noPicked')}</p>`)
+    : cur === 'likely' ? (likely.length ? `<p class="muted">${t('st.likelyHint')}</p><div class="list">${likely.map(r => reportCardStaff(r, r.id === first, fresh.has('sr:' + r.id))).join('')}</div>` : `<p class="muted">${t('st.noLikely')}</p>`)
     : cur === 'open' ? `${oldBtn}${rest.length ? `<div class="list">${rest.map(r => reportCardStaff(r, r.id === first, fresh.has('sr:' + r.id))).join('')}</div>` : `<p class="muted">${t('st.noReports')}</p>`}`
     : closed === null ? `<button class="btn sm ghost" data-act="closedReps">${icon('clock')}${t('st.rShowClosed')}</button>`
     : closed.length ? `<div class="list">${closed.map(r => reportCardStaff(r)).join('')}</div>` : `<p class="muted">${t('c.none')}</p>`;
@@ -384,7 +386,8 @@ export function staffReports(){
 function reportCardStaff(r, open, fresh){
   const isOpen = r.status === 'open';
   // الموظف يقارن بالتفاصيل السرية أيضاً، والأغراض التي قال عنها صاحب البلاغ «ليس غرضي» لا تُرشَّح له من جديد (G5)
-  const cands = isOpen ? candidatesFor(r, 3, full) : [];
+  // H10: في التصنيفات بلا اقتراح آلي (نقود، بطاقات…) لا يظهر إلا من طابق تفصيلاً سرياً؛ والمطابق يحمل شارة «تفصيل سري مطابق»
+  const cands = isOpen ? staffCands(r, 3) : [];
   const refs = [...rejectedOf(r)].map(id => { const it = item(id); if (!it) ensureItem(id); return it?.ref || ''; }).filter(Boolean);
   const pickRef = r.staffPick ? (item(r.staffPick)?.ref || '') : '';
   const next = !isOpen ? t('st.rNextClosed', {when: when(r.closedAt || r.createdAt)})
@@ -398,7 +401,8 @@ function reportCardStaff(r, open, fresh){
       ${refs.length ? `<div class="note warn">${icon('x')}<span>${t('st.rejectedBy', {refs: refs.map(x => `<b dir="ltr">${esc(x)}</b>`).join(t('c.listSep'))})}</span></div>` : ''}
       ${isOpen ? acceptBtn(r) : ''}
       ${!isOpen ? '' : cands.length ? `<span class="label">${t('st.cands')}</span><div class="list">${cands.map(({i, s}) => `<div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
-        ${r.staffPick === i.id ? `<span class="pill ok">${icon('check')}${t('st.picked')}</span>` : `<button class="btn sm soft" data-act="pickFor" data-r="${esc(r.id)}" data-i="${esc(i.id)}">${t('st.pick')}</button>`}</div>`).join('')}</div>`
+        ${r.staffPick === i.id ? `<span class="pill ok">${icon('check')}${t('st.picked')}</span>` : `<button class="btn sm soft" data-act="pickFor" data-r="${esc(r.id)}" data-i="${esc(i.id)}">${t('st.pick')}</button>`}</div>
+        ${secretHit(r, i) ? `<span class="meta hit-line">${icon('lock')}${t('st.secretHit')}</span>` : ''}`).join('')}</div>`
         : `<p class="muted">${t('st.noCands')}</p>`}`});
 }
 

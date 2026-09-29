@@ -3,7 +3,7 @@ import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, 
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard } from './state.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
@@ -134,14 +134,14 @@ async function aiSuggest(form, blob){
 // علامة «اقتراح» بجانب عنوان الخانة، وعلى عنوان القسم المطوي الذي فيه (إن وُجد). تزول حين يغيّرها الموظف
 function markSugg(form, el){
   const field = el.closest('.field'); const lab = field?.querySelector(':scope > .label, :scope > label');
-  if (lab && !lab.querySelector('.sugg')) lab.insertAdjacentHTML('beforeend', ` <span class="sugg">${t('if.sugg')}</span>`);
+  if (lab && !lab.querySelector('.sugg-tag')) lab.insertAdjacentHTML('beforeend', ` <span class="sugg-tag">${t('if.sugg')}</span>`);
   const sum = el.closest('details')?.querySelector(':scope > summary > span');
-  if (sum && !sum.querySelector('.sugg')) sum.insertAdjacentHTML('beforeend', ` <span class="sugg">${t('if.sugg')}</span>`);
+  if (sum && !sum.querySelector('.sugg-tag')) sum.insertAdjacentHTML('beforeend', ` <span class="sugg-tag">${t('if.sugg')}</span>`);
 }
 function unSugg(form, el){
   form.touched ||= new Set(); form.touched.add(el.name);
-  el.closest('.field')?.querySelector('.sugg')?.remove();
-  if (el.name === 'cat') form.querySelector('#subs-field .sugg')?.remove();
+  el.closest('.field')?.querySelector('.sugg-tag')?.remove();
+  if (el.name === 'cat') form.querySelector('#subs-field .sugg-tag')?.remove();
 }
 
 /* إجابات أسئلة التصنيف من النموذج: القيم غير الفارغة فقط (مُطبَّعة كما تُحفظ)، وأول سؤال إجباري ناقص.
@@ -423,6 +423,12 @@ async function submitForm(form){
       status: existing?.status || 'available', createdBy: existing?.createdBy || S.uid, createdAt: existing?.createdAt || Date.now(), updatedAt: Date.now(),
       sample: !!existing?.sample,
     };
+    /* H10: اللون العام (pubColor) للاقتراح الآلي «قد يكون لك»: فقط حين تظهر الصورة للعامة (واضحة أو مموّهة، والتمويه يُبقي اللون)،
+       فهو ظاهر أصلاً ولا يُعدّ دليل ملكية. بلا صورة عامة يبقى اللون سرياً في itemSecrets فقط.
+       مع صورة جديدة يُضاف بعد حفظ الصورة العامة (مع photo)، حتى لا يظهر لون بلا صورة إن فشل رفعها */
+    const colorOk = claimOf(catId).fields.includes('color') && COLORS.some(c => c.id === val('color'));
+    const pubColor = colorOk && (mode === 'clear' || mode === 'blur') ? val('color') : '';
+    if (pubColor && photo && !redo) data.pubColor = pubColor;
     if (fromReport) data.fromReport = fromReport;   // ربط الغرض بالبلاغ الذي قُبل
     if (fromFound) data.fromFound = fromFound;      // ربط الغرض بإشعار التسليم
     // التعديل يعيد كتابة المستند كاملاً: نحافظ على الحقول التي لا يعرضها النموذج
@@ -458,7 +464,7 @@ async function submitForm(form){
         const saved = pub ? await write(() => dbx.set('itemPhotos/' + id, {data: pub}))
           : mode === 'none' ? await write(() => dbx.del('itemPhotos/' + id)) : false;
         cachePhoto(id, pub);
-        if (saved) await write(() => dbx.update('items/' + id, {photo: mode}));
+        if (saved) await write(() => dbx.update('items/' + id, {photo: mode, ...(pubColor && pub ? {pubColor} : {})}));
       }
     }
     busy(form, false);
@@ -898,7 +904,7 @@ const ACT = {
   closeReport(el){
     const r = S.myReports.find(x => x.id === el.dataset.id); if (!r) return;
     const pickOn = !!pickOf(r);
-    const warn = pickOn || maybeFor(r, 1).length ? `<div class="note warn">${icon('info')}<span>${t('rc.closeWarn')}</span></div>` : '';
+    const warn = pickOn || suggestFor(r) ? `<div class="note warn">${icon('info')}<span>${t('rc.closeWarn')}</span></div>` : '';
     PENDING_CONFIRM = () => write(() => dbx.update('reports/' + r.id, {status: 'closed', closedAt: Date.now(), closedReason: 'self'}), t('a.reportClosed'));
     openSheet(`<h2>${t('rc.closeQ')}</h2><p class="muted">${t('rc.closeBody')}</p>${warn}
       <div class="btn-row"><button class="btn" data-act="confirmYes">${icon('check')}${t('rc.foundIt')}</button><button class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>`);
