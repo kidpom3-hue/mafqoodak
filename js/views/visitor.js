@@ -2,7 +2,7 @@
 import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard } from '../state.js';
+import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard } from '../state.js';
 import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
@@ -311,7 +311,7 @@ export function reportNeed(r){
   if (r.status !== 'open') return '';
   const active = linkedClaim(r);
   if (isStale(r) && !active) return 'stale';
-  if (!active && (pickOf(r) || maybeFor(r, 1).length)) return 'sugg';
+  if (!active && (pickOf(r) || suggestFor(r))) return 'sugg';
   return '';
 }
 const CLAIM_DONE = ['done', 'rejected', 'expired', 'cancelled'];
@@ -322,7 +322,7 @@ function attKey(n, x){
   if (n === 'code') return `code:${x.id}:${x.decidedAt || 0}`;
   if (n === 'answer') return `answer:${x.id}:${x.askedAt || 0}`;
   if (n === 'rate') return `rate:${x.id}`;
-  if (n === 'sugg') return `sugg:${x.id}:${pickOf(x)?.id || ''}:${maybeFor(x, 1)[0]?.id || ''}`;
+  if (n === 'sugg') return `sugg:${x.id}:${pickOf(x)?.id || ''}:${suggestFor(x)?.id || ''}`;
   return `stale:${x.id}:${x.renewedAt || x.createdAt || 0}`;
 }
 function attentionBox(cls, reps){
@@ -461,8 +461,8 @@ function rateBox(c){
 export function reportCardMine(r, focus){
   // ترشيح الموظف يظهر فقط ما دام الغرض متاحاً أو محجوزاً (لا بعد تسليمه لغيرك)، ولم يقل صاحب البلاغ «ليس غرضي»
   const pick = r.status === 'open' ? pickOf(r) : null;
-  // «قد يكون لك»: مطابقة صارمة بالبيانات العامة، بلا نسب مئوية، وبلا ما رفضه صاحب البلاغ (G5)
-  const cands = r.status === 'open' ? maybeFor(r, 4) : [];
+  // «قد يكون لك» (H10): اقتراح آلي واحد في كل مرة بدليل عام، ولا شيء منه مع ترشيح موظف نشط
+  const auto = r.status === 'open' ? suggestFor(r) : null;
   const no = rejectedOf(r);
   const ai = r.ai?.matches || [];
   // طلب استلام نشط مرتبط بالبلاغ: لا زر إغلاق، بل متابعة الطلب (إن رُفض يعود البلاغ كما كان)
@@ -488,8 +488,7 @@ export function reportCardMine(r, focus){
     : r.status === 'open' ? `
       ${claimNote}
       ${pickBox}
-      ${cands.length ? `<span class="label">${t('rc.maybe')}</span><div class="list">${cands.map(i => sugg(i)).join('')}</div>
-        <p class="hint">${t('rc.maybeHint')}</p>`
+      ${auto ? `<div class="pick-box maybe-box"><span class="t">${icon('search')}${t('rc.maybe')}</span>${sugg(auto)}<p class="hint">${t('rc.maybeHint')}</p></div>`
         : !pick && !active ? `<div class="note">${icon('clock')}<span>${t('rc.none')}</span></div>` : ''}
       ${ai.length ? `<span class="label">${icon('spark')} ${t('rc.ai')}</span><div class="list">${ai.map(m => { const it = item(m.id); return it && ACTIVE.includes(it.status) && !no.has(it.id) ? `<div>${miniItem(it)}<div class="reason">${esc(m.reason || '')}</div></div>` : ''; }).join('')}</div>`
         : r.ai ? `<div class="note">${icon('spark')}<span>${t('rc.aiNone', {when: relTime(r.ai.at)})}</span></div>` : ''}

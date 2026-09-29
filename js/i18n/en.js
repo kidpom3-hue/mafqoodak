@@ -511,7 +511,7 @@ export const EN = {
   "faq.a7": "Tap your account picture at the top of the screen and choose \"Delete my account\". Your data, reports and account are permanently deleted. Details are in the privacy policy & terms.",
   "rc.staffPick": "Office staff think this could be yours",
   "rc.maybe": "Could be yours",
-  "rc.maybeHint": "Same category, found close to when you lost yours. Open it and claim it if it's yours.",
+  "rc.maybeHint": "Automatic suggestion: same category, found close to when you lost yours, with a shared sign (such as the colour visible in its photo). We show one suggestion at a time; the next appears after you reply or after 7 days.",
   "rc.none": "Nothing similar yet. Any similar item will show up here as soon as the office logs it.",
   "rc.ai": "AI suggestions",
   "rc.aiNone": "AI found no match {when}.",
@@ -1343,4 +1343,9 @@ export const EN = {
   "sx.secUnit": "seconds",
   "sx.addNone": "Not measured yet",
   "n.addCount": {one: "from 1 addition", other: "from {n} additions"},
+  // H10: smarter suggestions
+  "st.sub.likely": "Likely",
+  "st.likelyHint": "Reports without a pick where an item in storage matches a secret detail (amount, last 4 digits, number of keys, brand…). Check, then pick.",
+  "st.noLikely": "No reports with a likely match.",
+  "st.secretHit": "Secret detail matches",
 };

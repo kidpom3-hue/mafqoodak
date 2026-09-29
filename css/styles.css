@@ -224,6 +224,11 @@ dl.facts dd{margin:0;font-weight:600;display:flex;align-items:center;gap:6px;fle
 .score{font-family:var(--f-mono);font-size:12px;font-weight:600;padding:2px 7px;border-radius:7px;background:var(--primary-soft);color:var(--primary);direction:ltr;white-space:nowrap}
 .pick-box{border:1.5px solid var(--primary);background:var(--primary-soft);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .pick-box .t{font-weight:700;color:var(--primary);display:flex;align-items:center;gap:6px;font-size:14px}
+/* H10: «قد يكون لك» بشكل «رشّح موظف المكتب» نفسه، لكن بحد رمادي وخلفية السطح (اقتراح آلي، لا ترشيح من إنسان) */
+.maybe-box{border-color:var(--line);background:var(--surface)}
+.maybe-box .t{color:var(--ink)}
+.maybe-box .hint{margin:0}
+.hit-line{color:var(--ok);font-weight:700;margin-top:-4px}
 .reason{font-size:12.5px;color:var(--muted)}
 .steps{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted);flex-wrap:wrap}
 .steps span{display:inline-flex;align-items:center;gap:5px}
@@ -1017,5 +1022,6 @@ label.check, .box-head, .box-head b{min-width:0;overflow-wrap:anywhere}
 .qp-none{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;border:1.5px dashed var(--line);border-radius:14px;padding:10px 12px;background:var(--surface)}
 .qp[data-ph=pick] :is(.qp-view,.qp-none),.qp[data-ph=view] :is(.qp-pick,.qp-none),.qp[data-ph=none] :is(.qp-pick,.qp-view){display:none}
 .all-cats{margin-top:8px}
-.sugg{display:inline-block;font-size:11px;font-weight:700;line-height:1.5;padding:0 8px;border-radius:999px;background:var(--primary-soft);color:var(--primary);margin-inline-start:6px;vertical-align:middle}
+/* H10: كان اسمها .sugg فتصادمت مع بطاقة «قد يكون لك» (خلفية خضراء دائرية خلفها) */
+.sugg-tag{display:inline-block;font-size:11px;font-weight:700;line-height:1.5;padding:0 8px;border-radius:999px;background:var(--primary-soft);color:var(--primary);margin-inline-start:6px;vertical-align:middle}
 

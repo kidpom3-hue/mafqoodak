@@ -1,8 +1,8 @@
 // حالة التطبيق والاشتراك في البيانات من Firestore
 import { auth, db, dbx, configured, onAuthStateChanged, getRedirectResult } from './firebase.js';
-import { LS, matchScore, toast, dayNum, subKey, setSpotHook } from './utils.js';
+import { LS, matchScore, toast, dayNum, subKey, setSpotHook, tokens, norm } from './utils.js';
 import { t, LANG, saved, setLang } from './i18n.js';
-import { oName, spotLabel } from './constants.js';
+import { oName, spotLabel, cat, catName, COLORS, autoSuggestOk, SUGG_STOP } from './constants.js';
 import { SETTINGS } from './config.js';
 
 // رابط مشاركة غرض: ./#item/<رقم المكتب>/<رقم الغرض> يفتح صفحة الغرض مباشرة
@@ -137,20 +137,80 @@ export function candidatesFor(r, n = 3, view = x => x){
     .sort((a, b) => b.s - a.s).slice(0, n);
 }
 
-/* «قد يكون لك» للزائر: مطابقة صارمة بالبيانات العامة فقط، بلا نسب مئوية
-   التصنيف نفسه، والنوع نفسه إن حدّده البلاغ، وعُثر عليه بين يوم قبل الفقد و30 يوماً بعده */
+/* ---------- «قد يكون لك» للزائر (H10: أذكى وأقل إزعاجاً) ----------
+   بالبيانات العامة فقط، بلا نسب مئوية. الشروط:
+   - التصنيف يسمح بالاقتراح الآلي (autoSuggest، لا نقود ولا بطاقات ولا محافظ ولا مفاتيح ولا جوالات ولا مجوهرات)،
+     والنوع نفسه إن حدّده البلاغ، وعُثر عليه بين يوم قبل الفقد و14 يوماً بعده؛
+   - ودليل عام واحد على الأقل (publicClues): لون البلاغ = لون الغرض الظاهر في صورته العامة (pubColor)،
+     أو كلمة مميزة مشتركة بين عنوان البلاغ ووصفه والعنوان العام للغرض (بلا اسم التصنيف والنوع والألوان والكلمات العامة).
+   مكان العثور وماركة الغرض سريّان (هما من أسئلة إثبات الملكية)، فلا يُستعملان هنا */
+const SUGG_DAYS = 14;
+function distinct(text, catId){
+  const skip = new Set([...tokens(`${catName(catId)} ${cat(catId).name} ${cat(catId).en || ''} ${cat(catId).subs.join(' ')} ${(cat(catId).subsEn || []).join(' ')}`),
+    ...COLORS.flatMap(c => tokens(`${c.name} ${c.en} ${c.alt || ''} ${c.altEn || ''}`))]);
+  return new Set(tokens(text).filter(w => w.length >= 3 && !skip.has(w) && !SUGG_STOP.has(w) && !/^\d+$/.test(w)));
+}
+export function publicClues(r, i){
+  let n = 0;
+  if (r.color && i.pubColor && r.color === i.pubColor) n++;
+  const a = distinct(`${r.title || ''} ${r.desc || ''}`, r.cat), b = distinct(i.title || '', i.cat);
+  for (const w of a) if (b.has(w)){ n++; break; }
+  return n;
+}
 export function mayBeYours(r, i){
-  if (!r || !i || r.cat !== i.cat || r.officeId !== i.officeId) return false;
+  if (!r || !i || r.cat !== i.cat || r.officeId !== i.officeId || !autoSuggestOk(r.cat)) return false;
   if (r.sub && subKey(i.sub) !== subKey(r.sub)) return false;
   const d = dayNum(i.foundDate) - dayNum(r.lostDate);
-  return !isNaN(d) ? d >= -1 && d <= 30 : true;
+  if (!isNaN(d) && (d < -1 || d > SUGG_DAYS)) return false;
+  return publicClues(r, i) > 0;
 }
-// بلا ما رفضه صاحب البلاغ، وبلا ترشيح الموظف (له صندوقه الخاص)
-export const maybeFor = (r, n = 4) => { const no = rejectedOf(r); return S.items.filter(i => ACTIVE.includes(i.status) && mayBeYours(r, i) && !no.has(i.id) && i.id !== r.staffPick)
-  .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, n); };
+// ترشيح موظف نشط (أو غرضه ما زال يُحمَّل): يُخفي الاقتراحات الآلية لهذا البلاغ تماماً
+const pickActive = r => { if (!r?.staffPick || rejectedOf(r).has(r.staffPick)) return false; const i = item(r.staffPick); return !i || ACTIVE.includes(i.status); };
+/* المرشحون الآليون مرتّبين: الأبعد شبهاً بما رُفض أولاً (نفس التصنيف والنوع ويوم العثور = أولوية أقل)، ثم الأكثر أدلة، ثم الأحدث */
+function autoRanked(r){
+  const no = rejectedOf(r);
+  const rej = [...no].map(id => item(id)).filter(Boolean);
+  const like = i => rej.some(x => x.cat === i.cat && subKey(x.sub) === subKey(i.sub) && x.foundDate === i.foundDate) ? 1 : 0;
+  return S.items.filter(i => ACTIVE.includes(i.status) && !no.has(i.id) && i.id !== r.staffPick && mayBeYours(r, i))
+    .map(i => ({i, like: like(i), n: publicClues(r, i)}))
+    .sort((a, b) => a.like - b.like || b.n - a.n || (b.i.createdAt || 0) - (a.i.createdAt || 0)).map(x => x.i);
+}
+/* اقتراح واحد في كل مرة: يبقى الاقتراح الحالي حتى يردّ عليه صاحب البلاغ («ليس غرضي» أو «هذا غرضي» فيصير له طلب)
+   أو تمضي 7 أيام، ثم يظهر التالي. الحالي محفوظ على الجهاز: LS «suggHold» = {reportId: {id, at}} */
+const HOLD_MS = 7 * 864e5;
+export function suggestFor(r){
+  if (!r || r.status !== 'open' || isStale(r) || pickActive(r)) return null;
+  const list = autoRanked(r); if (!list.length) return null;
+  const hold = LS.get('suggHold', {}), h = hold[r.id], cur = h && list.find(i => i.id === h.id);
+  let pick = cur;
+  if (!cur || Date.now() - h.at >= HOLD_MS) pick = (cur && list.find(i => i.id !== cur.id)) || list[0];
+  if (!cur || pick.id !== cur.id){ hold[r.id] = {id: pick.id, at: Date.now()}; LS.set('suggHold', hold); }
+  return pick;
+}
+/* مفتاح تنبيه الاقتراح الآلي: يتغيّر فقط حين يتغيّر «أفضل اقتراح واحد»، وتنبيه آلي واحد على الأكثر لكل بلاغ كل 24 ساعة
+   (قبل مرور 24 ساعة يبقى المفتاح السابق، وهو مقروء، فلا تنبيه جديد). LS «suggAlert» = {reportId: {id, at}} */
+const ALERT_GAP = 864e5;
+function suggAlertKey(r, m){
+  const all = LS.get('suggAlert', {}), last = all[r.id];
+  if (last && last.id !== m.id && Date.now() - last.at < ALERT_GAP) return `m:${r.id}:${last.id}`;
+  if (!last || last.id !== m.id){ all[r.id] = {id: m.id, at: Date.now()}; LS.set('suggAlert', all); }
+  return `m:${r.id}:${m.id}`;
+}
 
-/* تنبيهات الزائر: ترشيح الموظف، وتغيّر حالة الطلب، وأحدث غرض مشابه لكل بلاغ
-   (المفتاح فيه رقم الغرض، فكل غرض مشابه جديد تنبيه جديد، وما رُفض بـ«ليس غرضي» لا ينبّه) */
+/* ---------- الموظف: مرشّح قوي (H10) ----------
+   تطابق تفصيل سري واحد على الأقل بين البلاغ والغرض (full): إجابة سؤال التصنيف نفسها (المبلغ، آخر 4 أرقام، عدد المفاتيح…)،
+   أو الماركة نفسها. (مكان العثور لا يكفي وحده: أغراض كثيرة تُوجد في المكان نفسه كالمكتبة) */
+export function secretHit(r, fi){
+  const a = r?.details || {}, b = fi?.details || {};
+  if (Object.keys(a).some(k => a[k] && b[k] && norm(String(a[k])) === norm(String(b[k])))) return true;
+  return !!(r?.brand && fi?.brand && norm(r.brand) === norm(fi.brand));
+}
+// مرشّحو الموظف: في التصنيفات بلا اقتراح آلي لا يظهر إلا ما طابق تفصيلاً سرياً
+export const staffCands = (r, n = 3) => candidatesFor(r, 10, full).filter(x => autoSuggestOk(r.cat) || secretHit(r, x.i)).slice(0, n);
+// «مرشّح محتمل»: بلاغ مفتوح بلا ترشيح، وأفضل مرشّح له (≥ MATCH_MIN) يطابق تفصيلاً سرياً
+export const strongFor = r => r?.status === 'open' && !isStale(r) && !r.staffPick ? staffCands(r, 10).find(x => secretHit(r, x.i)) || null : null;
+
+/* تنبيهات الزائر: ترشيح الموظف، وتغيّر حالة الطلب، والاقتراح الآلي الحالي لكل بلاغ (H10: يتغيّر مفتاحه مع الاقتراح الحالي فقط) */
 export function alertKeys(){
   const keys = [];
   for (const r of myReports()){
@@ -159,8 +219,9 @@ export function alertKeys(){
     // ترشيح الموظف ينبّه فقط ما دام الغرض متاحاً أو محجوزاً
     const pi = pickOf(r);
     if (pi) keys.push(`p:${r.id}:${pi.id}`);
-    const m = maybeFor(r, 1)[0];
-    if (m) keys.push(`m:${r.id}:${m.id}`);
+    // الاقتراح الآلي: مفتاح يتغيّر مع «أفضل اقتراح واحد» فقط، ولا أكثر من تنبيه آلي كل 24 ساعة (ترشيح الموظف مستثنى)
+    const m = suggestFor(r);
+    if (m) keys.push(suggAlertKey(r, m));
   }
   for (const c of myClaims()){
     if (['approved', 'rejected', 'expired', 'cancelled'].includes(c.status)) keys.push(`c:${c.id}:${c.status}`);
@@ -190,7 +251,7 @@ export function markSeenKeys(keys){
 }
 /* H5: أحداث الموظف الجديدة (مستقلة عن تنبيهات الزائر). كل حدث: k = المفتاح، sub = التبويب الفرعي، card = البطاقة، at = وقته.
    «قراري»: nc = طلب استلام جديد، na = إجابة جديدة عن سؤال التحقق.  «قادمة»: nf = إشعار تسليم جديد.
-   «مفتوحة»: nr = بلاغ جديد، re = تعديل صاحب البلاغ.  «لها مرشّح»: pr = ردّ صاحب البلاغ على الترشيح
+   «مفتوحة»: nr = بلاغ جديد، re = تعديل صاحب البلاغ.  «مرشّح محتمل» (H10): nm = مرشّح قوي جديد (تطابق تفصيل سري).  «لها مرشّح»: pr = ردّ صاحب البلاغ على الترشيح
    («ليس غرضي» أو طلب استلام الغرض المرشّح). مجرد وجود ترشيح بانتظار الرد ليس حدثاً.
    المقروء في localStorage «staffSeen» = {since, keys}: since وقت أول استخدام، فالأحداث الأقدم منه لا تُعدّ جديدة
    (فلا تظهر كل البطاقات جديدة في أول مرة)، وkeys ما سُجّل مقروءاً بعد ذلك، فيبقى مقروءاً بعد تحديث الصفحة */
@@ -213,8 +274,11 @@ export function staffEvents(){
   for (const f of S.found) add('nf:' + f.id, 'claims:incoming', 'sf:' + f.id, f.createdAt);
   for (const r of S.reports){
     if (r.status !== 'open' || isStale(r)) continue;
-    const sub = r.staffPick ? 'reports:picked' : 'reports:open', card = 'sr:' + r.id;
+    // H10: بلاغ بلا ترشيح وله مرشّح قوي (تطابق تفصيل سري) = «مرشّح محتمل»، وكل مرشّح قوي جديد حدث جديد (nm)
+    const strong = strongFor(r);
+    const sub = r.staffPick ? 'reports:picked' : strong ? 'reports:likely' : 'reports:open', card = 'sr:' + r.id;
     if (!r.staffPick) add('nr:' + r.id, sub, card, r.createdAt);
+    if (strong) add(`nm:${r.id}:${strong.i.id}`, sub, card, strong.i.createdAt || null);
     if (r.editedAt) add(`re:${r.id}:${r.editedAt}`, sub, card, r.editedAt);
     if (!r.staffPick) continue;
     // ردّ صاحب البلاغ: «ليس غرضي» (لا وقت له، فيُعدّ جديداً حتى يُقرأ) أو طلب استلام للغرض المرشّح
