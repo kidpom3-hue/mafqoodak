@@ -3,7 +3,7 @@ import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, 
 import { t, tp, tAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
 import { loadStats, exportCsv } from './stats.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite } from './state.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion,
@@ -640,6 +640,12 @@ const ACT = {
     try { await sendPasswordResetEmail(auth, email); toast(t('a.resetSent')); }
     catch (e){ toast(authErr(e)); }
   },
+  // H4: زر «Aa» في الشريط العلوي: المظهر وحجم الخط (كانا في التذييل؛ وما زالا في قائمة الحساب أيضاً)
+  displaySheet(){
+    openSheet(`<h2>${t('ui.display')}</h2><div class="list">
+      <div class="opt-row"><span class="label">${icon('contrast')}${t('th.label')}</span>${themePicker()}</div>
+      <div class="opt-row"><span class="label">${icon('info')}${t('tx.label')}</span>${textPicker()}</div></div>`);
+  },
   account(){
     openSheet(`<div class="person" style="gap:12px">${safeAvatar(S.me?.photo) ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer" style="width:44px;height:44px">` : ''}<div><b>${esc(S.me?.name || '')}</b><div class="meta" dir="ltr">${esc(S.me?.email || '')}</div></div></div>
       <div class="list">
@@ -740,7 +746,20 @@ const ACT = {
     openCard('claims', 'c:' + el.dataset.id, ['done', 'rejected', 'expired', 'cancelled'].includes(c?.status));
   },
   /* «طلباتي» (PR 3): تبديل التبويب (يُحفظ على الجهاز)، و«افتح» في «يحتاج انتباهك» ينقل إلى البطاقة ويفتحها */
-  mineTab(el){ LS.set('mineTab', el.dataset.v); renderAll(); document.getElementById('mt-' + el.dataset.v)?.focus(); },
+  mineTab(el){
+    LS.set('mineTab', el.dataset.v);
+    // H4: النقر على التبويب يسجّل تنبيهاته مقروءة، فتختفي شارته الحمراء (وتبقى مختفية بعد التحديث)
+    markSeenKeys(unseenKeys().filter(k => keyTab(k) === el.dataset.v));
+    renderAll(); document.getElementById('mt-' + el.dataset.v)?.focus();
+  },
+  // «لاحقاً» في «يحتاج انتباهك»: تختفي المهمة حتى يتغير مفتاحها (حدث جديد)
+  // H4: تبويب فرعي للموظف (قراري/الحضور/قادمة/منتهية، ولها مرشّح/مفتوحة/مغلقة): النقر يسجّل جديده مقروءاً
+  staffSub(el){
+    const g = el.dataset.g, v = el.dataset.v; S.staffSub[g] = v;
+    markSeenKeys(staffKeys().filter(x => x.sub === g + ':' + v).map(x => x.k));
+    updateStaff(); renderNav(); document.getElementById(`st-${g}-${v}`)?.focus();
+  },
+  attLater(el){ LS.set('snoozed', [...new Set([...LS.get('snoozed', []), el.dataset.k])].slice(-200)); renderAll(); },
   openCard(el){ openCard(el.dataset.tab, el.dataset.card, el.dataset.ended === '1'); },
   fcat(el){ S.filter.cat = el.dataset.id; updateBrowse(); },
   catGo(el){ S.filter.cat = el.dataset.id; S.filter.q = ''; S.filter.status = 'available'; go('browse'); },
@@ -1034,6 +1053,9 @@ export function bindEvents(){
     else if (d.dataset.ended) ENDED_OPEN.set(d.dataset.ended, d.open);
   }, true);
   app.addEventListener('click', e => {
+    // H4: فتح بطاقة مختصرة بيد المستخدم يسجّل تنبيهاتها مقروءة (فيختفي حدّها الملوّن)
+    const sum = e.target.closest('details[data-card] > summary');
+    if (sum){ const d = sum.parentElement; setTimeout(() => { if (d.open) markSeenKeys(unseenFor(d.dataset.card)); }, 0); }
     const el = e.target.closest('[data-act]'); if (!el || !app.contains(el)) return;
     const fn = ACT[el.dataset.act]; if (!fn) return;
     if (el.tagName === 'A') e.preventDefault();

@@ -18,7 +18,8 @@ export const S = {
   configured,
   authReady: false, uid: null, me: null,
   isAdmin: false, adminLoaded: false,
-  rejecting: {},        // G5: «ليس غرضي» ينتظر انتهاء مهلة «تراجع» (5 ثوانٍ): {reportId: [itemId]}
+  rejecting: {},
+  staffSub: {},         // H4: التبويب الفرعي المختار للموظف: {claims: 'decide'|'come'|'incoming'|'ended', reports: 'picked'|'open'|'closed'}        // G5: «ليس غرضي» ينتظر انتهاء مهلة «تراجع» (5 ثوانٍ): {reportId: [itemId]}
   config: null, configLoaded: false,
   offices: [], officesLoaded: false,
   // items: الأغراض النشطة (متاح ومحجوز) فقط. البقية تُجلب عند الحاجة حفاظاً على حصة القراءة اليومية
@@ -177,6 +178,33 @@ export function alertKeys(){
   }
   return keys;
 }
+/* H4: التنبيهات غير المقروءة حسب تبويب «طلباتي» وبطاقته. مفاتيح alertKeys: c/q/d = طلب استلام، p/m/s = بلاغ، f = إشعار تسليم.
+   تُسجَّل مقروءة عند النقر على التبويب أو فتح البطاقة (markSeenKeys)، وتبقى كذلك بعد تحديث الصفحة (localStorage «seen») */
+const TAB_OF = {c: 'claims', q: 'claims', d: 'claims', p: 'reports', m: 'reports', s: 'reports', f: 'found'};
+export const keyTab = k => TAB_OF[String(k).split(':')[0]] || '';
+export const keyCard = k => { const tab = keyTab(k); return tab ? {claims: 'c:', reports: 'r:', found: 'f:'}[tab] + String(k).split(':')[1] : ''; };
+export function unseenKeys(){ const seen = new Set(LS.get('seen', [])); return alertKeys().filter(k => !seen.has(k)); }
+export function markSeenKeys(keys){
+  if (!keys?.length) return;
+  const all = new Set([...LS.get('seen', []), ...keys]); LS.set('seen', [...all].slice(-400)); changed();
+}
+/* H4: تنبيهات الموظف غير المقروءة (مفاتيح notify.js نفسها): «قراري» = طلب جديد sc وإجابة عن سؤال sa،
+   «قادمة» = إشعار تسليم sf، والبلاغات = sr لكل بلاغ مفتوح جديد. sub = التبويب الفرعي، card = مفتاح البطاقة */
+export function staffKeys(){
+  if (!isStaffHere()) return [];
+  const out = [];
+  for (const c of S.claims){
+    if (c.status !== 'pending' || c.uid === S.uid) continue;
+    out.push({k: 'sc:' + c.id, sub: 'claims:decide', card: 's:' + c.id});
+    if (answered(c)) out.push({k: `sa:${c.id}:${c.answeredAt}`, sub: 'claims:decide', card: 's:' + c.id});
+  }
+  for (const f of S.found) out.push({k: 'sf:' + f.id, sub: 'claims:incoming', card: 'sf:' + f.id});
+  for (const r of S.reports) if (r.status === 'open' && !isStale(r)) out.push({k: 'sr:' + r.id, sub: r.staffPick ? 'reports:picked' : 'reports:open', card: 'sr:' + r.id});
+  const seen = new Set(LS.get('seen', []));
+  return out.filter(x => !seen.has(x.k));
+}
+// كل التنبيهات غير المقروءة لبطاقة واحدة (للزائر وللموظف): تُسجَّل مقروءة عند فتحها
+export const unseenFor = card => [...unseenKeys().filter(k => keyCard(k) === card), ...staffKeys().filter(x => x.card === card).map(x => x.k)];
 export function unseenCount(){ const seen = new Set(LS.get('seen', [])); return alertKeys().filter(k => !seen.has(k)).length; }
 export function markSeen(){ const all = new Set([...LS.get('seen', []), ...alertKeys()]); LS.set('seen', [...all].slice(-400)); }
 
