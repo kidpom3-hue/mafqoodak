@@ -5,9 +5,9 @@ import { t, tp } from '../i18n.js';
 import { S, curOffice } from '../state.js';
 import { card, skelCards } from './visitor.js';
 import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt } from './common.js';
-import { qrSvg } from '../qr.js';
 import { APP_VERSION } from '../config.js';
-import { officeUrl } from './print.js';
+import { officeUrl } from './common.js';
+import { load } from '../lazy.js';   // H8: رمز QR في التذييل يُحمَّل بعد الرسم
 import { hydrate } from '../ui.js';
 
 const TAG_ART = `<svg class="tag-art" viewBox="0 0 220 240" aria-hidden="true">
@@ -90,6 +90,9 @@ export function updateHome(){
         : `<div class="empty">${icon('box')}<b>${t('home.empty')}</b><span>${t('home.emptySub')}</span></div>`;
     }
   }
+  // H8: رمز QR في التذييل يُرسم بعد تحميل qr.js (مكانه محجوز بالحجم نفسه فلا تقفز الصفحة)
+  const q = $('#sf-qr');
+  if (q && !q.firstChild) load('qr').then(m => { if (q.isConnected && !q.firstChild) q.innerHTML = m.qrSvg(q.dataset.url, {label: t('po.qrAria')}); }).catch(() => {});
   hydrate();
 }
 
@@ -103,7 +106,7 @@ function footer(o){
       <div class="sf-brand">
         <div class="sf-id">${LOGO}<b>${t('app.name')}</b></div>
         <p>${t('foot.tagline')}</p>
-        <div class="sf-qr">${qrSvg(officeUrl(o), {label: t('po.qrAria')})}<small>${t('foot.qr')}</small></div>
+        <div class="sf-qr"><span class="qr-slot" id="sf-qr" data-url="${esc(officeUrl(o))}"></span><small>${t('foot.qr')}</small></div>
       </div>
       <nav class="sf-col" aria-labelledby="sf-office">
         <h2 class="sf-h" id="sf-office">${t('foot.officeGroup')}</h2>

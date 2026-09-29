@@ -1,10 +1,10 @@
 // عناصر واجهة مشتركة بين الصفحات
 import { icon, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf } from '../constants.js';
 import { t, hasKey } from '../i18n.js';
-import { esc, relDay, colorDot, isBuilding, roomWord, spotText, showTitle, when } from '../utils.js';
-import { aiReady } from '../ai.js';
+import { esc, relDay, colorDot, isBuilding, roomWord, spotText, showTitle, when, fmtDate, isoDay } from '../utils.js';
+import { aiReady } from '../firebase.js';   // H8: ai.js يُحمَّل عند الحاجة فقط
 import { THEMES, theme, TEXTS, textSize } from '../theme.js';
-import { S, isStaffHere } from '../state.js';
+import { S, isStaffHere, answered } from '../state.js';
 
 /* حالة نموذج الإدخال الحالي (الصورة المختارة) */
 // copyFrom: مفتاح صورة بلاغ تُنسخ للغرض عند قبول البلاغ (مثل r_abc)
@@ -166,3 +166,18 @@ export const verifyPrompt = what => `<div class="empty">${icon('lock')}<b>${t('c
 export const textPicker = () => `<div class="seg theme-seg text-seg" role="radiogroup" aria-label="${t('tx.label')}">${TEXTS.map((v, k) => `<button type="button" class="${textSize() === v ? 'on' : ''}" data-act="textSize" data-v="${v}" role="radio" aria-checked="${textSize() === v}"><span class="tx-a" style="font-size:${13 + 3 * k}px" aria-hidden="true">${t('tx.a')}</span><span>${t('tx.' + v)}</span></button>`).join('')}</div>`;
 export const themePicker = () => `<div class="seg theme-seg" role="radiogroup" aria-label="${t('th.label')}">${THEMES.map(v => `<button type="button" class="${theme() === v ? 'on' : ''}" data-act="theme" data-v="${v}" role="radio" aria-checked="${theme() === v}">${icon(v === 'light' ? 'sun' : v === 'dark' ? 'moon' : 'contrast')}<span>${t('th.' + v)}</span></button>`).join('')}</div>`;
 export const loginPrompt = (msg) => `<div class="empty">${icon('lock')}<b>${msg}</b><button class="btn" data-act="login">${icon('users')}${t('c.signIn')}</button></div>`;
+
+/* H8: دوال يحتاجها الزائر أيضاً (كانت في staff.js)، فلا يُحمَّل ملف لوحة الموظف لعرض «طلباتي» */
+// تاريخ يوم من وقت بالمللي ثانية («3 أكتوبر»)
+export const dateOf = ms => fmtDate(isoDay(ms));
+// سؤال التحقق وإجابته
+export function qaBox(c){
+  if (!c.question) return '';
+  const ok = answered(c);
+  return `<div class="qa">
+    <div class="qa-q">${icon('question')}<span><b>${t('qa.q')}</b> ${esc(c.question)}</span></div>
+    <div class="qa-a">${ok ? `<b>${t('qa.a')}</b> ${esc(c.answer)}` : `<span class="muted">${t(c.status === 'pending' ? 'qa.waiting' : 'qa.none')}</span>`}</div>
+  </div>`;
+}
+// رابط صفحة المكتب (رمز QR في التذييل والملصق)
+export const officeUrl = o => `${location.origin + location.pathname}#o/${o.id}`;

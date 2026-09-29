@@ -298,3 +298,10 @@ export async function setAdmin(uid, on){
   permLog(b, allOffices(), on ? 'perm:admin' : 'perm:unadmin', uid);
   await commit(b);
 }
+
+/* H8: قيد «نسخة احتياطية» في سجل العمليات (من صدّرها ومتى، وعدد السجلات). التصدير نفسه قراءة فقط */
+export async function logBackup(officeId, note){
+  const b = dbx.batch();
+  log(b, officeId, 'backup', {note});
+  await commit(b);
+}

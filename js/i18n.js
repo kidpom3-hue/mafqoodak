@@ -2,9 +2,10 @@
 // t('key', {var}) يرجع النص باللغة الحالية، وtp('key', n) يختار صيغة العدد حسب Intl.PluralRules.
 // كل نص يراه المستخدم مكانه القاموسان js/i18n/ar.js وjs/i18n/en.js (tools/check-i18n.mjs يفحص ذلك).
 import { AR } from './i18n/ar.js';
-import { EN } from './i18n/en.js';
 
-const DICTS = {ar: AR, en: EN};
+// H8: القاموس العربي دائماً (للقيم المخزّنة tAr والاحتياط)، والإنجليزي يُحمَّل فقط لمن لغته الإنجليزية أو عند التبديل إليها
+const DICTS = {ar: AR};
+const loadDict = async l => { if (!DICTS[l] && l === 'en') DICTS.en = (await import('./i18n/en.js')).EN; };
 const KEY = 'mfq:lang';
 // الافتراضي: الاختيار المحفوظ، ثم لغة المتصفح (عربي إذا بدأت بـ ar، وإلا إنجليزي)
 function initial(){
@@ -12,6 +13,7 @@ function initial(){
   return String(navigator.language || '').toLowerCase().startsWith('ar') ? 'ar' : 'en';
 }
 export let LANG = initial();
+await loadDict(LANG);   // تنتظره الوحدات التي تستورد i18n.js قبل أول رسم
 export const isEn = () => LANG === 'en';
 export const saved = () => { try { return !!localStorage.getItem(KEY); } catch { return false; } };
 
@@ -28,6 +30,12 @@ export const hasKey = key => key in DICTS[LANG] || key in AR;
 export const tIn = (lang, key, vars) => fill((DICTS[lang] || AR)[key] ?? AR[key] ?? key, vars);
 // النص العربي دائماً: للقيم المخزّنة في قاعدة البيانات (ملاحظات النظام في الطلبات والسجل)
 export const tAr = (key, vars) => fill(AR[key] ?? key, vars);
+// صيغة العدد بالعربية دائماً (للقيم المخزّنة، مثل ملاحظة قيد النسخة الاحتياطية)
+export function tpAr(key, n){
+  const f = AR[key]; if (!f) return String(n);
+  let k = 'other'; try { k = new Intl.PluralRules('ar').select(n); } catch {}
+  return fill(f[k] ?? f.other, {n});
+}
 
 const PR = {};
 const rules = () => { try { return PR[LANG] || (PR[LANG] = new Intl.PluralRules(LANG)); } catch { return {select: n => n === 1 ? 'one' : 'other'}; } };
@@ -55,8 +63,10 @@ export function applyLang(){
   const sk = document.getElementById('skip'); if (sk) sk.textContent = t('a11y.skip');
   const nv = document.getElementById('nav'); if (nv) nv.setAttribute('aria-label', t('ui.navigation'));
 }
-export function setLang(l){
+// H8: غير متزامنة: تحمّل قاموس اللغة الجديدة أولاً (من الشبكة أو من sw.js دون اتصال)
+export async function setLang(l){
   if (l !== 'ar' && l !== 'en') return;
+  await loadDict(l);
   LANG = l;
   try { localStorage.setItem(KEY, JSON.stringify(l)); } catch {}
   applyLang();

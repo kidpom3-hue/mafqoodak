@@ -1,8 +1,7 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
 import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, claimOf, claimHasRequired, detailValue } from './constants.js';
-import { t, tp, tAr, LANG, setLang } from './i18n.js';
+import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
-import { loadStats, exportCsv } from './stats.js';
 import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
@@ -10,13 +9,16 @@ import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWith
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification } from './firebase.js';
 import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar } from './ui.js';
 import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor.js';
-import { updateStaff, staffItems, staffClaims, claimChecks, keepLeft, catKeepNote, foundCardStaff } from './views/staff.js';
+// H8: لوحة الموظف والإحصاءات والذكاء الاصطناعي والأمثلة تُحمَّل عند الحاجة (lazy.js). SM() = وحدة staff.js المحمّلة
+// (أزرار لوحة الموظف لا تظهر إلا بعد تحميلها، فهي موجودة عند النقر)
+import { mod, load } from './lazy.js';
+const SM = () => mod('staff');
 import { FORM, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, detailReq } from './views/common.js';
 import { setTheme, setTextSize } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
-import { analyzePhoto, rankMatches, aiErrMsg, aiReady } from './ai.js';
+import { aiReady } from './firebase.js';
+const aiErr = e => mod('ai')?.aiErrMsg(e) || t('err.save');
 import { SETTINGS, APP_VERSION } from './config.js';
-import { sampleItems } from './sample-data.js';
 
 /* ---------- أدوات النماذج ---------- */
 // field: اسم الخانة المسؤولة عن الخطأ (H1): يُفتح القسم المطوي الذي فيه (<details>) وينتقل التركيز إليها
@@ -111,7 +113,7 @@ async function aiFill(){
   const btn = $('#ai-btn'), st = $('#ai-status'); if (!FORM.blob || !btn) return;
   btn.disabled = true; st.innerHTML = `<span class="spin" style="width:14px;height:14px"></span> ${t('a.aiAnalyzing')}`;
   try {
-    const r = await analyzePhoto(FORM.blob);
+    const r = await (await load('ai')).analyzePhoto(FORM.blob);
     const f = btn.closest('form');
     // لا نضع ناتج الذكاء الاصطناعي في querySelector إلا إن كان من معرّفات التصنيفات والألوان المعروفة
     if (CATS.some(c => c.id === r?.cat) && f.querySelector(`input[name=cat][value="${r.cat}"]`)){ f.querySelector(`input[name=cat][value="${r.cat}"]`).checked = true; onCatChange(f, r.cat, r.sub); }
@@ -119,7 +121,7 @@ async function aiFill(){
     if (r?.title) f.querySelector('[name=title]').value = String(r.title).slice(0, 80);
     if (r?.desc) f.querySelector('[name=desc]').value = String(r.desc).slice(0, 600);
     st.innerHTML = `${icon('check')} ${t('a.aiFilled')}`;
-  } catch (e){ console.warn(e); st.textContent = aiErrMsg(e); }
+  } catch (e){ console.warn(e); st.textContent = aiErr(e); }
   finally { btn.disabled = !FORM.blob; }
 }
 async function aiMatch(reportId){
@@ -141,10 +143,10 @@ async function aiMatch(reportId){
     }
   }
   try {
-    const matches = await rankMatches(r, pool, images, imgIds);
+    const matches = await (await load('ai')).rankMatches(r, pool, images, imgIds);
     const ok = await write(() => dbx.update('reports/' + r.id, {ai: {at: Date.now(), matches}}), t(matches.length ? 'a.aiRanked' : 'a.aiNoMatch'));
     if (!ok && st?.isConnected) st.textContent = '';
-  } catch (e){ console.warn(e); if (st?.isConnected) st.textContent = aiErrMsg(e); }
+  } catch (e){ console.warn(e); if (st?.isConnected) st.textContent = aiErr(e); }
 }
 
 /* ---------- تعديل البلاغ (G3) ----------
@@ -217,7 +219,7 @@ async function submitForm(form){
       const {id, ...office} = SETTINGS.firstOffice;
       await dbx.set('offices/' + id, {...office, active: true, createdAt: Date.now()});
       if (fd.get('samples')){
-        const rows = sampleItems(id, office.code);
+        const rows = (await load('sample')).sampleItems(id, office.code);
         const b2 = dbx.batch(); rows.forEach(s => b2.set(dbx.ref('items/' + s.id), s.data)); await b2.commit();
         const b3 = dbx.batch(); rows.forEach(s => b3.set(dbx.ref('itemSecrets/' + s.id), s.secret)); await b3.commit();
       }
@@ -533,7 +535,7 @@ async function submitForm(form){
     if (code.length !== 6) return toast(t('hi.codeBad'));
     const f = S.found.find(x => normCode(x.code) === code);
     if (!f) return toast(t('hi.codeNone'));
-    openSheet(`<h2>${icon('tag')} ${t('hi.codeFound')}</h2><div class="list">${foundCardStaff(f)}</div><button class="btn ghost" data-act="closeSheet">${t('c.close')}</button>`);
+    openSheet(`<h2>${icon('tag')} ${t('hi.codeFound')}</h2><div class="list">${SM().foundCardStaff(f)}</div><button class="btn ghost" data-act="closeSheet">${t('c.close')}</button>`);
     return;
   }
   // سؤال تحقق يرسله الموظف لصاحب طلب قيد المراجعة
@@ -620,7 +622,7 @@ function wipeDevice(){ ['codes', 'seen', 'staffSeen', 'notify'].forEach(k => { t
 const ACT = {
   nav(el){
     const r = el.dataset.r, tab = el.dataset.tab;
-    if (r === 'staff' && tab){ S.staffTab = tab; if (S.route.name === 'staff'){ updateStaff(); renderNav(); window.scrollTo(0, 0); return; } }
+    if (r === 'staff' && tab){ S.staffTab = tab; if (S.route.name === 'staff'){ SM()?.updateStaff(); renderNav(); window.scrollTo(0, 0); return; } }
     if (r === 'admin' && tab) S.adminTab = tab;
     const fromNav = !!el.closest('#nav, .top-links, .brand');
     if (fromNav) S.hist = [];
@@ -715,9 +717,9 @@ const ACT = {
     if (S.sheet) ACT.account();   // نعيد رسم نافذة الحساب بالحالة الجديدة
   },
   // تبديل اللغة: يُحفظ على الجهاز، وفي users.lang لمن سجّل دخوله (يتبعه على أجهزته الأخرى)
-  lang(){
+  async lang(){
     closeSheet();
-    setLang(LANG === 'ar' ? 'en' : 'ar');
+    try { await setLang(LANG === 'ar' ? 'en' : 'ar'); } catch (e){ console.warn(e); return toast(t('err.offline')); }
     if (auth) auth.languageCode = LANG;   // رسائل Firebase (توثيق البريد، استعادة كلمة المرور) بنفس اللغة
     if (S.uid) dbx.set('users/' + S.uid, {lang: LANG}, {merge: true}).catch(e => console.warn(e));
     renderAll(); window.scrollTo(0, 0);
@@ -763,14 +765,14 @@ const ACT = {
     const g = el.dataset.g, v = el.dataset.v; S.staffSub[g] = v;
     // H5: كل أحداث التبويب تُسجَّل مقروءة (staffSeen)، فيختفي الأحمر وحدود البطاقات الجديدة فوراً
     markStaffSeen(staffKeys().filter(x => x.sub === g + ':' + v).map(x => x.k));
-    updateStaff(); renderNav(); document.getElementById(`st-${g}-${v}`)?.focus();
+    SM()?.updateStaff(); renderNav(); document.getElementById(`st-${g}-${v}`)?.focus();
   },
   attLater(el){ LS.set('snoozed', [...new Set([...LS.get('snoozed', []), el.dataset.k])].slice(-200)); renderAll(); },
   openCard(el){ openCard(el.dataset.tab, el.dataset.card, el.dataset.ended === '1'); },
   fcat(el){ S.filter.cat = el.dataset.id; updateBrowse(); },
   catGo(el){ S.filter.cat = el.dataset.id; S.filter.q = ''; S.filter.status = 'available'; go('browse'); },
   fstatus(el){ S.filter.status = el.dataset.v; updateBrowse(); },
-  sTab(el){ S.staffTab = el.dataset.v; updateStaff(); renderNav(); },
+  sTab(el){ S.staffTab = el.dataset.v; SM()?.updateStaff(); renderNav(); },
   closeSheet(){ closeSheet(); },
   copy(el){ const v = el.dataset.v; navigator.clipboard?.writeText(v).then(() => toast(t('a.copied')), () => toast(v)); },
   removePhoto(el){ clearPhoto(el.closest('form')); },
@@ -852,7 +854,7 @@ const ACT = {
     const go2 = () => doApprove(c);
     // تطابق ضعيف: أقل من 2 من 3 في جدول المقارنة
     // تطابق ضعيف: أقل من نصف الصفوف التي لها نتيجة في جدول المقارنة (أو لا شيء يمكن مقارنته)
-    const {hits, total} = claimChecks(c, full(i));
+    const {hits, total} = (SM() || await load('staff')).claimChecks(c, full(i));
     if (!total || hits / total < 0.5) return confirmSheet(t('a.weakQ'), t('a.weakBody', {n: hits, total}), t('a.weakBtn'), go2, false);
     go2();
   },
@@ -866,7 +868,7 @@ const ACT = {
   },
   // البلاغ القديم: «نعم، ما زلت أبحث» يجدّد تاريخه (renewedAt)
   renewReport(el){ write(() => dbx.update('reports/' + el.dataset.id, {renewedAt: Date.now()}), t('rc.renewed')); },
-  toggleStale(){ S.showStale = !S.showStale; updateStaff(); },
+  toggleStale(){ S.showStale = !S.showStale; SM()?.updateStaff(); },
   release(el){
     const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return;
     confirmSheet(t('a.reopenQ'), t('a.releaseBody'), t('st.release'),
@@ -874,13 +876,13 @@ const ACT = {
   },
   // التصرّف في الأغراض التي تجاوزت مدة الحفظ (إجراء جماعي)
   dispose(){
-    const over = S.items.filter(i => i.status === 'available' && keepLeft(i) < 0).map(full);
+    const over = S.items.filter(i => i.status === 'available' && SM().keepLeft(i) < 0).map(full);
     if (!over.length) return toast(t('a.noneOver'));
     // الطريقة المقترحة: إن اتفقت كل الأغراض عليها (مثل الوثائق ← تسليم للجهة المختصة)
     const sug = new Set(over.map(i => cat(i.cat).disposal || '')); const pre = sug.size === 1 ? [...sug][0] : '';
     openSheet(`<h2>${icon('clock')} ${t('a.disposeTitle', {items: tp('n.itemGen', over.length)})}</h2>
       <form data-form="dispose" novalidate>
-        <div class="list">${over.map(i => `<label class="check"><input type="checkbox" name="ids" value="${esc(i.id)}" checked><span><b>${esc(i.ref)}</b> ${esc(showTitle(i))} <span class="muted">· ${relDay(i.foundDate)}${catKeepNote(i) ? ' · ' + catKeepNote(i) : ''}${cat(i.cat).disposal ? ' · ' + t('a.suggested', {method: t('disposal.' + cat(i.cat).disposal)}) : ''}</span></span></label>`).join('')}</div>
+        <div class="list">${over.map(i => `<label class="check"><input type="checkbox" name="ids" value="${esc(i.id)}" checked><span><b>${esc(i.ref)}</b> ${esc(showTitle(i))} <span class="muted">· ${relDay(i.foundDate)}${SM().catKeepNote(i) ? ' · ' + SM().catKeepNote(i) : ''}${cat(i.cat).disposal ? ' · ' + t('a.suggested', {method: t('disposal.' + cat(i.cat).disposal)}) : ''}</span></span></label>`).join('')}</div>
         <div class="field"><span class="label">${t('a.method')}</span>
           ${wf.disposalsFor(over).map(k => `<label class="check"><input type="radio" name="method" value="${k}" ${k === pre ? 'checked' : ''}><span>${t('disposal.' + k)}</span></label>`).join('')}
           ${wf.disposalsFor(over).includes('finder') ? `<span class="hint">${t('a.finderHint')}</span>` : ''}</div>
@@ -987,8 +989,31 @@ const ACT = {
   poster(el){ go('poster', {office: el.dataset.id || S.officeId}); },
   print(){ window.print(); },
   stats(el){ go('stats', {office: el.dataset.id || S.officeId}); },
-  statsRefresh(el){ loadStats(el.dataset.id, true); },
-  async exportCsv(el){ el.disabled = true; try { await exportCsv(el.dataset.id); } finally { el.disabled = false; } },
+  statsRefresh(el){ load('stats').then(m => m.loadStats(el.dataset.id, true)); },
+  /* H8: نسخة احتياطية (JSON) لمكتب واحد، للمدير فقط: المكتب والمفقودات وتفاصيلها السرية والطلبات والبلاغات وإشعارات التسليم والسجل.
+     بلا صور (مستندات itemPhotos) ولا بيانات المستخدمين الخاصة (users/private). خطة Spark بلا نسخ احتياطي تلقائي، فاحفظ الملف في مكان آمن:
+     فيه بيانات شخصية (الأسماء وآخر 4 أرقام وأسئلة التحقق) */
+  async backup(el){
+    if (!S.isAdmin) return;
+    const id = el.dataset.id; el.disabled = true;
+    try {
+      const q = col => dbx.list(col, [['officeId', '==', id]]);
+      const [office, items, itemSecrets, claims, reports, foundReports, logs] = await Promise.all([
+        dbx.get('offices/' + id), q('items'), q('itemSecrets'), q('claims'), q('reports'), q('foundReports'), q('logs')]);
+      const data = {app: 'mafqoodak', version: APP_VERSION, exportedAt: new Date().toISOString(), exportedBy: S.uid, officeId: id,
+        offices: office ? [{id, ...office}] : [], items, itemSecrets, claims, reports, foundReports, logs};
+      const n = items.length + itemSecrets.length + claims.length + reports.length + foundReports.length + logs.length;
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], {type: 'application/json'}));
+      const a = document.createElement('a');
+      a.href = url; a.download = `mafqoodak-backup-${(office?.code || id).toLowerCase()}-${today()}.json`;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      // القيد يُحفظ بالعربية (قيم قاعدة البيانات عربية)، والرسالة بلغة الواجهة
+      await write(() => wf.logBackup(id, tAr('sys.backupNote', {records: tpAr('n.record', n)})), t('bk.done', {records: tp('n.record', n)}));
+    } catch (e){ console.warn(e); toast(t('bk.fail')); }
+    finally { el.disabled = false; }
+  },
+  async exportCsv(el){ el.disabled = true; try { await (await load('stats')).exportCsv(el.dataset.id); } finally { el.disabled = false; } },
   // إشعار التسليم: الموظف يستلم الغرض (نموذج الغرض معبّأ)، أو يغلق الإشعار إن لم يصل الغرض
   async receiveFound(el){
     const f = S.found.find(x => x.id === el.dataset.id); if (!f) return;
@@ -1088,8 +1113,8 @@ export function bindEvents(){
     const t = e.target;
     if (t.id === 'q'){ S.filter.q = t.value; clearTimeout(qTimer); qTimer = setTimeout(updateBrowse, 120); }
     if (t.name === 'ratingNote'){ const f = t.closest('form'); if (f) (RATE_DRAFT[f.dataset.id] ||= {}).note = t.value; }
-    if (t.id === 'cq'){ S.claimQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = staffClaims(); hydrate(); }, 120); }
-    if (t.id === 'sq'){ S.staffQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = staffItems(); hydrate(); }, 120); }
+    if (t.id === 'cq'){ S.claimQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffClaims(); hydrate(); }, 120); }
+    if (t.id === 'sq'){ S.staffQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffItems(); hydrate(); }, 120); }
     if (t.name === 'code' && t.classList.contains('code-input')) t.value = latinDigits(t.value).replace(/\D/g, '').slice(0, 6);
     // خانات الأرقام في أسئلة التصنيف: الأرقام الهندية إلى لاتينية، وحذف ما ليس رقماً
     if (t.classList.contains('num-in')) t.value = detailValue({type: 'num'}, t.value).slice(0, Number(t.maxLength) > 0 ? t.maxLength : 9);
@@ -1100,7 +1125,7 @@ export function bindEvents(){
     const t = e.target;
     if (t.id === 'frange'){ S.filter.range = t.value; updateBrowse(); }
     if (t.id === 'sstatus'){
-      S.staffStatus = t.value; $('#s-body').innerHTML = staffItems(); hydrate();
+      S.staffStatus = t.value; $('#s-body').innerHTML = SM().staffItems(); hydrate();
       // المُسلَّم والمؤرشف والمُتصرَّف فيه تُجلب عند اختيار الفلتر فقط
       if (t.value !== 'active') loadExtraItems(t.value);
     }
