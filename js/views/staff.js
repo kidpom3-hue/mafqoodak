@@ -3,7 +3,7 @@ import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STA
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew } from '../state.js';
-import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, ENDED_OPEN } from './common.js';
+import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN } from './common.js';
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
 
@@ -306,7 +306,7 @@ function subTab(g, defs){
 // H5: رقم واحد على كل تبويب: الأحمر بعدد الجديد غير المقروء إن وُجد، وإلا الرمادي بعدد العناصر (ويُخفى إن كان صفراً)
 function subTabs(g, defs, cur, body){
   return `<div class="tabs sub" role="tablist" aria-label="${t('st.subAria.' + g)}">${defs.map(([v, n]) => { const r = staffNew(g + ':' + v);
-      const num = r ? `<span class="count"><span aria-hidden="true">${r}</span><span class="sr-only">${t('mine.newSr', {n: r})}</span></span>` : n ? `<span class="tab-n">${n}</span>` : '';
+      const num = tabNum(r, n);
       return `<button role="tab" id="st-${g}-${v}" aria-controls="sp-${g}" aria-selected="${v === cur}" tabindex="${v === cur ? 0 : -1}" data-act="staffSub" data-g="${g}" data-v="${v}">
         <span>${t('st.sub.' + v)}</span>${num}</button>`; }).join('')}</div>
     <div role="tabpanel" id="sp-${g}" aria-labelledby="st-${g}-${cur}" tabindex="0" class="sub-panel">${body}</div>`;

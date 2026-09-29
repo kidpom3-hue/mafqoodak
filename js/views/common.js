@@ -56,6 +56,12 @@ export function claimTimeline(c, staff = false){
 export const CARD_OPEN = new Map(), ENDED_OPEN = new Map();
 const openOf = (key, dflt) => CARD_OPEN.has(key) ? CARD_OPEN.get(key) : !!dflt;
 // بطاقة مختصرة: الملخّص (عنوان، رقم، حالة، الخطوة التالية) والتفاصيل عند الفتح
+/* رقم التبويب (لـ«طلباتي» ولوحة الموظف): رقم واحد فقط، لا الرقمان معاً أبداً.
+   فيه جديد غير مقروء ← الشارة الحمراء بعدد الجديد (مع نص لقارئ الشاشة)، وإلا ← الرقم الرمادي بعدد العناصر، ولا شيء إن كان صفراً */
+export function tabNum(newCount, count){
+  if (newCount) return `<span class="count"><span aria-hidden="true">${newCount}</span><span class="sr-only">${t('mine.newSr', {n: newCount})}</span></span>`;
+  return count ? `<span class="tab-n">${count}</span>` : '';
+}
 export function mcard({key, id = '', open, head, pillHtml, next, tone = '', body, fresh, muted}){
   return `<details class="mcard${tone === 'warn' ? ' attn' : ''}${fresh ? ' new' : ''}${muted ? ' muted' : ''}" data-card="${esc(key)}"${id ? ` id="${esc(id)}"` : ''} ${openOf(key, open) ? 'open' : ''}>
     <summary class="mcard-sum"><span class="mcard-top"><span class="mcard-h">${head}</span>${pillHtml}</span>
