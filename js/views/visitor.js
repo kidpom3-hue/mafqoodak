@@ -321,7 +321,7 @@ function attentionBox(cls, reps){
     ...reps.map(r => [reportNeed(r), r]).filter(([n]) => n).map(([n, r]) => ({n, x: r, msg: t('att.' + n, {title: esc(r.title)}), tab: 'reports', key: 'r:' + r.id, ic: n === 'stale' ? 'clock' : 'bell'})),
   ].map(x => ({...x, ak: attKey(x.n, x.x)})).filter(x => !later.has(x.ak));
   if (!rows.length) return '';
-  return `<section class="attn-box" aria-labelledby="att-t"><h2 class="section-title" id="att-t">${icon('bell')}${t('att.title')} <span class="count">${rows.length}</span></h2>
+  return `<section class="attn-box" aria-labelledby="att-t"><h2 class="section-title" id="att-t">${icon('bell')}${t('att.title')} ${tabNum(0, rows.length)}</h2>
     <ul class="attn-list">${rows.map(x => `<li>${icon(x.ic)}<span class="grow">${x.msg}</span>
       <span class="attn-btns"><button class="btn sm soft" data-act="openCard" data-tab="${x.tab}" data-card="${esc(x.key)}">${t('att.open')}</button>
       <button class="btn sm ghost" data-act="attLater" data-k="${esc(x.ak)}">${t('att.later')}</button></span></li>`).join('')}</ul></section>`;

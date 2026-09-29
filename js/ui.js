@@ -9,6 +9,7 @@ import { vAdmin, vOfficeForm } from './views/admin.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
 import { vHome, updateHome, vFound, vHandin } from './views/home.js';
 import { vPrivacy } from './views/privacy.js';
+import { tabNum } from './views/common.js';   // H6: كل شارة رقمية تمرّ بها (رقم واحد: أحمر للجديد أو رمادي للعدد)
 import { vLabels, vPoster, vThanks, fillThanks } from './views/print.js';
 import { vStats } from './views/stats.js';
 import { vAudit } from './views/audit.js';
@@ -150,7 +151,7 @@ function renderHeader(){
       <button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="${t('app.name')} — ${t('nav.home')}">${LOGO}<span class="wordmark">${t('app.name')}</span></button>
       ${S.config && (o || S.mode === 'admin') ? `<nav class="top-links" aria-label="${t('ui.navigation')}">${navItems().map(n => {
         const on = S.route.name === n.r && (!n.tab || (n.r === 'staff' ? S.staffTab : S.adminTab) === n.tab);
-        return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}">${n.l}${n.b ? `<span class="count">${n.b}</span>` : ''}</button>`;
+        return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}">${n.l}${tabNum(n.b, 0)}</button>`;
       }).join('')}</nav>` : ''}
       <div class="top-actions">
         ${aaBtn}${langBtn}${acct}
@@ -195,7 +196,7 @@ function renderNav(){
   const cur = S.route.name;
   nav.innerHTML = `<div class="inner">${navItems().map(n => {
     const on = cur === n.r && (!n.tab || (n.r === 'staff' ? S.staffTab : S.adminTab) === n.tab);
-    return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}" ${on ? 'aria-current="page"' : ''}>${icon(n.i)}<span>${n.l}</span>${n.b ? `<span class="count">${n.b}</span>` : ''}</button>`;
+    return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}" ${on ? 'aria-current="page"' : ''}>${icon(n.i)}<span>${n.l}</span>${tabNum(n.b, 0)}</button>`;
   }).join('')}</div>`;
 }
 export function renderSheet(){

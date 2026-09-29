@@ -78,3 +78,9 @@ for (const f of [...files, path.join(root, 'js/constants.js')]){
 for (const k of used) if (!(k in AR)) miss.push(`مفتاح مستخدم وغير موجود: ${k}`);
 if (miss.length){ console.log(miss.join('\n') + `\n✘ ${miss.length} مشكلة في مفاتيح القاموسين.`); process.exit(1); }
 console.log(`✔ القاموسان متطابقان (${Object.keys(AR).length} مفتاحاً)، وكل المفاتيح المستخدمة (${used.size}) موجودة.`);
+
+// H6: رقم الإصدار في js/config.js (APP_VERSION) يساوي رقم CACHE في sw.js، فيُرفعان معاً في كل Pull Request
+const ver = (fs.readFileSync(path.join(root, 'js/config.js'), 'utf8').match(/APP_VERSION\s*=\s*'([^']+)'/) || [])[1];
+const cache = (fs.readFileSync(path.join(root, 'sw.js'), 'utf8').match(/CACHE\s*=\s*'mafqoodak-v([^']+)'/) || [])[1];
+if (!ver || ver !== cache){ console.log(`✘ رقم الإصدار غير متطابق: APP_VERSION في js/config.js = ${ver}، وCACHE في sw.js = v${cache}. ارفعهما معاً إلى الرقم نفسه.`); process.exit(1); }
+console.log(`✔ رقم الإصدار ${ver} متطابق في js/config.js وsw.js.`);

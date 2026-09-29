@@ -6,6 +6,7 @@ import { S, curOffice } from '../state.js';
 import { card, skelCards } from './visitor.js';
 import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt } from './common.js';
 import { qrSvg } from '../qr.js';
+import { APP_VERSION } from '../config.js';
 import { officeUrl } from './print.js';
 import { hydrate } from '../ui.js';
 
@@ -119,6 +120,7 @@ function footer(o){
     </div>
     <div class="sf-bottom">
       <small class="sf-copy">© ${today().slice(0, 4)} ${t('app.name')}</small>
+      <small class="sf-ver">${t('ui.version', {v: APP_VERSION})}</small>
       <div class="sf-legal"><button class="link" data-act="nav" data-r="privacy">${t('foot.legal')}</button><span aria-hidden="true">|</span><button class="link" data-act="nav" data-r="a11y">${t('foot.a11y')}</button></div>
     </div>
   </footer>`;

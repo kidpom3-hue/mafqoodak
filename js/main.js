@@ -31,6 +31,20 @@ start();
 try { if (sessionStorage.getItem('mfq:signedOut')){ sessionStorage.removeItem('mfq:signedOut'); setTimeout(() => toast(t('a.signedOut')), 400); } } catch {}
 
 // تثبيت التطبيق على الجوال والعمل دون اتصال (PWA)
+// H6: عند وصول Service Worker جديد (نسخة أحدث من التطبيق) يظهر شريط «تحديث جديد متاح» مع زر «تحديث» يعيد تحميل الصفحة.
+// نبحث عن تحديث أيضاً كلما عاد المستخدم إلى التطبيق (visibilitychange)، فلا يبقى على نسخة قديمة أياماً
 if ('serviceWorker' in navigator && location.protocol === 'https:'){
-  navigator.serviceWorker.register('./sw.js').catch(e => console.warn('sw', e));
+  const hadController = !!navigator.serviceWorker.controller;   // أول تثبيت ليس «تحديثاً»
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(e => console.warn('sw', e));
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) showUpdate(); });
+}
+function showUpdate(){
+  if (document.getElementById('upd')) return;
+  const bar = document.createElement('div');
+  bar.id = 'upd'; bar.className = 'undo-bar show'; bar.setAttribute('role', 'status'); bar.setAttribute('aria-live', 'polite');
+  bar.innerHTML = `<span>${t('upd.ready')}</span><button type="button" class="btn sm soft">${t('upd.btn')}</button>`;
+  bar.querySelector('button').addEventListener('click', () => location.reload());
+  document.body.appendChild(bar);
 }
