@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- H7: سياسة أمان المحتوى (CSP). GitHub Pages لا يرسل ترويسات، فنضعها هنا. تمنع تشغيل أي سكربت أو معالج مضمّن
+       غير سكربت المظهر أدناه (بصمته sha256). إذا عدّلت ذلك السكربت فاحسب بصمته من جديد (tools/check-i18n.mjs يتحقق منها).
+       frame-ancestors لا تعمل داخل meta، لذلك يمنع main.js عرض التطبيق داخل إطار (clickjacking) -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://apis.google.com https://www.google.com/recaptcha/ 'sha256-V4SyzImrP7dTHXCHWWZSv/seVG+y3wVG0HI/CbJdjgQ='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleusercontent.com; connect-src 'self' https://*.googleapis.com https://api.emailjs.com; frame-src https://mafqoodak-50269.firebaseapp.com https://www.google.com/recaptcha/ https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
   <title>مفقودك — مكتب المفقودات | الكلية التقنية بالأحساء</title>
   <meta name="description" content="مفقودك: مكتب المفقودات الإلكتروني في الكلية التقنية بالأحساء. ابحث عن غرضك المفقود بالصور والتصنيف، وسجّل بلاغاً، واستلمه من المكتب برمز تحقق.">
   <link rel="canonical" href="https://kidpom3-hue.github.io/mafqoodak/">
@@ -33,8 +37,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- الخطوط لا تؤخر أول رسم للصفحة: تُحمَّل بالتوازي وتُطبَّق عند وصولها -->
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Alexandria:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <!-- الخطوط لا تؤخر أول رسم للصفحة: يضيفها main.js عند تشغيله (H7: بلا onload مضمّن، لأن CSP يمنعه) -->
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Alexandria:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alexandria:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap"></noscript>
   <link rel="stylesheet" href="css/styles.css">
   <!-- تحميل ملفات التطبيق ومكتبة Firebase بالتوازي بدل انتظار كل ملف لما يستورده (أسرع فتحاً).

@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك
+// قواعد حماية بيانات مفقودك — الإصدار v6 (المرحلة H7: فحص أمني)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -43,6 +43,27 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/items/$(itemId)).data.reservedFor == claimId
         && getAfter(/databases/$(database)/documents/items/$(itemId)).data.status == 'returned';
     }
+    // ── H7 (v6): أنواع الحقول، حتى لا تُعطِّل بيانات تالفة صفحات الموظف ──
+    // تاريخ يوم: غير موجود، أو فارغ، أو بصيغة YYYY-MM-DD فقط
+    function isDay(d, k) { return !(k in d) || d[k] == '' || (d[k] is string && d[k].matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')); }
+    // وقت بالمللي ثانية: غير موجود، أو رقم
+    function ts(d, k) { return !(k in d) || d[k] is number; }
+    // وقت يُكتب في هذه العملية: رقم قريب من وقت الخادم (±يوم واحد)، فلا يُكتب وقت مستقبلي بعيد مثل 9e15
+    function fresh(d, k) {
+      return (k in d) && d[k] is number
+        && d[k] > request.time.toMillis() - 86400000 && d[k] < request.time.toMillis() + 86400000;
+    }
+    // عند التعديل: الوقت إما لم يتغير، أو تغيّر إلى وقت «الآن»
+    function freshIfChanged(k) { return request.resource.data.get(k, null) == resource.data.get(k, null) || fresh(request.resource.data, k); }
+    function officeExists(id) { return id is string && exists(/databases/$(database)/documents/offices/$(id)); }
+    function catOk(d) { return d.cat is string && d.cat.size() <= 40; }
+    // حدّ الإغراق: rate/{uid} يُكتب بوقت الخادم مع كل إنشاء (بلاغ، إشعار تسليم، طلب استلام)،
+    // والإنشاء مرفوض إن كان الإنشاء السابق لهذا الحساب قبل أقل من 20 ثانية
+    function rateDoc() { return /databases/$(database)/documents/rate/$(me()); }
+    function rateOk() {
+      return getAfter(rateDoc()).data.at == request.time
+        && (!exists(rateDoc()) || get(rateDoc()).data.at < request.time - duration.value(20, 's'));
+    }
     function smallImage() { return request.resource.data.data is string && request.resource.data.data.size() < 350000; }
 
     // ── حدود البيانات: تمنع كتابة حقول غريبة أو نصوص ضخمة تستهلك حصة الخطة المجانية ──
@@ -77,6 +98,8 @@ service cloud.firestore {
     function validUser(d) {
       return d.keys().hasOnly(['name', 'email', 'photo', 'lastSeen', 'lang'])
         && strMax(d, 'name', 200) && strMax(d, 'email', 320)
+        // H7: البريد (يراه الموظف ويثق به) = بريد الحساب نفسه فقط
+        && (!('email' in d) || d.email == request.auth.token.email)
         && (!('lang' in d) || d.lang in ['ar', 'en'])
         // صورة الملف الشخصي: فارغة أو من صور حسابات Google فقط (تمنع روابط التتبّع)
         && (!('photo' in d) || d.photo == ''
@@ -97,8 +120,10 @@ service cloud.firestore {
         && (!('rejected' in d) || (d.rejected is list && d.rejected.size() <= 30))
         // وقت آخر تعديل من صاحب البلاغ
         && (!('editedAt' in d) || d.editedAt is number)
+        // H7: تاريخ الفقدان بصيغة يوم، والأوقات أرقام
+        && isDay(d, 'lostDate') && ts(d, 'createdAt') && ts(d, 'closedAt') && ts(d, 'renewedAt') && ts(d, 'pickedAt')
         && strMax(d, 'title', 400) && strMax(d, 'desc', 4000) && strMax(d, 'sub', 200) && strMax(d, 'color', 60)
-        && strMax(d, 'spot', 400) && strMax(d, 'bldg', 40) && strMax(d, 'room', 60) && strMax(d, 'lostDate', 20)
+        && strMax(d, 'spot', 400) && strMax(d, 'bldg', 40) && strMax(d, 'room', 60)
         && (!('ai' in d) || d.ai is map);
     }
 
@@ -199,6 +224,9 @@ service cloud.firestore {
         && request.resource.data.uid == me()
         && request.resource.data.status == 'open'
         && validReport(request.resource.data)
+        // H7: المكتب موجود، والتصنيف نص قصير، ووقت الإنشاء «الآن»، وحدّ الإغراق
+        && officeExists(request.resource.data.officeId) && catOk(request.resource.data)
+        && fresh(request.resource.data, 'createdAt') && rateOk()
         && !('staffPick' in request.resource.data) && !('pickedAt' in request.resource.data)
         && !('pickRejected' in request.resource.data) && !('closedReason' in request.resource.data)
         && !('rejected' in request.resource.data);
@@ -213,6 +241,8 @@ service cloud.firestore {
               || request.resource.data.get('pickRejected', '') == resource.data.get('staffPick', ''))
           // قائمة «ليس غرضي» تكبر فقط: لا يُحذف منها شيء
           && request.resource.data.get('rejected', []).hasAll(resource.data.get('rejected', []))
+          // H7: أوقات التعديل والتجديد والإغلاق تُكتب بوقت «الآن» فقط
+          && freshIfChanged('editedAt') && freshIfChanged('renewedAt') && freshIfChanged('closedAt')
           && validReport(request.resource.data))
         || (isStaffOf(resource.data.officeId) && onlyChanges(['staffPick', 'pickedAt']))
       );
@@ -246,14 +276,21 @@ service cloud.firestore {
         && strMax(request.resource.data, 'lostSpot', 400)
         && strMax(request.resource.data, 'color', 60) && strMax(request.resource.data, 'brand', 200)
         && strMax(request.resource.data, 'bldg', 40) && strMax(request.resource.data, 'room', 60)
-        && strMax(request.resource.data, 'lostDate', 20) && strMax(request.resource.data, 'reportId', 100)
+        && isDay(request.resource.data, 'lostDate') && strMax(request.resource.data, 'reportId', 100)
+        // H7: البلاغ المرتبط (إن وُجد) بلاغ صاحب الطلب نفسه، ووقت الإنشاء «الآن»، وحدّ الإغراق
+        && (!('reportId' in request.resource.data) || request.resource.data.reportId == ''
+            || get(/databases/$(database)/documents/reports/$(request.resource.data.reportId)).data.uid == me())
+        && fresh(request.resource.data, 'createdAt') && rateOk()
         // المحجوز يقبل طلباً منافساً: صاحبه الحقيقي يستطيع الاعتراض قبل التسليم
         && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.status in ['available', 'reserved']
         && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.officeId == request.resource.data.officeId;
       allow update: if (isStaffOf(resource.data.officeId)
           // فصل المهام: الموظف لا يقرر في طلب أرسله هو
           && resource.data.uid != me()
-          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote'])
+          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote', 'answer', 'answeredAt'])
+          // H7: الموظف لا يكتب إجابة: يحذف الإجابة القديمة فقط عند سؤال جديد (أو يتركها كما هي)
+          && (!('answer' in request.resource.data) || request.resource.data.answer == resource.data.get('answer', null))
+          && (!('answeredAt' in request.resource.data) || request.resource.data.answeredAt == resource.data.get('answeredAt', null))
           && request.resource.data.status in ['pending', 'approved', 'done', 'rejected', 'expired', 'cancelled']
           && (request.resource.data.status != 'approved' || resource.data.status == 'approved' || approveOk(claimId, resource.data.itemId))
           && (request.resource.data.status != 'done' || resource.data.status == 'done' || doneOk(claimId, resource.data.itemId))
@@ -262,22 +299,24 @@ service cloud.firestore {
         // صاحب الطلب يجيب عن سؤال الموظف ما دام طلبه قيد المراجعة
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending' && ('question' in resource.data)
           && onlyChanges(['answer', 'answeredAt'])
-          && request.resource.data.answer is string && request.resource.data.answer.size() <= 2000)
+          && request.resource.data.answer is string && request.resource.data.answer.size() <= 2000
+          // H7: وقت الإجابة «الآن» (لا رقم مستقبلي يجعل كل سؤال لاحق يبدو مُجاباً)
+          && fresh(request.resource.data, 'answeredAt'))
         // «تعديل الطلب»: صاحبه يعدّل إجاباته ما دام قيد المراجعة ولم يسأله الموظف بعد
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending' && !('question' in resource.data)
           && onlyChanges(['proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'details', 'claimantName', 'idLast4', 'editedAt'])
-          && request.resource.data.editedAt is number
+          && fresh(request.resource.data, 'editedAt')
           && validDetails(request.resource.data)
           && strMax(request.resource.data, 'proof', 5000) && strMax(request.resource.data, 'lostSpot', 400)
           && strMax(request.resource.data, 'color', 60) && strMax(request.resource.data, 'brand', 200)
           && strMax(request.resource.data, 'bldg', 40) && strMax(request.resource.data, 'room', 60)
-          && strMax(request.resource.data, 'lostDate', 20) && strMax(request.resource.data, 'claimantName', 120)
+          && isDay(request.resource.data, 'lostDate') && strMax(request.resource.data, 'claimantName', 120)
           && (!('idLast4' in request.resource.data) || request.resource.data.idLast4.matches('[0-9]{4}')))
         // قياس الرضا: صاحب الطلب المكتمل يقيّمه مرة واحدة (1–5 وتعليق اختياري)
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'done' && !('rating' in resource.data)
           && onlyChanges(['rating', 'ratingNote', 'ratedAt'])
           && request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
-          && strMax(request.resource.data, 'ratingNote', 300))
+          && strMax(request.resource.data, 'ratingNote', 300) && freshIfChanged('ratedAt'))
         // «حذف حسابي»: الطلب المنتهي لا يُحذف، بل تُمسح منه بيانات صاحبه ويبقى السجل للمكتب
         // (المرفوض يبقى حتى لا يُحذف ويُعاد إرساله لتخمين التفاصيل من جديد)
         || (signedIn() && resource.data.uid == me() && resource.data.status in ['done', 'rejected', 'expired', 'cancelled']
@@ -297,14 +336,17 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['officeId', 'uid', 'cat', 'sub', 'spot', 'bldg', 'room', 'foundDate', 'note', 'code', 'status', 'createdAt'])
         && strMax(request.resource.data, 'code', 12)
         && request.resource.data.officeId is string
+        // H7: المكتب موجود، والتصنيف نص قصير، وتاريخ العثور يوم صالح، ووقت الإنشاء «الآن»، وحدّ الإغراق
+        && officeExists(request.resource.data.officeId) && catOk(request.resource.data)
+        && isDay(request.resource.data, 'foundDate') && fresh(request.resource.data, 'createdAt') && rateOk()
         && strMax(request.resource.data, 'cat', 40) && strMax(request.resource.data, 'sub', 200)
         && strMax(request.resource.data, 'spot', 400) && strMax(request.resource.data, 'bldg', 40)
-        && strMax(request.resource.data, 'room', 60) && strMax(request.resource.data, 'foundDate', 20)
+        && strMax(request.resource.data, 'room', 60)
         && strMax(request.resource.data, 'note', 2000);
       allow update: if
         // صاحب الإشعار يلغيه ما دام لم يُسلَّم
         (signedIn() && resource.data.uid == me() && resource.data.status == 'pending'
-          && request.resource.data.status == 'cancelled' && onlyChanges(['status', 'cancelledAt']))
+          && request.resource.data.status == 'cancelled' && onlyChanges(['status', 'cancelledAt']) && freshIfChanged('cancelledAt'))
         // «حذف حسابي»: الإشعار المستلَم يبقى للمكتب دون بيانات صاحبه
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'received'
           && request.resource.data.uid == 'deleted' && request.resource.data.note == '' && onlyChanges(['uid', 'note']))
@@ -347,7 +389,17 @@ service cloud.firestore {
         && strMax(request.resource.data, 'itemId', 100) && strMax(request.resource.data, 'claimId', 200)
         && strMax(request.resource.data, 'reportId', 100) && strMax(request.resource.data, 'note', 600);
       allow update: if false;
-      allow delete: if isAdmin();
+      // H7: سجل الحيازة لا يُمحى من التطبيق أبداً (التنظيف من Firebase Console فقط)
+      allow delete: if false;
+    }
+
+    // H7: حدّ الإغراق: وثيقة لكل حساب فيها وقت آخر إنشاء (وقت الخادم فقط). لا تُحذف قبل مرور 20 ثانية،
+    // حتى لا يتجاوز أحد الحدّ بحذفها ثم الإنشاء مباشرة
+    match /rate/{userId} {
+      allow read: if signedIn() && userId == me();
+      allow create, update: if signedIn() && userId == me()
+        && request.resource.data.keys().hasOnly(['at']) && request.resource.data.at == request.time;
+      allow delete: if signedIn() && userId == me() && resource.data.at < request.time - duration.value(20, 's');
     }
 
     // صلاحيات الموظفين: يمنحها ويسحبها المالك فقط

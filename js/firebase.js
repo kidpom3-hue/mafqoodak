@@ -8,7 +8,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence,
-  collection, doc, query, where, onSnapshot, getDoc, getDocs, getCountFromServer, setDoc, updateDoc, deleteDoc, writeBatch, deleteField, arrayUnion,
+  collection, doc, query, where, onSnapshot, getDoc, getDocs, getCountFromServer, setDoc, updateDoc, deleteDoc, writeBatch, deleteField, arrayUnion, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 // App Check (H4): يثبت أن الطلبات تأتي من تطبيقنا على موقعنا لا من سكربت آخر يستخدم المفاتيح العامة
 import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app-check.js';
@@ -57,6 +57,9 @@ export const dbx = {
   update: (path, data) => updateDoc(doc(db, path), data),
   del: path => deleteDoc(doc(db, path)),
   batch: () => writeBatch(db),
+  // H7: حدّ الإغراق بلا خادم. إنشاء بلاغ أو إشعار تسليم أو طلب استلام يكتب معه في العملية نفسها rate/{uid} = {at: وقت الخادم}،
+  // والقواعد ترفض الإنشاء إن كان آخر إنشاء لهذا الحساب قبل أقل من 20 ثانية (انظر rateOk في firestore.rules)
+  createLimited: (path, data, uid) => { const b = writeBatch(db); b.set(doc(db, path), data); b.set(doc(db, 'rate/' + uid), {at: serverTimestamp()}); return b.commit(); },
   // قراءة مرة واحدة لقائمة وثائق بشروط مساواة (مثل بلاغات المستخدم في كل المكاتب)
   // عدد المستندات فقط (قراءة واحدة لكل 1000 مستند) بدل تحميلها كلها
   count: async (col, filters) => (await getCountFromServer(query(collection(db, col), ...filters.map(([f, op, v]) => where(f, op, v))))).data().count,

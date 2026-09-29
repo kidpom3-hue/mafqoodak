@@ -149,6 +149,7 @@ export const AR = {
   "home.statAvail": "متاح للاستلام",
   "home.statReturned": "أُعيد لأصحابه",
   "home.statKeep": "{unit} مدة الحفظ",
+  "err.rateWait": "انتظر قليلاً ثم أعد المحاولة.",
   "upd.ready": "تحديث جديد متاح",
   "upd.btn": "تحديث",
   "ui.version": "الإصدار {v}",

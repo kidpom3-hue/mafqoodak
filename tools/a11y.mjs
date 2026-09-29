@@ -47,7 +47,8 @@ const PAGES = [
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? {executablePath: process.env.CHROMIUM_PATH} : {});
 const found = []; let checked = 0;
 for (const lang of ['ar', 'en']) for (const dark of [false, true]) for (const [route, user, mode, params] of PAGES){
-  const ctx = await browser.newContext({viewport: {width: 390, height: 844}, colorScheme: dark ? 'dark' : 'light'});
+  // bypassCSP: لحقن axe-core في الصفحة فقط (سياسة CSP في index.html تمنع السكربتات المضمّنة، وهذا المقصود في التطبيق)
+  const ctx = await browser.newContext({viewport: {width: 390, height: 844}, colorScheme: dark ? 'dark' : 'light', bypassCSP: true});
   await ctx.route(/firebase-app\.js/, r => r.fulfill({contentType: 'text/javascript', body: 'export const initializeApp = () => ({});'}));
   await ctx.route(/firebase-auth\.js/, r => r.fulfill({contentType: 'text/javascript', body: stub('auth.js')}));
   await ctx.route(/firebase-firestore\.js/, r => r.fulfill({contentType: 'text/javascript', body: stub('firestore.js')}));

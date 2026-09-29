@@ -9,6 +9,13 @@ import { toast } from './utils.js';
 import { t } from './i18n.js';
 import './theme.js';   // يطبّق المظهر المحفوظ (فاتح/داكن/تلقائي)
 
+// H7: منع التأطير (clickjacking): لا يُرسم التطبيق إذا فُتح داخل إطار في موقع آخر (frame-ancestors لا تعمل في meta)
+const FRAMED = (() => { try { return window.top !== window.self; } catch { return true; } })();
+if (FRAMED){ document.body.innerHTML = ''; throw new Error('framed'); }
+// H7: الخطوط من Google Fonts بلا onload مضمّن في index.html (CSP): نضيفها هنا كملف تنسيق عادي
+(() => { const pre = document.querySelector('link[rel=preload][as=style][href*="fonts.googleapis.com"]');
+  if (pre){ const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = pre.href; document.head.appendChild(l); } })();
+
 // إزالة اختصار الصفحة من الرابط بعد قراءته حتى لا يتكرر عند التحديث
 if (location.hash) history.replaceState(null, '', location.pathname + location.search);
 

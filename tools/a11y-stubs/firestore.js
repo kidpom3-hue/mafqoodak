@@ -21,6 +21,8 @@ export const getDocs = async q => { const d = docsOf(q); cnt(Math.max(1, d.lengt
 const log = (op, p, d) => F().writes.push([op, p, d && JSON.parse(JSON.stringify(d))]);
 // deleteField: يحذف الحقل عند التطبيق. spotRule: يحاكي القواعد (items لا تقبل spot بعد العملية)
 export const deleteField = () => ({__del: 1});
+// H7: وقت الخادم (في البديل التجريبي: وقت الجهاز)
+export const serverTimestamp = () => Date.now();
 export const arrayUnion = (...a) => ({__union: a});
 const merged = (cur, d) => { const o = {...(cur || {})}; for (const [k, v] of Object.entries(d)) { if (v && v.__del) delete o[k]; else if (v && v.__union) o[k] = [...new Set([...(Array.isArray(o[k]) ? o[k] : []), ...v.__union])]; else o[k] = v; } return o; };
 const after = (op, p, d, o) => op === 'set' && !o?.merge ? merged({}, d) : merged(F().db[p], d);

@@ -6,7 +6,8 @@
   "scripts": {
     "test:rules": "firebase emulators:exec --only firestore --project demo-mafqoodak \"node rules.test.mjs\"",
     "a11y": "node a11y.mjs",
-    "badges": "node badges.mjs"
+    "badges": "node badges.mjs",
+    "fuzz": "node fuzz.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",

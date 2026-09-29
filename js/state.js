@@ -296,7 +296,7 @@ function autoClose(){
     for (const r of S.myReports){
       if (r.status !== 'open' || autoClosed.has(r.id) || !(r.id === c.reportId || (r.staffPick && r.staffPick === c.itemId))) continue;
       autoClosed.add(r.id);
-      dbx.update('reports/' + r.id, {status: 'closed', closedAt: c.doneAt || Date.now(), closedReason: 'office'}).catch(e => console.warn('[auto close]', e?.code || e));
+      dbx.update('reports/' + r.id, {status: 'closed', closedAt: Date.now(), closedReason: 'office'})   // H7: القواعد تقبل وقت «الآن» فقط.catch(e => console.warn('[auto close]', e?.code || e));
     }
   }
 }
@@ -476,6 +476,22 @@ export function getName(uid){
 }
 
 /* ---------- الكتابة مع رسائل أخطاء واضحة ---------- */
+/* H7: إنشاء محدود (بلاغ، إشعار تسليم، طلب استلام) عبر dbx.createLimited. القواعد تسمح بإنشاء واحد كل 20 ثانية لكل حساب؛
+   نتحقق على الجهاز أولاً، وعند رفض الخادم نقرأ rate/{uid}: إن كان الإنشاء السابق قريباً تظهر رسالة ودّية «انتظر قليلاً ثم أعد المحاولة» */
+const RATE_MS = 20000;
+const rateErr = () => Object.assign(new Error('rate'), {msg: t('err.rateWait'), code: 'rate'});
+export async function createLimited(path, data){
+  if (Date.now() - (LS.get('rateAt', 0) || 0) < RATE_MS) throw rateErr();
+  try { await dbx.createLimited(path, data, S.uid); LS.set('rateAt', Date.now()); }
+  catch (e){
+    if (String(e?.code || '').includes('permission-denied')){
+      const r = await dbx.get('rate/' + S.uid).catch(() => null);
+      const at = typeof r?.at?.toMillis === 'function' ? r.at.toMillis() : +r?.at || 0;
+      if (at && Date.now() - at < RATE_MS + 10000) throw rateErr();
+    }
+    throw e;
+  }
+}
 export async function write(fn, okMsg){
   try { await fn(); if (okMsg) toast(okMsg); return true; }
   catch (e){

@@ -29,8 +29,12 @@ function fmt(key, o){
 }
 // يوم بصيغة YYYY-MM-DD بتوقيت الرياض من وقت بالمللي ثانية (للتصدير والمقارنة)
 let isoF;
+/* H7: قيم غير صالحة (بيانات تالفة من القواعد القديمة مثل lostDate: 'x' أو createdAt: 'x') لا توقف الصفحة أبداً:
+   كل دوال التاريخ ترجع '' بدل أن ترمي RangeError (Invalid time value) */
+const okMs = ms => typeof ms === 'number' && Number.isFinite(ms) && !isNaN(new Date(ms).getTime());
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 export const isoDay = ms => {
-  if (!ms) return '';
+  if (!okMs(ms)) return '';
   try {
     isoF = isoF || new Intl.DateTimeFormat('en-CA', {timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'});
     const p = Object.fromEntries(isoF.formatToParts(new Date(ms)).map(x => [x.type, x.value]));
@@ -41,18 +45,18 @@ export const isoDay = ms => {
   }
 };
 export const today = () => isoDay(Date.now());
-export const dayNum = s => { if (!s) return NaN; const [y,m,d] = s.split('-').map(Number); return Date.UTC(y, m-1, d) / 864e5; };
+export const dayNum = s => { if (typeof s !== 'string' || !DAY_RE.test(s)) return NaN; const [y,m,d] = s.split('-').map(Number); return Date.UTC(y, m-1, d) / 864e5; };
 export const daysAgo = s => dayNum(today()) - dayNum(s);
 // تاريخ مخزّن كنص (YYYY-MM-DD): نأخذ ظهر ذلك اليوم بتوقيت غرينتش، فيبقى اليوم نفسه في الرياض
-const noon = s => { const [y,m,d] = s.split('-').map(Number); return new Date(Date.UTC(y, m-1, d, 12)); };
+const noon = s => { if (typeof s !== 'string' || !DAY_RE.test(s)) return null; const [y,m,d] = s.split('-').map(Number); const x = new Date(Date.UTC(y, m-1, d, 12)); return isNaN(x.getTime()) ? null : x; };
 // التاريخ حسب اللغة: ar-SA أو en-GB، بالتقويم الميلادي والأرقام اللاتينية في اللغتين
-export const fmtDate = s => s ? fmt('d', {day: 'numeric', month: 'long'}).format(noon(s)) : '';
+export const fmtDate = s => { const d = noon(s); try { return d ? fmt('d', {day: 'numeric', month: 'long'}).format(d) : ''; } catch { return ''; } };
 // التاريخ والوقت (سجل الحيازة): «27 سبتمبر 2026، 10:30 ص» / «27 Sept 2026, 10:30»
-export const fmtDateTime = ms => ms ? fmt('dt', {day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit'}).format(new Date(ms)) : '';
+export const fmtDateTime = ms => { if (!okMs(ms)) return ''; try { return fmt('dt', {day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit'}).format(new Date(ms)); } catch { return ''; } };
 // G2: الوقت الدقيق الموحّد: «الأحد 27 سبتمبر · 9:31 م»، والسنة فقط إن لم تكن الحالية،
 // وخلال آخر 24 ساعة: «قبل 5 دقائق · 9:31 م». الإنجليزية بالمنطق نفسه
 export function when(ms){
-  if (!ms) return '';
+  if (!okMs(ms)) return '';
   // الساعة لا تنقسم على سطرين: «· 9:31 م» بمسافات غير قابلة للكسر (السطر ينكسر قبل «·» فقط عند الحاجة)
   const d = new Date(ms), clock = ' ·\u00A0' + fmt('hm', {hour: 'numeric', minute: '2-digit', hour12: true}).format(d).replace(/\s/g, '\u00A0');
   const m = Math.floor((Date.now() - ms) / 6e4);
@@ -75,7 +79,7 @@ export function relDay(s){
   return fmtDate(s);
 }
 export function relTime(ms){
-  if (!ms) return '';
+  if (!okMs(ms)) return '';
   const m = Math.round((Date.now() - ms) / 6e4);
   if (m < 1) return t('time.now');
   if (m < 60) return tp('time.minAgo', m);
