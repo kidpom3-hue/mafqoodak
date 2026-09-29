@@ -845,3 +845,47 @@ html[data-text] .pill{white-space:normal}
 .sf-prefs .link{font-size:13.5px;min-height:36px;display:inline-flex;align-items:center}
 /* المصطلحات في فهرس الخدمات: مطوية */
 .terms-box .terms{padding-bottom:13px}
+/* ---------- PR 3: «طلباتي» ولوحات الموظف ---------- */
+/* البطاقة المختصرة (<details>): الملخّص (العنوان والرقم والحالة والخطوة التالية)، والتفاصيل عند الفتح */
+.mcard{background:var(--surface);border:1px solid var(--line);border-radius:16px}
+.mcard.attn{border-color:var(--warn)}
+.mcard.flash{outline:2px solid var(--primary);outline-offset:2px}
+.mcard-sum{list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:4px 10px;padding:12px 14px;border-radius:16px;min-height:44px}
+.mcard-sum::-webkit-details-marker{display:none}
+.mcard-sum>svg:last-child{grid-column:2;grid-row:1 / span 2;align-self:center;width:18px;height:18px;color:var(--muted);transition:transform .2s ease}
+.mcard[open]>.mcard-sum>svg:last-child{transform:rotate(180deg)}
+.mcard-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-width:0}
+.mcard-h{display:flex;flex-direction:column;gap:2px;min-width:0}
+.mcard-h h3{font-size:15.5px;overflow-wrap:anywhere}
+.mcard-h .refs{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.mcard-h .req-no{font-family:var(--f-mono);font-size:12.5px;color:var(--muted)}
+.mcard-top .pill{flex:none}
+.mcard-sum .next{grid-column:1;display:flex;align-items:flex-start;gap:6px;font-size:13.5px;font-weight:600;color:var(--primary)}
+.mcard-sum .next svg{width:15px;height:15px;flex:none;margin-top:.2em}
+.mcard-sum .next.warn{color:var(--warn)}
+.mcard-body{display:flex;flex-direction:column;gap:10px;padding:0 14px 14px;border-top:1px solid var(--line);padding-top:12px}
+/* رمز الاستلام أعلى بطاقته: خط كبير، وزر نسخ، وآخر موعد */
+.code-hero{padding:14px 12px;gap:6px}
+.code-hero .digits{font-size:36px}
+.code-hero .late{color:var(--bad)}
+/* «يحتاج انتباهك» */
+.attn-box{background:var(--surface);border:1.5px solid var(--warn);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.attn-box .section-title{margin:0}
+.attn-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.attn-list li{display:flex;align-items:center;gap:8px;font-size:14px}
+.attn-list li>svg{width:18px;height:18px;flex:none;color:var(--warn)}
+.attn-list .btn{flex:none}
+/* التبويبات (role="tablist") */
+.tabs{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;background:var(--surface-2);border-radius:14px;padding:4px}
+.tabs [role=tab]{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px 6px;min-height:40px;padding:6px 8px;border-radius:10px;font-weight:700;font-size:13.5px;color:var(--muted);text-align:center;line-height:1.3}
+.tabs [role=tab][aria-selected=true]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.tabs .dot{width:8px;height:8px;border-radius:50%;background:var(--warn);flex:none}
+/* «منتهية (n)» المطوية */
+.ended{border-top:1px dashed var(--line);padding-top:6px}
+.ended>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;min-height:40px;font-weight:700;font-size:14px;color:var(--muted)}
+.ended>summary::-webkit-details-marker{display:none}
+.ended>summary svg{width:16px;height:16px;transition:transform .2s ease}
+.ended[open]>summary svg{transform:rotate(180deg)}
+.ended>.list,.ended>.btn,.ended>p{margin-top:8px}
+.empty.sm{padding:18px 12px;gap:10px}
+.attn-list .grow{min-width:0;overflow-wrap:anywhere}

@@ -1,9 +1,10 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
 import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
-import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel } from '../utils.js';
+import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, maybeFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf } from '../state.js';
-import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq } from './common.js';
+import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, CARD_OPEN, ENDED_OPEN } from './common.js';
+export { CARD_OPEN, ENDED_OPEN };
 import { claimCardStaff, rivals, dateOf, qaBox, timeline, catKeepNote } from './staff.js';
 import { aiReady } from '../ai.js';
 import { hydrate } from '../ui.js';
@@ -121,7 +122,7 @@ export function vItem(){
         <button class="btn danger" data-act="delItem" data-id="${esc(i.id)}">${icon('trash')}${t('c.delete')}</button>
       </div>
       ${rivals(i).length ? `<div class="note warn">${icon('info')}<span>${t('it.rival')}</span></div>` : ''}
-      ${cls.length ? `<div class="section-title">${t('it.claims')}</div><div class="list">${cls.map(claimCardStaff).join('')}</div>` : ''}`;
+      ${cls.length ? `<div class="section-title">${t('it.claims')}</div><div class="list">${cls.map(c => claimCardStaff(c, {open: true})).join('')}</div>` : ''}`;
   } else if (i.status === 'disposed'){
     actions = `<div class="note">${icon('clock')}<span>${t('it.disposed')}</span></div>`;
   } else if (mine && ['expired', 'cancelled'].includes(mine.status)){
@@ -277,29 +278,71 @@ export function vReportForm(){
   </div>`;
 }
 
-/* ---------- visitor: my requests ---------- */
-// مركز التنبيهات: كل ما يحتاج انتباهك الآن، والجديد منذ آخر زيارة معلّم
-function alertCenter(){
-  const keys = alertKeys(); if (!keys.length) return '';
-  const seen = new Set(LS.get('seen', []));
-  return `<div class="section-title">${icon('bell')}${t('nt.center')}</div>
-    <ul class="alerts">${keys.map(k => `<li>${icon('bell')}<span class="grow">${t(msgOf(k))}</span>${seen.has(k) ? '' : `<span class="pill info">${t('nt.new')}</span>`}</li>`).join('')}</ul>`;
+/* ---------- visitor: my requests («طلباتي»، PR 3) ----------
+   الأعلى: «يحتاج انتباهك» (رمز جاهز، سؤال من الموظف، غرض مقترح، تقييم معلّق، بلاغ قديم) بأزرار تفتح البطاقة.
+   ثم تبويبات (طلبات الاستلام / بلاغاتي / ما سلّمته) إن كان عند المستخدم أكثر من نوع، وإلا قائمة واحدة.
+   كل قائمة: الجاري أولاً (بآخر حدث)، ثم «منتهية (n)» مطوية. البطاقة مختصرة (<details>): العنوان والرقم والحالة
+   و«الخطوة التالية»، والضغط يفتح التفاصيل. البطاقة التي تحتاج انتباهاً تُفتح تلقائياً. العرض فقط: البيانات كما هي */
+// ما يحتاج انتباه صاحب الطلب أو البلاغ (فارغ = لا شيء)
+export function claimNeed(c){
+  const i = item(c.itemId), gone = !i && !itemLoading(c.itemId);
+  if (c.status === 'approved' && !gone && myCode(c.id) && !(c.pickupBy && Date.now() > c.pickupBy)) return 'code';
+  if (awaitingAnswer(c)) return 'answer';
+  if (c.status === 'done' && !c.rating) return 'rate';
+  return '';
 }
+export function reportNeed(r){
+  if (r.status !== 'open') return '';
+  const active = linkedClaim(r);
+  if (isStale(r) && !active) return 'stale';
+  if (!active && (pickOf(r) || maybeFor(r, 1).length)) return 'sugg';
+  return '';
+}
+const CLAIM_DONE = ['done', 'rejected', 'expired', 'cancelled'];
+const claimTitle = c => { const i = item(c.itemId); return i ? showTitle(i) : claimNo(c); };
+function attentionBox(cls, reps){
+  const rows = [
+    ...cls.map(c => [claimNeed(c), c]).filter(([n]) => n).map(([n, c]) => ({msg: t('att.' + n, {title: esc(claimTitle(c))}), tab: 'claims', key: 'c:' + c.id, ended: CLAIM_DONE.includes(c.status), ic: n === 'code' ? 'shield' : n === 'answer' ? 'question' : 'check'})),
+    ...reps.map(r => [reportNeed(r), r]).filter(([n]) => n).map(([n, r]) => ({msg: t('att.' + n, {title: esc(r.title)}), tab: 'reports', key: 'r:' + r.id, ended: false, ic: n === 'stale' ? 'clock' : 'bell'})),
+  ];
+  if (!rows.length) return '';
+  return `<section class="attn-box" aria-labelledby="att-t"><h2 class="section-title" id="att-t">${icon('bell')}${t('att.title')} <span class="count">${rows.length}</span></h2>
+    <ul class="attn-list">${rows.map(x => `<li>${icon(x.ic)}<span class="grow">${x.msg}</span>
+      <button class="btn sm soft" data-act="openCard" data-tab="${x.tab}" data-card="${esc(x.key)}" ${x.ended ? 'data-ended="1"' : ''}>${t('att.open')}</button></li>`).join('')}</ul></section>`;
+}
+// اسم التبويب المحفوظ (localStorage داخل try/catch عبر LS)
+export const MINE_TABS = ['claims', 'reports', 'found'];
 export function vMine(){
   if (!S.uid) return `<div class="wrap">${loginPrompt(t('mine.login'))}</div>`;
   const reps = myReports(), cls = myClaims(), fnd = myFound();
   const focus = S.route.params.focus;
+  const lists = {claims: cls, reports: reps, found: fnd};
+  const types = MINE_TABS.filter(k => lists[k].length);
+  // البلاغ أو الإشعار الذي أُنشئ للتو (focus) يُفتح في تبويبه
+  if (focus){ const k = reps.some(r => r.id === focus) ? 'reports' : fnd.some(f => f.id === focus) ? 'found' : ''; if (k){ LS.set('mineTab', k); CARD_OPEN.set((k === 'reports' ? 'r:' : 'f:') + focus, true); } }
+  const saved = LS.get('mineTab', '');
+  const cur = types.includes(saved) ? saved : types[0] || 'claims';
+  const dot = {claims: cls.some(claimNeed), reports: reps.some(reportNeed), found: false};
+  const tabs = types.length > 1 ? `<div class="tabs" role="tablist" aria-label="${t('mine.tabsAria')}">${types.map(k => `<button role="tab" id="mt-${k}" aria-controls="mp-${k}" aria-selected="${k === cur}" tabindex="${k === cur ? 0 : -1}" data-act="mineTab" data-v="${k}">
+      <span>${t('mine.t.' + k)}</span><span class="count">${lists[k].length}</span>${dot[k] ? `<span class="dot" aria-hidden="true"></span><span class="sr-only">${t('mine.attnDot')}</span>` : ''}</button>`).join('')}</div>` : '';
+  const panel = types.length ? mineList(cur, lists[cur], focus) : `<div class="empty">${icon('inbox')}<b>${t('mine.emptyAll')}</b><button class="btn soft" data-act="nav" data-r="browse">${icon('search')}${t('home.ctaBrowse')}</button></div>`;
   return `<div class="wrap" data-view="mine">
     <section class="hero"><div class="hero-kicker">${icon('inbox')}${t('mine.kicker')}</div><h1 class="hero-title">${t('nav.mine')}</h1></section>
-    ${alertCenter()}
-    <div class="section-title">${t('mine.claims')} ${cls.length ? `<span class="count">${cls.length}</span>` : ''}</div>
-    ${cls.length ? `<div class="list">${cls.map(claimCardMine).join('')}</div>` : `<div class="note">${icon('info')}<span>${t('mine.noClaims')}</span></div>`}
-    <div class="section-title">${t('mine.reports')} ${reps.length ? `<span class="count">${reps.length}</span>` : ''}</div>
-    ${reps.length ? `<div class="list">${reps.map(r => reportCardMine(r, r.id === focus)).join('')}</div>`
-      : `<div class="empty">${icon('bell')}<b>${t('mine.noReports')}</b><button class="btn soft" data-act="nav" data-r="report">${icon('plus')}${t('foot.report')}</button></div>`}
-    ${fnd.length ? `<div class="section-title">${t('hi.mineTitle')} <span class="count">${fnd.length}</span></div>
-      <div class="list">${fnd.map(f => foundCardMine(f, f.id === focus)).join('')}</div>` : ''}
+    ${attentionBox(cls, reps)}
+    ${tabs}
+    <div ${types.length > 1 ? `role="tabpanel" id="mp-${cur}" aria-labelledby="mt-${cur}" tabindex="0"` : ''} class="mine-panel">${panel}</div>
   </div>`;
+}
+// قائمة نوع واحد: الجاري أولاً ثم «منتهية (n)» مطوية، وجملة وزر واحد إن لم يكن فيها شيء جارٍ
+function mineList(k, arr, focus){
+  const isEnded = k === 'claims' ? c => CLAIM_DONE.includes(c.status) : k === 'reports' ? r => r.status !== 'open' : f => f.status !== 'pending';
+  const card = k === 'claims' ? claimCardMine : k === 'reports' ? r => reportCardMine(r, r.id === focus) : f => foundCardMine(f, f.id === focus);
+  const act = arr.filter(x => !isEnded(x)), done = arr.filter(isEnded);
+  const empty = {claims: ['mine.emptyClaims', 'browse', 'search', 'home.ctaBrowse'], reports: ['mine.emptyReports', 'report', 'plus', 'home.ctaLost'], found: ['mine.emptyFound', 'found', 'tag', 'home.ctaFound']}[k];
+  return `${act.length ? `<div class="list">${act.map(card).join('')}</div>`
+      : `<div class="empty sm">${t(empty[0])}<button class="btn soft" data-act="nav" data-r="${empty[1]}">${icon(empty[2])}${t(empty[3])}</button></div>`}
+    ${done.length ? `<details class="ended" data-ended="${k}" ${ENDED_OPEN.get(k) ? 'open' : ''}><summary>${t('mine.ended', {n: done.length})}${icon('chev')}</summary>
+      <div class="list">${done.map(card).join('')}</div></details>` : ''}`;
 }
 /* إشعار التسليم كما يراه الواجد: بانتظار تسليمه ← استلمه المكتب (برقم قيده) ← عاد لصاحبه */
 export function foundCardMine(f, focus){
@@ -316,12 +359,12 @@ export function foundCardMine(f, focus){
       ${o ? `<dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>` : ''}`
     : st === 'received' ? `<div class="note ok">${icon('check')}<span>${it ? t('hi.receivedRef', {ref: `<b>${esc(it.ref)}</b>`}) : t('hi.received')}</span></div>`
     : `<div class="btn-row"><button class="btn sm ghost" data-act="delFound" data-id="${esc(f.id)}">${icon('trash')}${t('c.delete')}</button></div>`;
-  return `<div class="box" ${focus ? 'style="border-color:var(--primary)"' : ''}>
-    <div class="box-head"><div><h3>${esc(f.sub ? subLabel(f.sub) : catName(f.cat))}</h3>
-      <span class="meta">${icon(cat(f.cat).icon)}${esc([spotText(f), fmtDate(f.foundDate)].filter(Boolean).join(' · '))}</span>
-      <span class="meta">${icon('building')}${esc(officeName(f.officeId))}</span>${whenLine('c.sentAt', f.createdAt)}</div>${pill(FOUND_STATUS, st)}</div>
-    ${body}
-  </div>`;
+  const next = st === 'pending' ? t('ns.hand', {place: esc(oPlace(o) || oName(o))}) : t('ns.f.' + st);
+  return mcard({key: 'f:' + f.id, open: focus, pillHtml: pill(FOUND_STATUS, st), next,
+    head: `${it ? `<span class="ref">${esc(it.ref)}</span>` : f.code ? `<span class="meta" dir="ltr">${esc(f.code)}</span>` : ''}<h3>${esc(f.sub ? subLabel(f.sub) : catName(f.cat))}</h3>`,
+    body: `<span class="meta">${icon(cat(f.cat).icon)}${esc([spotText(f), fmtDate(f.foundDate)].filter(Boolean).join(' · '))}</span>
+      <span class="meta">${icon('building')}${esc(officeName(f.officeId))}</span>${whenLine('c.sentAt', f.createdAt)}
+      ${body}`});
 }
 export function claimSteps(st){
   const s1 = true, s2 = st === 'approved' || st === 'done', s3 = st === 'done';
@@ -331,30 +374,41 @@ export function claimCardMine(c){
   const i = item(c.itemId); if (!i) ensureItem(c.itemId);
   const gone = !i && !itemLoading(c.itemId);   // الغرض حُذف من المستودع
   const o = S.offices.find(x => x.id === c.officeId); const code = myCode(c.id);
-  let body = '';
+  const late = c.status === 'approved' && c.pickupBy && Date.now() > c.pickupBy;
+  let body = '', top = '';
   if (gone && ['pending', 'approved'].includes(c.status)) body = `<div class="note warn">${icon('info')}<span>${t('mine.gone')}</span></div>`;
   // سؤال تحقق من المكتب: بانتظار إجابتك، أو أجبت عنه
   else if (c.status === 'pending' && awaitingAnswer(c)) body = `<div class="note info qa-ask">${icon('question')}<span><b>${t('qa.fromOffice')}</b> ${esc(c.question)}</span></div>
     <button class="btn sm" data-act="answerQ" data-id="${esc(c.id)}" style="align-self:flex-start">${icon('edit')}${t('qa.answerBtn')}</button>`;
   else if (c.status === 'pending') body = `<p class="muted">${t('mine.pending')}</p>${qaBox(c)}
     ${claimEditable(c) && i ? `<button class="btn sm ghost" data-act="editClaim" data-id="${esc(c.id)}" style="align-self:flex-start">${icon('edit')}${t('cl.edit')}</button>` : ''}`;
-  else if (c.status === 'approved') body = code
-    ? `<div class="code-tag"><small>${t('mine.code')}</small><span class="digits">${esc(code)}</span><small>${t('mine.codeHint')}</small></div>
-       <dl class="facts"><dt>${t('st.cmpPlace')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>`
-    : `<div class="note warn">${icon('info')}<span>${t('mine.noCode')}</span></div>`;
-  // مهلة الاستلام للطلب المقبول
-  if (c.status === 'approved' && c.pickupBy && !gone) body = `<div class="note ${Date.now() > c.pickupBy ? 'warn' : 'info'}">${icon('clock')}<span>${t(Date.now() > c.pickupBy ? 'st.pickupEnded' : 'mine.collectBy', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`})}</span></div>` + body;
+  else if (c.status === 'approved'){
+    // رمز الاستلام في مكان بارز أعلى البطاقة: خط كبير، وزر نسخ، وآخر موعد للاستلام
+    if (code) top = `<div class="code-tag code-hero"><small>${t('mine.code')}</small><span class="digits" dir="ltr">${esc(code)}</span>
+      <button class="btn sm ghost" data-act="copy" data-v="${esc(code)}">${icon('copy')}${t('c.copy')}</button>
+      ${c.pickupBy ? `<small class="${late ? 'late' : ''}">${t(late ? 'st.pickupEnded' : 'mine.codeUntil', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`, when: when(c.pickupBy)})}</small>` : ''}
+      <small>${t('mine.codeHint')}</small></div>`;
+    body = code ? `<dl class="facts"><dt>${t('st.cmpPlace')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>`
+      : `<div class="note warn">${icon('info')}<span>${t('mine.noCode')}</span></div>
+         ${c.pickupBy ? `<div class="note ${late ? 'warn' : 'info'}">${icon('clock')}<span>${t(late ? 'st.pickupEnded' : 'mine.collectBy', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`})}</span></div>` : ''}`;
+  }
   else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>${t('mine.done', {when: relTime(c.doneAt)})}</span></div>${rateBox(c)}`;
   else if (c.status === 'rejected') body = `<div class="note warn">${icon('info')}<span>${c.note ? t('mine.rejectedWhy', {note: esc(noteText(c.note))}) : t('mine.rejected')}</span></div>`;
   else if (c.status === 'expired') body = `<div class="note warn">${icon('clock')}<span>${t('mine.expired')}</span></div>`;
   else if (c.status === 'cancelled') body = `<div class="note">${icon('info')}<span>${c.note ? t('mine.cancelledWhy', {note: esc(noteText(c.note))}) : t('mine.cancelled')}</span></div>`;
-  return `<div class="box" id="claim-${esc(c.id)}" tabindex="-1">
-    <div class="box-head"><div>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<h3>${esc(i ? showTitle(i) : t(gone ? 'mine.goneTitle' : 'c.loadingDots'))}</h3><span class="meta">${icon('building')}${esc(officeName(c.officeId))}</span>
-      <span class="meta">${t('c.reqNo')}: <b dir="ltr" class="req-no">${esc(claimNo(c))}</b></span></div>${pill(CLAIM_STATUS, c.status)}</div>
-    ${['pending', 'approved', 'done'].includes(c.status) && !gone ? claimSteps(c.status) : ''}
-    ${claimTimeline(c)}
-    ${body}
-  </div>`;
+  // الخطوة التالية (سطر واحد في الملخّص)
+  const need = claimNeed(c);
+  const next = gone && ['pending', 'approved'].includes(c.status) ? t('ns.gone')
+    : c.status === 'pending' ? t(awaitingAnswer(c) ? 'ns.answer' : 'ns.review')
+    : c.status === 'approved' ? (late ? t('ns.late') : c.pickupBy ? t('ns.come', {date: esc(dateOf(c.pickupBy))}) : t('ns.comeNoDate'))
+    : c.status === 'done' ? t(c.rating ? 'ns.done' : 'ns.rate') : t('ns.' + c.status);
+  return mcard({key: 'c:' + c.id, id: 'claim-' + c.id, open: !!need, tone: need || late ? 'warn' : '', pillHtml: pill(CLAIM_STATUS, c.status), next,
+    head: `<span class="refs">${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<b dir="ltr" class="req-no">${esc(claimNo(c))}</b></span><h3>${esc(i ? showTitle(i) : t(gone ? 'mine.goneTitle' : 'c.loadingDots'))}</h3>`,
+    body: `${top}
+      <span class="meta">${icon('building')}${esc(officeName(c.officeId))}</span>
+      ${['pending', 'approved', 'done'].includes(c.status) && !gone ? claimSteps(c.status) : ''}
+      ${claimTimeline(c)}
+      ${body}`});
 }
 /* قياس رضا المستفيد: الطلب المكتمل يُسأل مرة واحدة «كيف كانت تجربتك؟» (5 نجوم وتعليق اختياري) */
 // مسودة التقييم: «طلباتي» تُعاد رسمها عند تغيّر البيانات، فنحفظ النجوم والتعليق حتى لا يضيعا
@@ -390,9 +444,13 @@ export function reportCardMine(r, focus){
       ${active ? '' : `<div class="btn-row"><button class="btn sm" data-act="goClaim" data-id="${esc(it.id)}" data-report="${esc(r.id)}">${icon('check')}${t('rc.isMine')}</button>
         <button class="btn sm ghost" data-act="notMine" data-id="${esc(r.id)}" data-item="${esc(it.id)}">${icon('x')}${t('rc.notMine')}</button></div>`}</div>`;
   const pickBox = pick ? `<div class="pick-box"><span class="t">${icon('shield')}${t('rc.staffPick')}</span>${sugg(pick, whenLine('rc.pickedAt', r.pickedAt))}</div>` : '';
-  return `<div class="box" ${focus ? 'style="border-color:var(--primary)"' : ''}>
-    <div class="box-head"><div><h3>${esc(r.title)}</h3><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''} · ${t('st.lostOn', {date: relDay(r.lostDate)})}</span><span class="meta">${icon('building')}${esc(officeName(r.officeId))}</span>
-      ${whenLine('c.sentAt', r.createdAt)}${whenLine('c.editedAt', r.editedAt)}</div>${pill(REPORT_STATUS, r.status)}</div>
+  const need = reportNeed(r);
+  const next = r.status !== 'open' ? t(r.closedReason === 'office' ? 'ns.closedOffice' : r.closedReason === 'self' ? 'ns.closedSelf' : 'ns.closed')
+    : need === 'stale' ? t('ns.stale') : active ? t('ns.claim') : need === 'sugg' ? t('ns.sugg') : t('ns.search');
+  return mcard({key: 'r:' + r.id, open: focus || !!need, tone: need ? 'warn' : '', pillHtml: pill(REPORT_STATUS, r.status), next,
+    head: `<span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}</span><h3>${esc(r.title)}</h3>`,
+    body: `<div><span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.color ? ' · ' + colorDot(r.color) + esc(colorName(r.color)) : ''} · ${t('st.lostOn', {date: relDay(r.lostDate)})}</span><span class="meta">${icon('building')}${esc(officeName(r.officeId))}</span>
+      ${whenLine('c.sentAt', r.createdAt)}${whenLine('c.editedAt', r.editedAt)}</div>
     ${r.status === 'open' && isStale(r) && !active ? `<div class="note warn stale">${icon('clock')}<span><b>${t('rc.stillQ')}</b> ${t('rc.stillHint')}</span></div>
       <div class="btn-row"><button class="btn sm" data-act="renewReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.stillYes')}</button>
         <button class="btn sm ghost" data-act="closeReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.stillFound')}</button></div>`
@@ -411,8 +469,7 @@ export function reportCardMine(r, focus){
       </div>
       <span class="ai-status" id="ai-${esc(r.id)}"></span>`
     : `${r.closedReason ? `<div class="note ${r.closedReason === 'office' ? 'ok' : ''}">${icon('check')}<span>${t(r.closedReason === 'office' ? 'rc.closedOffice' : 'rc.closedSelf')}</span></div>` : ''}
-      <div class="btn-row"><button class="btn sm ghost" data-act="delReport" data-id="${esc(r.id)}">${icon('trash')}${t('rc.delete')}</button></div>`}
-  </div>`;
+      <div class="btn-row"><button class="btn sm ghost" data-act="delReport" data-id="${esc(r.id)}">${icon('trash')}${t('rc.delete')}</button></div>`}`});
 }
 // طلب الاستلام النشط (قيد المراجعة أو مقبول) المرتبط بالبلاغ: عبر reportId أو على الغرض المرشَّح
 export const linkedClaim = r => myClaims().find(c => (c.reportId === r.id || (r.staffPick && c.itemId === r.staffPick)) && ['pending', 'approved'].includes(c.status)) || null;

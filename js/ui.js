@@ -159,12 +159,13 @@ function renderHeader(){
 function navItems(){
   if (S.mode === 'staff'){
     const pend = S.claims.filter(c => c.status === 'pending').length;
-    // البلاغات التي لها مرشّح لم يُرشَّح بعد + إشعارات التسليم المعلّقة
-    const open = S.reports.filter(r => r.status === 'open' && (!r.staffPick || rejectedOf(r).has(r.staffPick)) && candidatesFor(r, 1, full).length).length + S.found.length;
+    // الاستلام: طلبات جديدة + إشعارات تسليم معلّقة («تسليمات قادمة»، PR 3). البلاغات: التي لها مرشّح لم يُرشَّح بعد
+    const inbox = pend + S.found.length;
+    const open = S.reports.filter(r => r.status === 'open' && (!r.staffPick || rejectedOf(r).has(r.staffPick)) && candidatesFor(r, 1, full).length).length;
     return [
       {r: 'staff', tab: 'items', l: t('nav.store'), i: 'box'},
       {r: 'add', l: t('nav.add'), i: 'plus'},
-      {r: 'staff', tab: 'claims', l: t('nav.claims'), i: 'inbox', b: pend},
+      {r: 'staff', tab: 'claims', l: t('nav.claims'), i: 'inbox', b: inbox},
       {r: 'staff', tab: 'reports', l: t('nav.reports'), i: 'bell', b: open},
     ];
   }
