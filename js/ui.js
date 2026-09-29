@@ -22,6 +22,7 @@ const ROUTES = {
   browse: {live: true, v: vBrowse, update: updateBrowse},
   item: {live: true, v: vItem},
   claim: {live: false, v: vClaimForm},
+  gclaim: {live: false, v: vClaimForm},   // H11: طلب مجمّع بالوصف ({cat})
   report: {live: false, v: vReportForm, after: initForm},
   mine: {live: true, v: vMine},   // H4: التنبيهات تُقرأ بالنقر على التبويب أو فتح البطاقة، لا بمجرد الدخول
   office: {live: true, v: vOffice},

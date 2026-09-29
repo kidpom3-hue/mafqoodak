@@ -105,23 +105,30 @@ export const CLAIM_MAX_OPEN = 3, CLAIM_CAT_MS = 24 * 36e5;
 /* H10: autoSuggest:false = لا اقتراح آلي «قد يكون لك» للزائر في هذا التصنيف: عنوانه العام عام (نقود، بطاقات…)
    أو ما يميّزه سري (المبلغ، آخر 4 أرقام، عدد المفاتيح). المطابقة فيه عند الموظف فقط بالتفاصيل السرية */
 export const autoSuggestOk = id => cat(id).autoSuggest !== false;
+/* H11: groupPublic:true = أغراض لا يميّز بينها عنوانها العام (نقود، بطاقات، محافظ، مفاتيح): تظهر للزائر بطاقة مجمّعة واحدة
+   لكل تصنيف، ويطلبها بالوصف (طلب مجمّع بلا اختيار غرض)، ويربطها الموظف بالغرض الصحيح.
+   GROUP_CATS = groupCats() في firestore.rules (عدّلهما معاً) */
+export const isGrouped = id => !!CATS.find(c => c.id === id)?.groupPublic;
+export const GROUP_CATS = ['ids', 'cash', 'wallets', 'keys'];
+// المطابقة عند الموظف: الأيام بعد تاريخ الفقد، وهامش المبلغ، والمهلة قبل إغلاق الطلب المجمّع دون مطابقة
+export const GROUP_DAYS = 14, AMOUNT_TOL = 0.1, GROUP_EXPIRE_DAYS = 30;
 // كلمات عامة لا تُعدّ «كلمة مميزة» عند مقارنة عنوان البلاغ ووصفه بالعنوان العام للغرض (بعد التطبيع: بلا همزات وتاء مربوطة)
 export const SUGG_STOP = new Set(['في', 'من', 'على', 'الى', 'عن', 'مع', 'فيه', 'فيها', 'لون', 'اللون', 'لونها', 'لونه', 'نوع', 'غرض', 'شي', 'شيء',
   'صغير', 'صغيره', 'كبير', 'كبيره', 'جديد', 'جديده', 'قديم', 'قديمه', 'فقدت', 'ضاع', 'ضاعت', 'ضايع', 'لي', 'حقي', 'حقتي', 'داخل', 'عليه', 'عليها',
   'the', 'a', 'an', 'my', 'of', 'in', 'with', 'and', 'lost', 'small', 'big', 'new', 'old', 'colour', 'color']);
 export const CATS = [
-  {id:'ids', autoSuggest:false, name:'بطاقات ووثائق', en:'Cards & documents', icon:'idcard', sensitive:true, subs:['هوية وطنية','هوية مقيم','بطاقة متدرب','رخصة قيادة','بطاقة بنكية','جواز سفر','وثيقة أخرى'], subsEn:['National ID','Resident ID (Iqama)','Trainee card','Driving licence','Bank card','Passport','Other document'],
+  {id:'ids', autoSuggest:false, groupPublic:true, name:'بطاقات ووثائق', en:'Cards & documents', icon:'idcard', sensitive:true, subs:['هوية وطنية','هوية مقيم','بطاقة متدرب','رخصة قيادة','بطاقة بنكية','جواز سفر','وثيقة أخرى'], subsEn:['National ID','Resident ID (Iqama)','Trainee card','Driving licence','Bank card','Passport','Other document'],
     claim:{fields: [], details: [q('docName', 'text', 'staff', {as: 'claimantName'}), q('docLast4', 'last4', 'staff', {as: 'idLast4'}), q('issuer')], hint: 'cl.h.ids'},
     staffCheck: 'sc.ids', retentionDays: 30, disposal: 'authority'},
-  {id:'cash', autoSuggest:false, name:'نقود', en:'Cash', icon:'cash', sensitive:true, publicName:'مبلغ مالي', publicEn:'Sum of money', subs:['نقود ورقية','عملات','ظرف نقود'], subsEn:['Banknotes','Coins','Envelope of money'],
+  {id:'cash', autoSuggest:false, groupPublic:true, name:'نقود', en:'Cash', icon:'cash', sensitive:true, publicName:'مبلغ مالي', publicEn:'Sum of money', subs:['نقود ورقية','عملات','ظرف نقود'], subsEn:['Banknotes','Coins','Envelope of money'],
     claim:{fields: [], details: [q('amount', 'num', 'both'), q('denoms'), q('holder', 'pick', '', {opts: ['envelope', 'wallet', 'clip', 'none']})], hint: 'cl.h.cash'}, staffCheck: 'sc.cash'},
-  {id:'wallets', autoSuggest:false, name:'محافظ', en:'Wallets', icon:'wallet', subs:['محفظة رجالية','محفظة نسائية','حافظة بطاقات','محفظة جوال'], subsEn:["Men's wallet","Women's wallet",'Card holder','Phone wallet'],
+  {id:'wallets', autoSuggest:false, groupPublic:true, name:'محافظ', en:'Wallets', icon:'wallet', subs:['محفظة رجالية','محفظة نسائية','حافظة بطاقات','محفظة جوال'], subsEn:["Men's wallet","Women's wallet",'Card holder','Phone wallet'],
     claim:{fields: CB, details: [q('cardName'), q('cashInside', 'approx')], hint: 'cl.h.wallets'}},
   {id:'phones', autoSuggest:false, name:'جوالات وأجهزة', en:'Phones & devices', icon:'phone', subs:['جوال','جهاز لوحي','لابتوب','ساعة ذكية'], subsEn:['Phone','Tablet','Laptop','Smartwatch'],
     claim:{fields: CB, req: ['brand'], details: [q('model'), q('lockscreen')], hint: 'cl.h.phones'}, staffCheck: 'sc.phones'},
   {id:'acc', name:'ملحقات إلكترونية', en:'Electronic accessories', icon:'plug', subs:['سماعات','شاحن','كيبل','باور بانك','فلاش USB','آلة حاسبة'], subsEn:['Headphones','Charger','Cable','Power bank','USB flash drive','Calculator'],
     claim:{fields: CB, details: [q('mark')], hint: 'cl.h.acc'}},
-  {id:'keys', autoSuggest:false, name:'مفاتيح', en:'Keys', icon:'key', subs:['مفتاح سيارة','مفاتيح منزل','ميدالية','بطاقة دخول'], subsEn:['Car key','House keys','Keyring','Access card'],
+  {id:'keys', autoSuggest:false, groupPublic:true, name:'مفاتيح', en:'Keys', icon:'key', subs:['مفتاح سيارة','مفاتيح منزل','ميدالية','بطاقة دخول'], subsEn:['Car key','House keys','Keyring','Access card'],
     claim:{fields: [], details: [q('keyCount', 'num', 'both'), q('keyring'), q('carBrand')], hint: 'cl.h.keys'}},
   {id:'jewelry', autoSuggest:false, name:'مجوهرات وساعات', en:'Jewellery & watches', icon:'ring', subs:['خاتم','سلسال','أسورة','ساعة يد','أقراط'], subsEn:['Ring','Necklace','Bracelet','Wristwatch','Earrings'],
     claim:{fields: CB, details: [q('engraving'), q('size')], hint: 'cl.h.jewelry'}},

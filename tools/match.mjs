@@ -144,6 +144,65 @@ const addDoc = (p, docPath, data) => p.evaluate(async ([docPath, data]) => {
   await ctx.close();
 }
 
+// ---------- H11: الطلب المجمّع بالوصف ----------
+const cashIt = (id, amount, spot, x = {}) => ({[`items/${id}`]: item(id, {cat: 'cash', sub: 'نقود ورقية', title: 'نقود ورقية', photo: false, foundDate: ds(1), ...x}),
+  [`itemSecrets/${id}`]: secret({spot, details: {amount, ...(x.denoms ? {denoms: x.denoms} : {})}})});
+const gclaim = (id, x = {}) => ({[`claims/${id}`]: {itemId: '', cat: 'cash', grouped: true, officeId: O, uid: 'amy', no: 'REQ-G1', proof: '', claimantName: 'آمنة', idLast4: '1234',
+  lostSpot: '', lostDate: ds(2), details: {amount: '150'}, status: 'pending', codeHash: 'x', createdAt: now - 3 * day, ...x}});
+const staffCard = (p, id) => p.evaluate(id => { const c = document.querySelector(`details[data-card="s:${id}"]`); if (!c) return null; if (!c.open) c.querySelector('summary').click();
+  return {strong: !!c.querySelector('.hit-line'), links: [...c.querySelectorAll('[data-act=linkClaim]')].map(b => b.dataset.i), q: c.querySelector('[data-act=askSugg]')?.dataset.q || '',
+    none: !!c.querySelector('.note') && c.textContent.includes('لا يوجد في المستودع ما يطابق'), approve: !!c.querySelector('[data-act=approve]')}; }, id);
+// 5) زائر: 5 مبالغ = بطاقة مجمّعة واحدة، ولا بطاقة مبلغ منفردة، والرابط القديم للغرض يحوّل إلى الطلب بالوصف
+{
+  const five = {...cashIt('m1', '150', 'المكتبة'), ...cashIt('m2', '500', 'الكافتيريا'), ...cashIt('m3', '50', 'المكتبة'), ...cashIt('m4', '1000', 'المكتبة'), ...cashIt('m5', '220', 'المكتبة')};
+  const {p, ctx, errs} = await open(amy, 'visitor', {...base(), ...five, ...bag('b1', 'blue')});
+  await go(p, 'browse');
+  const r = await p.evaluate(() => ({groups: document.querySelectorAll('#results .group-card').length, single: [...document.querySelectorAll('#results .card:not(.group-card)')].map(c => c.textContent).filter(x => x.includes('نقود')).length}));
+  expect(r.groups === 1 && r.single === 0, `مجمّع: المتوقع بطاقة مجمّعة واحدة بلا مبالغ منفردة ${JSON.stringify(r)}`);
+  await p.evaluate(async () => (await import('./js/ui.js')).go('item', {id: 'm2'})); await p.waitForTimeout(700);
+  const rt = await p.evaluate(async () => (await import('./js/state.js')).S.route);
+  expect(rt.name === 'gclaim' && rt.params.cat === 'cash', `مجمّع: رابط الغرض القديم لم يحوّل إلى الطلب بالوصف ${JSON.stringify(rt)}`);
+  expect(!errs.length, 'مجمّع (زائر): ' + errs.join(' | '));
+  await ctx.close();
+}
+// 6) موظف: مبلغ مطابق تماماً + المكان نفسه ولا منافس قريب = «مطابقة مؤكدة» (مرشّح واحد)، وبلا زر قبول قبل الربط
+{
+  const five = {...cashIt('m1', '150', 'المكتبة'), ...cashIt('m2', '500', 'الكافتيريا'), ...cashIt('m3', '50', 'المكتبة'), ...cashIt('m4', '1000', 'المكتبة'), ...cashIt('m5', '220', 'المكتبة')};
+  const {p, ctx, errs} = await open(staff, 'staff', {...base(), ...five, ...gclaim('g_amy_cash_1', {lostSpot: 'المكتبة'})});
+  await go(p, 'staff', {staffTab: 'claims'});
+  const r = await staffCard(p, 'g_amy_cash_1');
+  expect(r && r.strong && r.links.length === 1 && r.links[0] === 'm1' && !r.approve, `مجمّع: المتوقع «مطابقة مؤكدة» واحدة (m1) بلا زر قبول ${JSON.stringify(r)}`);
+  expect(!errs.length, 'مجمّع (مؤكدة): ' + errs.join(' | '));
+  await ctx.close();
+}
+// 7) مبلغان متقاربان (150 و155) بلا مكان: سؤال تحقق مقترح يفرّق بينهما (الفئات)
+{
+  const two = {...cashIt('m1', '150', 'المكتبة', {denoms: '100 و50'}), ...cashIt('m6', '155', 'الكافتيريا', {denoms: '50 ×3 و5'})};
+  const {p, ctx, errs} = await open(staff, 'staff', {...base(), ...two, ...gclaim('g_amy_cash_2')});
+  await go(p, 'staff', {staffTab: 'claims'});
+  const r = await staffCard(p, 'g_amy_cash_2');
+  expect(r && !r.strong && r.links.length === 2 && r.q.length > 5, `مجمّع: المتوقع مرشّحان وسؤال تحقق مقترح ${JSON.stringify(r)}`);
+  expect(!errs.length, 'مجمّع (متقاربان): ' + errs.join(' | '));
+  await ctx.close();
+}
+// 8) لا مطابقة، ثم تسجيل مبلغ جديد مطابق: يظهر للموظف جديداً (شارة حمراء على «قراري»)
+{
+  const {p, ctx, errs} = await open(staff, 'staff', {...base(), ...cashIt('m2', '500', 'الكافتيريا'), ...gclaim('g_amy_cash_3', {details: {amount: '300'}})});
+  await go(p, 'staff', {staffTab: 'claims'});
+  let r = await staffCard(p, 'g_amy_cash_3');
+  expect(r && r.none && !r.links.length, `مجمّع: المتوقع «لا مرشّح» ${JSON.stringify(r)}`);
+  await p.evaluate(() => document.querySelector('[data-act=staffSub][data-v=come]')?.click()); await p.waitForTimeout(300);
+  await addDoc(p, 'itemSecrets/m9', secret({spot: 'المكتبة', details: {amount: '300'}}));
+  await addDoc(p, 'items/m9', item('m9', {cat: 'cash', sub: 'نقود ورقية', title: 'نقود ورقية', photo: false, foundDate: ds(1), createdAt: Date.now()}));
+  const red = await p.evaluate(() => { const c = document.querySelector('#st-claims-decide .count [aria-hidden]') || document.querySelector('#st-claims-decide .count'); return c ? +c.textContent : 0; });
+  expect(red === 1, `مجمّع: الغرض الجديد المطابق لم يظهر جديداً (أحمر = ${red})`);
+  await p.evaluate(() => document.querySelector('[data-act=staffSub][data-v=decide]')?.click()); await p.waitForTimeout(300);
+  r = await staffCard(p, 'g_amy_cash_3');
+  expect(r && r.links.includes('m9'), `مجمّع: الغرض الجديد ليس بين المرشّحين ${JSON.stringify(r)}`);
+  expect(!errs.length, 'مجمّع (جديد): ' + errs.join(' | '));
+  await ctx.close();
+}
+
 await browser.close(); server.close();
 if (fails.length){ console.error('✘ فحص الترشيح فشل:\n- ' + fails.join('\n- ')); process.exit(1); }
-console.log(`✔ الترشيح سليم: ${checks} فحصاً (لا اقتراح آلي للتصنيفات الحساسة، دليل عام مطلوب، اقتراح واحد، ترشيح الموظف أولاً، تنبيه آلي واحد كل 24 ساعة).`);
+console.log(`✔ الترشيح سليم: ${checks} فحصاً (لا اقتراح آلي للتصنيفات الحساسة، دليل عام مطلوب، اقتراح واحد، ترشيح الموظف أولاً، تنبيه آلي واحد كل 24 ساعة، والطلب المجمّع بالوصف).`);

@@ -1025,3 +1025,13 @@ label.check, .box-head, .box-head b{min-width:0;overflow-wrap:anywhere}
 /* H10: كان اسمها .sugg فتصادمت مع بطاقة «قد يكون لك» (خلفية خضراء دائرية خلفها) */
 .sugg-tag{display:inline-block;font-size:11px;font-weight:700;line-height:1.5;padding:0 8px;border-radius:999px;background:var(--primary-soft);color:var(--primary);margin-inline-start:6px;vertical-align:middle}
 
+/* H11: البطاقة المجمّعة (نقود، بطاقات، محافظ، مفاتيح) والطلب بالوصف */
+.group-card{border-color:var(--primary-line)}
+.group-card .thumb{background:var(--primary-soft);color:var(--primary)}
+.group-card .grp-cta{margin-top:6px;align-self:flex-start;white-space:normal;text-align:start;min-height:36px;height:auto;line-height:1.35;padding-block:6px}
+.grp-intro svg{flex:none}
+.grp-answers{margin:0}
+.cand{display:flex;flex-direction:column;gap:4px}
+.list>.cand+.cand{border-top:1px dashed var(--line);padding-top:8px}
+.note.gq{flex-wrap:wrap}
+.note.gq .btn{margin-inline-start:auto}

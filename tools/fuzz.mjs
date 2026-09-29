@@ -61,6 +61,11 @@ const db = {
   'items/ib': item('ib', {cat: 'nope', foundDate: 'x', createdAt: 'x', updatedAt: 'x'}), 'itemSecrets/ib': secret({details: 'x'}),
   'claims/ib_zed': claim('ib', 'zed', {lostDate: 'x', createdAt: 'x', askedAt: 'x', answeredAt: 9e15, editedAt: 'x', details: 'x'}),
   'claims/i1_bad': claim('i1', 'bad', {lostDate: 'x', createdAt: 'x', pickupBy: 'x'}),
+  // H11: نقود (تصنيف مجمّع) وطلبات مجمّعة بالوصف: غير مربوط، ومربوط، وتصنيف خاطئ، وتفاصيل بأنواع خاطئة
+  'items/ic': item('ic', {cat: 'cash'}), 'itemSecrets/ic': secret({details: {amount: P('ic.amount'), denoms: P('ic.denoms')}}),
+  'claims/g_zed_cash_1': claim('', 'zed', {grouped: true, cat: 'cash', lostSpot: P('g.spot'), details: {amount: P('g.amount'), holder: P('g.holder')}}),
+  'claims/g_amy_cash_2': claim('', 'amy', {grouped: true, cat: 'cash', details: {amount: '150'}}), 'claimLinks/g_amy_cash_2': {officeId: O, itemId: 'ic', by: 'staffA', at: now},
+  'claims/g_zed_nope_3': claim('', 'zed', {grouped: true, cat: 'nope', details: 'x', lostDate: 'x'}),
   'reports/rb': {officeId: O, uid: 'zed', cat: 'nope', title: P('repb.title'), lostDate: 'x', status: 'open', createdAt: 'x', renewedAt: 'x', editedAt: 'x'},
   'foundReports/fb': {officeId: O, uid: 'zed', cat: 'nope', foundDate: 'x', status: 'pending', createdAt: 'x'},
 };

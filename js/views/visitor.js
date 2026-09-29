@@ -1,5 +1,5 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
-import { icon, LOGO, CATS, cat, catName, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
+import { icon, LOGO, CATS, cat, catName, isGrouped, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard } from '../state.js';
@@ -7,7 +7,7 @@ import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoFi
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
 import { aiReady } from '../firebase.js';
-import { hydrate } from '../ui.js';
+import { hydrate, go } from '../ui.js';
 import { msgOf } from '../notify.js';
 
 /* ---------- visitor: choose place ---------- */
@@ -56,6 +56,28 @@ export function vBrowse(){
     </aside>
   </div>`;
 }
+/* H11: التصنيفات المجمّعة (نقود، بطاقات، محافظ، مفاتيح): لا تظهر أغراضها للزائر منفردة، بل بطاقة واحدة لكل تصنيف
+   فيها عدد المتاح وآخر تاريخ تسجيل، وزر «أثبت أنه لك» (طلب بالوصف). الموظف يراها منفردة كالمعتاد */
+export const groupedHere = catId => isGrouped(catId) && !staffView();
+// {group, n, last} لكل تصنيف مجمّع فيه غرض متاح واحد على الأقل (من القائمة المعطاة)
+export function groupEntries(items){
+  const m = {};
+  for (const i of items){ if (i.status !== 'available' || !groupedHere(i.cat)) continue; const g = m[i.cat] ||= {group: i.cat, n: 0, last: 0}; g.n++; g.last = Math.max(g.last, i.createdAt || 0); }
+  return Object.values(m);
+}
+// البحث في البطاقة المجمّعة: باسم التصنيف وعنوانها وأنواعه
+const groupHit = (q, catId) => { const w = tokens(`${catName(catId)} ${t('grp.' + catId + '.title')} ${cat(catId).subs.join(' ')} ${(cat(catId).subsEn || []).join(' ')}`);
+  return q.some(x => w.includes(x) || w.some(y => (y.length > 2 && x.startsWith(y)) || (x.length > 2 && y.startsWith(x)))); };
+export function groupCard(g){
+  return `<div class="card group-card" role="button" tabindex="0" data-act="gclaim" data-cat="${esc(g.group)}">
+    <div class="thumb">${icon(cat(g.group).icon)}</div>
+    <div class="card-body">
+      <h3>${t('grp.' + g.group + '.title')}</h3>
+      <div class="meta">${icon('box')}<span>${t('grp.count', {items: tp('n.item', g.n), date: g.last ? relDay(isoDay(g.last)) : '—'})}</span></div>
+      <span class="btn sm soft grp-cta">${icon('shield')}${t('grp.' + g.group + '.cta')}</span>
+    </div>
+  </div>`;
+}
 // التصفح العام: الأغراض النشطة فقط (المتاح والمحجوز)، والمُسلَّم يظهر كعدد في العنوان
 export function visibleItems(){
   let arr = S.items.filter(i => ACTIVE.includes(i.status));
@@ -97,8 +119,13 @@ export function updateBrowse(){
   const fr = $('#frange'); if (fr) fr.value = S.filter.range;
   const res = $('#results'); if (!res) return;
   if (!S.itemsLoaded){ res.innerHTML = `<div class="grid" aria-busy="true" aria-label="${t('c.loading')}">${skelCards()}</div>`; return; }
-  const arr = visibleItems();
-  res.innerHTML = arr.length ? `<div class="grid">${arr.map(card).join('')}</div>`
+  // H11: أغراض التصنيفات المجمّعة تظهر بطاقة واحدة لكل تصنيف (تحترم فلتر التصنيف والمدة والبحث)، في أول القائمة
+  const vis = visibleItems(), q = tokens(S.filter.q);
+  const pool = S.items.filter(i => ACTIVE.includes(i.status) && (S.filter.cat === 'all' || i.cat === S.filter.cat)
+    && (S.filter.range === 'all' || daysAgo(i.foundDate) <= +S.filter.range));
+  const groups = groupEntries(pool).filter(g => !q.length || groupHit(q, g.group));
+  const arr = [...groups.map(groupCard), ...vis.filter(i => !groupedHere(i.cat)).map(card)];
+  res.innerHTML = arr.length ? `<div class="grid">${arr.join('')}</div>`
     : `<div class="empty">${icon('search')}<b>${t(S.items.length ? 'br.noResults' : 'home.empty')}</b><span>${t(S.items.length ? 'br.noResultsSub' : 'home.emptySub')}</span></div>`;
   hydrate();
 }
@@ -109,6 +136,8 @@ export function vItem(){
   // الغرض غير محمّل (مُسلَّم أو من رابط مشاركة): نجلبه مرة واحدة
   if (!i){ ensureItem(id); if (itemLoading(id)) return `<div class="loading"><span class="spin"></span></div>`; }
   if (!i) return `<div class="wrap">${backBtn()}<div class="empty">${icon('box')}<b>${t('it.gone')}</b></div></div>`;
+  // H11: غرض من تصنيف مجمّع: لا صفحة منفردة للزائر (ولا للروابط القديمة #item/…)، بل نموذج الطلب بالوصف
+  if (groupedHere(i.cat)){ setTimeout(() => { if (S.route.name === 'item' && S.route.params.id === id) go('gclaim', {cat: i.cat}, false); }); return loadingHtml(); }
   const c = cat(i.cat); const o = S.offices.find(x => x.id === i.officeId) || curOffice();
   // الموظف يرى التفاصيل السرية (full)، والزائر يرى الإعلان العام فقط
   const staffMode = staffView(); const f = staffMode ? full(i) : i;
@@ -191,24 +220,36 @@ export function vItem(){
 
 /* ---------- visitor: claim ---------- */
 // نموذج الاستلام: يسأل عن التفاصيل المخفية دون أي تلميح من الإعلان، ويقارنها الموظف بالحقيقة
-export function vClaimForm(){
-  const i = item(S.route.params.id); const o = S.offices.find(x => x.id === i?.officeId) || curOffice();
-  if (!i || !ACTIVE.includes(i.status)) return `<div class="wrap">${backBtn()}<div class="empty">${icon('box')}<b>${t('cl.unavailable')}</b></div></div>`;
+/* نموذج طلب الاستلام: على غرض محدد (params.id)، أو H11: طلب مجمّع بالوصف لتصنيف مجمّع (params.cat، route «gclaim»):
+   نفس أسئلة التصنيف والهوية ومكان الفقد ووقته، بلا اختيار غرض؛ والموظف يطابقه مع المسجّل */
+export function vClaimForm(){ return claimForm(S.route.params); }
+function claimForm(p){
+  const edc = p.edit ? S.myClaims.find(cl => cl.id === p.edit) : null;
+  const gcat = p.cat || (edc?.grouped ? edc.cat : '');
+  const i = gcat ? null : item(p.id);
+  // غرض من تصنيف مجمّع: الطلب بالوصف، إلا طلب الغرض الذي رشّحه الموظف لبلاغك («هذا غرضي — اطلب استلامه»)
+  if (i && !p.edit && groupedHere(i.cat) && !(p.report && myReports().some(r => r.id === p.report && r.staffPick === i.id))) return claimForm({cat: i.cat});
+  const o = (i && S.offices.find(x => x.id === i.officeId)) || (edc && S.offices.find(x => x.id === edc.officeId)) || curOffice();
+  const catId = gcat || i?.cat || '';
+  if (gcat ? !isGrouped(gcat) : (!i || !ACTIVE.includes(i.status))) return `<div class="wrap">${backBtn()}<div class="empty">${icon('box')}<b>${t('cl.unavailable')}</b></div></div>`;
+  if (!S.uid) return `<div class="wrap">${backBtn()}${loginPrompt(t('gc.login'))}</div>`;
   if (!S.verified) return `<div class="wrap">${backBtn()}${verifyPrompt(t('cl.verifyWhat'))}</div>`;
   // G3: «تعديل الطلب» (params.edit = رقم الطلب): ما دام قيد المراجعة ولم يسأل الموظف بعد
-  const ed = S.route.params.edit ? S.myClaims.find(cl => cl.id === S.route.params.edit && cl.itemId === i.id) : null;
-  if (S.route.params.edit && !claimEditable(ed)) return `<div class="wrap">${backBtn()}<div class="note warn">${icon('info')}<span>${t('cl.noEdit')}</span></div>
+  const ed = edc && (gcat ? edc.grouped : edc.itemId === i.id) ? edc : null;
+  if (p.edit && !claimEditable(ed)) return `<div class="wrap">${backBtn()}<div class="note warn">${icon('info')}<span>${t('cl.noEdit')}</span></div>
     <button class="btn soft" data-act="nav" data-r="mine">${t('it.follow')}</button></div>`;
-  const prev = ed ? null : S.myClaims.find(cl => cl.itemId === i.id);
+  // طلب سابق على الغرض نفسه، أو (المجمّع) طلب جارٍ في التصنيف نفسه في هذا المكتب
+  const prev = ed ? null : gcat ? S.myClaims.find(cl => cl.grouped && cl.cat === gcat && cl.officeId === o.id && ['pending', 'approved'].includes(cl.status))
+    : S.myClaims.find(cl => cl.itemId === i.id);
   if (prev) return `<div class="wrap" data-view="claim">${backBtn()}<div class="note warn">${icon('info')}<span>${t('cl.already')}</span></div>
     <button class="btn soft" data-act="nav" data-r="mine">${t('it.follow')}</button></div>`;
   // «هذا غرضي — اطلب استلامه» من بلاغ عليه ترشيح: الطلب يُعبّأ من البلاغ تلقائياً ويُربط به (reportId)
-  const pre = ed ? null : S.route.params.report ? myReports().find(r => r.id === S.route.params.report && r.status === 'open') : null;
+  const pre = ed ? null : p.report ? myReports().find(r => r.id === p.report && r.status === 'open') : null;
   // بلاغ مفتوح من التصنيف نفسه: نعرض تعبئة الطلب منه
-  const rep = pre || ed ? null : myReports().find(r => r.status === 'open' && r.cat === i.cat && r.officeId === i.officeId);
+  const rep = pre || ed ? null : myReports().find(r => r.status === 'open' && r.cat === catId && r.officeId === o.id);
   // أسئلة التصنيف (constants.js): نفس أسئلة الموظف، والإثبات الحر اختياري إن كان في التصنيف سؤال إجباري
-  const ids = i.cat === 'ids', proofOpt = claimHasRequired(i.cat), q = claimOf(i.cat);
-  const src = ed ? {color: ed.color, brand: ed.brand, details: ed.details || {}} : pre && pre.cat === i.cat ? {color: pre.color, details: pre.details || {}} : {};
+  const ids = catId === 'ids', proofOpt = claimHasRequired(catId), q = claimOf(catId);
+  const src = ed ? {color: ed.color, brand: ed.brand, details: ed.details || {}} : pre && pre.cat === catId ? {color: pre.color, details: pre.details || {}} : {};
   // قيم الخانات عند التعديل: من الطلب نفسه
   const v = ed ? {name: ed.claimantName, last4: ed.idLast4, proof: ed.proof, spot: ed.lostSpot, bldg: ed.bldg, room: ed.room, date: ed.lostDate}
     : {proof: pre?.desc, spot: pre?.spot, bldg: pre?.bldg, room: pre?.room, date: pre?.lostDate};
@@ -221,15 +262,17 @@ export function vClaimForm(){
     ...q.details.filter(d => !d.as && !detailReq(d, 'claim')).map(d => src.details?.[d.k])];
   const moreOpen = !!ed || !!pre || optVals.some(Boolean);
   // v7: مكتب يشترط بريد الكلية لطلب الاستلام: رسالة واضحة وزر للدخول بالبريد الصحيح بدل النموذج
-  if (!ed && !claimEmailOk(o, S.me?.email)) return `<div class="wrap" data-view="claim">${backBtn()}${miniItem(i)}
+  // H11: المجمّع بلا غرض محدد: شرح قصير بدل بطاقة الغرض
+  const head = i ? miniItem(i) : `<div class="note info grp-intro">${icon(cat(catId).icon)}<span>${t('gc.intro', {title: t('grp.' + catId + '.title')})}</span></div>`;
+  if (!ed && !claimEmailOk(o, S.me?.email)) return `<div class="wrap" data-view="claim">${backBtn()}${head}
     <div class="note warn domain-need">${icon('idcard')}<span>${t('cl.domainNeedLong', {domains: claimDomainsOf(o).map(d => `<b dir="ltr">@${esc(d)}</b>`).join(t('c.listSep'))})}</span></div>
     <button class="btn" data-act="collegeLogin">${icon('users')}${t('cl.domainLogin')}</button></div>`;
   if (!ed) FORM.proofs = [];   // v7: صور إثبات جديدة لكل طلب
   return `<div class="wrap" data-view="claim">${backBtn()}
-    <section class="hero"><div class="hero-kicker">${icon('shield')}${t('cl.kicker')}</div><h1 class="hero-title">${t(ed ? 'cl.editTitle' : 'cl.title')}</h1></section>
-    ${miniItem(i)}
+    <section class="hero"><div class="hero-kicker">${icon('shield')}${t(gcat ? 'gc.kicker' : 'cl.kicker')}</div><h1 class="hero-title">${ed ? t('cl.editTitle') : gcat ? t('grp.' + catId + '.cta') : t('cl.title')}</h1></section>
+    ${head}
     ${ed ? `<div class="note info">${icon('edit')}<span>${t('cl.editNote', {no: `<b dir="ltr">${esc(claimNo(ed))}</b>`})}</span></div>` : ''}
-    <form data-form="claim" data-id="${esc(i.id)}" ${ed ? `data-edit="${esc(ed.id)}"` : ''} class="panel" novalidate>
+    <form data-form="claim" ${i ? `data-id="${esc(i.id)}"` : `data-gcat="${esc(catId)}"`} ${ed ? `data-edit="${esc(ed.id)}"` : ''} class="panel" novalidate>
       ${rep ? `<div class="note info">${icon('bell')}<span>${t('cl.hasReport', {title: esc(rep.title)})}</span><button type="button" class="btn sm soft" data-act="useReport" data-id="${esc(rep.id)}">${t('cl.useReport')}</button></div>` : ''}
       ${pre ? `<div class="note info">${icon('bell')}<span>${t('cl.fromReport', {title: esc(pre.title)})}</span></div>` : ''}
       <input type="hidden" name="reportId" value="${esc(pre?.id || '')}">
@@ -237,12 +280,12 @@ export function vClaimForm(){
         <div class="field"><label for="c-name">${t(ids ? 'cl.nameIds' : 'cl.name')}</label><input id="c-name" name="claimantName" class="input" maxlength="120" autocomplete="name" required value="${esc(v.name || '')}"></div>
         <div class="field"><label for="c-last4">${t(ids ? 'cl.last4Ids' : 'cl.last4')}</label><input id="c-last4" name="idLast4" class="input" inputmode="numeric" maxlength="4" dir="ltr" autocomplete="off" required value="${esc(v.last4 || '')}"></div>
         <span class="hint">${icon('lock')}${t('cl.idPrivate')}</span></div>
-      <div id="cat-fields" data-mode="claim">${catFields(i.cat, src, 'claim', 'req')}</div>
+      <div id="cat-fields" data-mode="claim">${catFields(catId, src, 'claim', 'req')}</div>
       ${proofOpt ? '' : proofField}
       <details class="more-box" id="cl-more" ${moreOpen ? 'open' : ''}>
         <summary>${icon('plus')}<span>${t('cl.more')}</span>${icon('chev')}</summary>
         <div class="more-body">
-          <div id="cat-fields-opt">${catFields(i.cat, src, 'claim', 'opt')}</div>
+          <div id="cat-fields-opt">${catFields(catId, src, 'claim', 'opt')}</div>
           ${proofOpt ? proofField : ''}
           <div class="field"><label for="c-spot">${t('cl.where')}</label><select id="c-spot" name="spot" class="input">${spotOptions(o, v.spot || '')}</select></div>
           ${spotExtra({spot: v.spot, bldg: v.bldg, room: v.room})}
@@ -256,7 +299,7 @@ export function vClaimForm(){
       <label class="check"><input type="checkbox" name="pledge" id="pledge"><span>${t('cl.pledge')}</span></label>
       <div class="form-err" hidden></div>
       <button class="btn block" type="submit">${icon('check')}${t(ed ? 'c.saveEdit' : 'cl.send')}</button>
-      <div class="note">${icon('lock')}<span>${t('cl.privacy')}</span></div>
+      <div class="note">${icon('lock')}<span>${t(gcat ? 'gc.privacy' : 'cl.privacy')}</span></div>
     </form>
   </div>`;
 }
@@ -301,7 +344,7 @@ export function vReportForm(){
    و«الخطوة التالية»، والضغط يفتح التفاصيل. البطاقة التي تحتاج انتباهاً تُفتح تلقائياً. العرض فقط: البيانات كما هي */
 // ما يحتاج انتباه صاحب الطلب أو البلاغ (فارغ = لا شيء)
 export function claimNeed(c){
-  const i = item(c.itemId), gone = !i && !itemLoading(c.itemId);
+  const i = item(c.itemId), gone = !!c.itemId && !i && !itemLoading(c.itemId);
   if (c.status === 'approved' && !gone && myCode(c.id) && !(c.pickupBy && Date.now() > c.pickupBy)) return 'code';
   if (awaitingAnswer(c)) return 'answer';
   if (c.status === 'done' && !c.rating) return 'rate';
@@ -315,7 +358,7 @@ export function reportNeed(r){
   return '';
 }
 const CLAIM_DONE = ['done', 'rejected', 'expired', 'cancelled'];
-const claimTitle = c => { const i = item(c.itemId); return i ? showTitle(i) : claimNo(c); };
+const claimTitle = c => { const i = item(c.itemId); return i ? showTitle(i) : c.grouped ? t('grp.' + c.cat + '.title') : claimNo(c); };
 /* «يحتاج انتباهك» (H4): مهام تبقى ما دام الإجراء مطلوباً. «لاحقاً» يخفي المهمة حتى يظهر حدث جديد:
    لكل مهمة مفتاح يتغير مع الحدث (وقت السؤال، وقت القبول، الغرض المقترح…)، والمفاتيح المؤجلة في localStorage «snoozed» */
 function attKey(n, x){
@@ -403,7 +446,9 @@ export function claimSteps(st){
 }
 export function claimCardMine(c){
   const i = item(c.itemId); if (!i) ensureItem(c.itemId);
-  const gone = !i && !itemLoading(c.itemId);   // الغرض حُذف من المستودع
+  // H11: طلب مجمّع (بالوصف) لم يُقبل بعد: بلا غرض ظاهر لصاحبه، وحالته «قيد المطابقة»
+  const gw = !!c.grouped && !c.itemId;
+  const gone = !gw && !i && !itemLoading(c.itemId);   // الغرض حُذف من المستودع
   const o = S.offices.find(x => x.id === c.officeId); const code = myCode(c.id);
   const late = c.status === 'approved' && c.pickupBy && Date.now() > c.pickupBy;
   let body = '', top = '';
@@ -411,8 +456,8 @@ export function claimCardMine(c){
   // سؤال تحقق من المكتب: بانتظار إجابتك، أو أجبت عنه
   else if (c.status === 'pending' && awaitingAnswer(c)) body = `<div class="note info qa-ask">${icon('question')}<span><b>${t('qa.fromOffice')}</b> ${esc(c.question)}</span></div>
     <button class="btn sm" data-act="answerQ" data-id="${esc(c.id)}" style="align-self:flex-start">${icon('edit')}${t('qa.answerBtn')}</button>`;
-  else if (c.status === 'pending') body = `<p class="muted">${t('mine.pending')}</p>${qaBox(c)}
-    ${claimEditable(c) && i ? `<button class="btn sm ghost" data-act="editClaim" data-id="${esc(c.id)}" style="align-self:flex-start">${icon('edit')}${t('cl.edit')}</button>` : ''}`;
+  else if (c.status === 'pending') body = `<p class="muted">${t(gw ? 'gc.pendingMine' : 'mine.pending')}</p>${qaBox(c)}
+    ${claimEditable(c) && (i || gw) ? `<button class="btn sm ghost" data-act="editClaim" data-id="${esc(c.id)}" style="align-self:flex-start">${icon('edit')}${t('cl.edit')}</button>` : ''}`;
   else if (c.status === 'approved'){
     // رمز الاستلام في مكان بارز أعلى البطاقة: خط كبير، وزر نسخ، وآخر موعد للاستلام
     if (code) top = `<div class="code-tag code-hero"><small>${t('mine.code')}</small><span class="digits" dir="ltr">${esc(code)}</span>
@@ -425,16 +470,16 @@ export function claimCardMine(c){
   }
   else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>${t('mine.done', {when: relTime(c.doneAt)})}</span></div>${rateBox(c)}`;
   else if (c.status === 'rejected') body = `<div class="note warn">${icon('info')}<span>${c.note ? t('mine.rejectedWhy', {note: esc(noteText(c.note))}) : t('mine.rejected')}</span></div>`;
-  else if (c.status === 'expired') body = `<div class="note warn">${icon('clock')}<span>${t('mine.expired')}</span></div>`;
+  else if (c.status === 'expired') body = `<div class="note warn">${icon('clock')}<span>${t(gw ? 'gc.expiredMine' : 'mine.expired')}</span></div>`;
   else if (c.status === 'cancelled') body = `<div class="note">${icon('info')}<span>${c.note ? t('mine.cancelledWhy', {note: esc(noteText(c.note))}) : t('mine.cancelled')}</span></div>`;
   // الخطوة التالية (سطر واحد في الملخّص)
   const need = claimNeed(c);
   const next = gone && ['pending', 'approved'].includes(c.status) ? t('ns.gone')
-    : c.status === 'pending' ? t(awaitingAnswer(c) ? 'ns.answer' : 'ns.review')
+    : c.status === 'pending' ? t(awaitingAnswer(c) ? 'ns.answer' : gw ? 'gc.nsMatching' : 'ns.review')
     : c.status === 'approved' ? (late ? t('ns.late') : c.pickupBy ? t('ns.come', {date: esc(dateOf(c.pickupBy))}) : t('ns.comeNoDate'))
-    : c.status === 'done' ? t(c.rating ? 'ns.done' : 'ns.rate') : t('ns.' + c.status);
-  return mcard({key: 'c:' + c.id, id: 'claim-' + c.id, open: !!need, fresh: FRESH.has('c:' + c.id), muted: CLAIM_DONE.includes(c.status), tone: need || late ? 'warn' : '', pillHtml: pill(CLAIM_STATUS, c.status), next,
-    head: `<span class="refs">${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<b dir="ltr" class="req-no">${esc(claimNo(c))}</b></span><h3>${esc(i ? showTitle(i) : t(gone ? 'mine.goneTitle' : 'c.loadingDots'))}</h3>`,
+    : c.status === 'done' ? t(c.rating ? 'ns.done' : 'ns.rate') : gw && c.status === 'expired' ? t('gc.nsExpired') : t('ns.' + c.status);
+  return mcard({key: 'c:' + c.id, id: 'claim-' + c.id, open: !!need, fresh: FRESH.has('c:' + c.id), muted: CLAIM_DONE.includes(c.status), tone: need || late ? 'warn' : '', pillHtml: gw && c.status === 'pending' ? `<span class="pill info">${t('gc.matching')}</span>` : pill(CLAIM_STATUS, c.status), next,
+    head: `<span class="refs">${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<b dir="ltr" class="req-no">${esc(claimNo(c))}</b></span><h3>${i ? esc(showTitle(i)) : c.grouped ? t('grp.' + c.cat + '.title') : esc(t(gone ? 'mine.goneTitle' : 'c.loadingDots'))}</h3>`,
     body: `${top}
       <span class="meta">${icon('building')}${esc(officeName(c.officeId))}</span>
       ${['pending', 'approved', 'done'].includes(c.status) && !gone ? claimSteps(c.status) : ''}

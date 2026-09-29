@@ -1,13 +1,14 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
-import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, isHighValue } from '../constants.js';
+import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, isHighValue, GROUP_EXPIRE_DAYS } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, staffCands, strongFor, secretHit, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist } from '../state.js';
+import { S, curOffice, item, full, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist } from '../state.js';
 import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
-import { MS_NOTE } from '../workflow.js';   // H9: ملاحظة مدة الإضافة لا تُعرض في السجل
+import { MS_NOTE, expireGroupClaim } from '../workflow.js';
+import { emailUser } from '../notify.js';   // H9: ملاحظة مدة الإضافة لا تُعرض في السجل
 
 /* ---------- staff dashboard ---------- */
 export function vStaff(){
@@ -238,8 +239,42 @@ function claimCompare(c, f){
 // سؤال التحقق وإجابته (للموظف ولصاحب الطلب)
 // مدة بالساعات أو الأيام (للموظف: منذ متى ينتظر الطلب، وكم بقي على مهلة الحضور)
 const durText = ms => ms < 36e5 ? t('n.lessHour') : ms < 864e5 ? tp('n.hours', Math.round(ms / 36e5)) : tp('n.days', Math.round(ms / 864e5));
+/* H11: الطلب المجمّع (بالوصف) قبل ربطه بغرض: إجابات صاحبه، والمرشّحون بعد الفلاتر الإلزامية (3 على الأكثر)،
+   و«مطابقة مؤكدة» مع زر «تأكيد» (لا ربط دون ضغطة الموظف)، أو سؤال تحقق جاهز يفرّق بين مرشّحين متقاربين */
+function groupAnswers(c){
+  // خيار الاختيار من القائمة فقط يُترجم؛ أي قيمة أخرى (بيانات تالفة) تُعرض نصاً مهرّباً
+  const det = c.details && typeof c.details === 'object' ? c.details : {};
+  const rows = claimOf(c.cat).details.filter(d => !d.as && det[d.k]).map(d => [dfLabel(c.cat, d.k), d.type === 'pick' && (d.opts || []).includes(det[d.k]) ? dfOpt(d.k, det[d.k]) : esc(det[d.k])]);
+  if (c.lostSpot) rows.push([t('cl.where'), esc(spotText({spot: c.lostSpot, bldg: c.bldg, room: c.room}))]);
+  if (c.lostDate) rows.push([t('cl.when'), fmtDate(c.lostDate)]);
+  return `<dl class="facts grp-answers">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${c.proof ? `<div class="proof">${esc(c.proof)}</div>` : ''}`;
+}
+function groupBox(c, own){
+  const cands = groupCands(c), strong = groupStrong(c, cands), qk = strong ? '' : groupQuestion(c, cands);
+  if (!cands.length) return `<div class="note">${icon('clock')}<span>${t('gc.noCands')}</span></div>`;
+  const q = qk ? t(qk) : '';
+  return `<span class="label">${t(strong ? 'gc.strongTitle' : 'gc.candsTitle')}</span>
+    <div class="list">${cands.map(({i, s}) => `<div class="cand">
+      <div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
+        ${own ? '' : `<button class="btn sm ${strong?.i.id === i.id ? '' : 'soft'}" data-act="linkClaim" data-id="${esc(c.id)}" data-i="${esc(i.id)}">${icon('check')}${t(strong?.i.id === i.id ? 'gc.confirm' : 'gc.link')}</button>`}</div>
+      ${strong?.i.id === i.id ? `<span class="meta hit-line">${icon('shield')}${t('gc.strong')}</span>` : ''}</div>`).join('')}</div>
+    ${q && !own ? `<div class="note info gq">${icon('question')}<span>${t('gc.qHint')}<br><b>${esc(q)}</b></span>
+      <button class="btn sm soft" data-act="askSugg" data-id="${esc(c.id)}" data-q="${esc(q)}">${t('gc.qSend')}</button></div>` : ''}`;
+}
+// H11: طلبات مجمّعة بلا مطابقة منذ 30 يوماً تُغلق «منتهية» عند فتح لوحة الموظف (مرة واحدة لكل طلب)، ويُبلَّغ صاحبها
+const EXPIRING = new Set();
+function expireOld(){
+  for (const c of S.claims){
+    if (!c.grouped || c.itemId || c.status !== 'pending' || linkOf(c) || c.uid === S.uid || EXPIRING.has(c.id)) continue;
+    if (Date.now() - (c.createdAt || 0) < GROUP_EXPIRE_DAYS * 864e5) continue;
+    EXPIRING.add(c.id);
+    expireGroupClaim(c).then(ok => { if (ok) emailUser(c.uid); }).catch(e => console.warn(e));
+  }
+}
 export function claimCardStaff(c, opts){
-  const i = item(c.itemId);
+  // H11: الطلب المجمّع: الغرض المربوط (claimLinks) قبل القبول، ورقمه في الطلب بعده
+  const lk = c.grouped && !c.itemId ? linkOf(c) : null, unlinked = !!c.grouped && !c.itemId && !lk;
+  const i = item(claimItemId(c));
   // v7: الغرض الثمين: الموافقات حتى الآن (الأولى تبقي الطلب قيد المراجعة حتى الموافقة الثانية)
   const apps = Array.isArray(c.approvals) ? c.approvals : [];
   const hv = !!i && isHighValue(i.cat) && c.status === 'pending';
@@ -255,7 +290,7 @@ export function claimCardStaff(c, opts){
   const again = !own && ['expired', 'cancelled'].includes(c.status) && c.uid !== 'deleted' ? `<div class="btn-row"><button class="btn sm soft" data-act="reactivate" data-id="${esc(c.id)}">${icon('swap')}${t('st.reactivate')}</button></div>` : '';
   const actions = own && ['pending', 'approved'].includes(c.status) ? `<div class="note">${icon('info')}<span>${t('st.ownClaim')}</span></div>`
     : c.status === 'pending' ? `<div class="btn-row">
-      ${hv && apps.includes(S.uid) ? '' : `<button class="btn sm" data-act="approve" data-id="${esc(c.id)}">${icon('check')}${t(hv && apps.length ? 'st.approveSecond' : 'st.approve')}</button>`}
+      ${(hv && apps.includes(S.uid)) || unlinked ? '' : `<button class="btn sm" data-act="approve" data-id="${esc(c.id)}">${icon('check')}${t(hv && apps.length ? 'st.approveSecond' : 'st.approve')}</button>`}
       <button class="btn sm ghost" data-act="ask" data-id="${esc(c.id)}">${icon('question')}${t(c.question ? 'qa.askAgain' : 'qa.ask')}</button>
       <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}${t('c.reject')}</button></div>`
     : c.status === 'approved' ? `<div class="btn-row">
@@ -281,7 +316,7 @@ export function claimCardStaff(c, opts){
     : apps.length ? `<div class="note warn">${icon('users')}<span>${t('st.secondNeeded', {who: `<b data-uname="${esc(apps[0])}">…</b>`})}</span></div>`
     : `<div class="note info">${icon('shield')}<span>${t('st.highValue')}</span></div>`;
   return mcard({key: 's:' + c.id, open: opts?.open, fresh: opts?.fresh, muted: !['pending', 'approved'].includes(c.status), tone: warn ? 'warn' : '', pillHtml: pill(CLAIM_STATUS, c.status), next,
-    head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${esc(i ? showTitle(i) : claimNo(c))}</h3>${person(c.uid)}${prior ? `<span class="pill ok prior">${icon('bell')}${t('st.priorReport')}</span>` : ''}${hv && apps.length && !apps.includes(S.uid) ? `<span class="pill warn">${t('st.yourSecond')}</span>` : ''}`,
+    head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${i ? esc(showTitle(i)) : c.grouped ? t('grp.' + c.cat + '.title') : esc(claimNo(c))}</h3>${c.grouped ? `<span class="pill info">${t('gc.pill')}</span>` : ''}${person(c.uid)}${prior ? `<span class="pill ok prior">${icon('bell')}${t('st.priorReport')}</span>` : ''}${hv && apps.length && !apps.includes(S.uid) ? `<span class="pill warn">${t('st.yourSecond')}</span>` : ''}`,
     body: `<div class="box-head"><div class="claim-who">${whenLine('c.sentAt', c.createdAt)}${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div></div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
     ${c.editedAt ? `<div class="note info edited">${icon('edit')}<span>${t('st.editedAfter', {when: when(c.editedAt)})}</span></div>` : ''}
@@ -290,7 +325,9 @@ export function claimCardStaff(c, opts){
     ${conflictNote(kind)}
     ${rv ? `<div class="note warn">${icon('info')}<span>${t('st.rivalNote')}</span></div>` : ''}
     ${tip}${histLine}${appNote}
-    ${i ? claimCompare(c, full(i)) : `<div class="proof">${esc(c.proof)}</div>`}
+    ${lk && c.status === 'pending' ? `<div class="note ok">${icon('check')}<span>${t('gc.linkedTo', {ref: `<b dir="ltr">${esc(i?.ref || '')}</b>`})}</span></div>` : ''}
+    ${i ? claimCompare(c, full(i)) : c.grouped ? groupAnswers(c) : `<div class="proof">${esc(c.proof)}</div>`}
+    ${unlinked && c.status === 'pending' ? groupBox(c, own) : ''}
     ${proofs}
     ${i ? '' : qaBox(c)}
     ${['rejected', 'expired', 'cancelled'].includes(c.status) && c.note ? `<div class="meta">${t(c.status === 'rejected' ? 'st.rejectReason' : 'st.note')}: ${esc(noteText(c.note))}</div>` : ''}
@@ -301,6 +338,7 @@ export function claimCardStaff(c, opts){
 // البحث برقم الطلب (REQ-7K3M أو 7K3M فقط): يطابق الطلبات المفتوحة والسجل المحمّل
 const qNo = s => latinDigits(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
 export function staffClaims(){
+  expireOld();
   const q = qNo(S.claimQ);
   if (q){
     const all = [...S.claims, ...(S.claimHist || []).filter(h => !S.claims.some(c => c.id === h.id))];
