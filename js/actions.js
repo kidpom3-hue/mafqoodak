@@ -3,7 +3,7 @@ import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, 
 import { t, tp, tAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
 import { loadStats, exportCsv } from './stats.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys } from './state.js';
+import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, maybeFor, claimNo, claimEditable, pickOf, touch, checkInvite, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion,
@@ -484,7 +484,7 @@ async function submitForm(form){
       console.warn(e); busy(form, false);
       return formErr(form, String(e?.code || '').includes('permission-denied') ? t('a.delDenied') : t('a.delFail'));
     }
-    LS.set('codes', {}); LS.set('seen', []); LS.set('notify', false); LS.set('mode', 'visitor');
+    LS.set('codes', {}); LS.set('seen', []); LS.set('staffSeen', null); LS.set('notify', false); LS.set('mode', 'visitor');
     S.mode = 'visitor'; S.hist = []; S.route = {name: 'home', params: {}};
     closeSheet(); renderAll(); toast(t('a.deleted'));
     return;
@@ -611,7 +611,7 @@ async function doApprove(c, reason = ''){
 }
 // تسجيل الخروج على جهاز مشترك: نمسح رموز الاستلام والتنبيهات المقروءة وتفعيل الإشعارات من المتصفح،
 // ونسخة Firestore المحفوظة (IndexedDB)، ثم نعيد تحميل الصفحة حتى لا يبقى شيء من بيانات الحساب في الذاكرة
-function wipeDevice(){ ['codes', 'seen', 'notify'].forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} }); }
+function wipeDevice(){ ['codes', 'seen', 'staffSeen', 'notify'].forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} }); }
 
 const ACT = {
   nav(el){
@@ -756,7 +756,8 @@ const ACT = {
   // H4: تبويب فرعي للموظف (قراري/الحضور/قادمة/منتهية، ولها مرشّح/مفتوحة/مغلقة): النقر يسجّل جديده مقروءاً
   staffSub(el){
     const g = el.dataset.g, v = el.dataset.v; S.staffSub[g] = v;
-    markSeenKeys(staffKeys().filter(x => x.sub === g + ':' + v).map(x => x.k));
+    // H5: كل أحداث التبويب تُسجَّل مقروءة (staffSeen)، فيختفي الأحمر وحدود البطاقات الجديدة فوراً
+    markStaffSeen(staffKeys().filter(x => x.sub === g + ':' + v).map(x => x.k));
     updateStaff(); renderNav(); document.getElementById(`st-${g}-${v}`)?.focus();
   },
   attLater(el){ LS.set('snoozed', [...new Set([...LS.get('snoozed', []), el.dataset.k])].slice(-200)); renderAll(); },
@@ -1055,7 +1056,8 @@ export function bindEvents(){
   app.addEventListener('click', e => {
     // H4: فتح بطاقة مختصرة بيد المستخدم يسجّل تنبيهاتها مقروءة (فيختفي حدّها الملوّن)
     const sum = e.target.closest('details[data-card] > summary');
-    if (sum){ const d = sum.parentElement; setTimeout(() => { if (d.open) markSeenKeys(unseenFor(d.dataset.card)); }, 0); }
+    if (sum){ const d = sum.parentElement, card = d.dataset.card;
+      setTimeout(() => { if (!d.open) return; markSeenKeys(unseenFor(card)); markStaffSeen(staffKeys().filter(x => x.card === card).map(x => x.k)); }, 0); }
     const el = e.target.closest('[data-act]'); if (!el || !app.contains(el)) return;
     const fn = ACT[el.dataset.act]; if (!fn) return;
     if (el.tagName === 'A') e.preventDefault();

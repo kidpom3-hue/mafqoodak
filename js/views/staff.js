@@ -2,7 +2,7 @@
 import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys } from '../state.js';
+import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew } from '../state.js';
 import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, ENDED_OPEN } from './common.js';
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
@@ -296,17 +296,19 @@ export function staffClaims(){
   return subTabs('claims', defs, cur, body);
 }
 /* H4: التبويبات الفرعية للموظف (role="tablist" والأسهم كما في «طلباتي»). التبويب الافتراضي أول تبويب فيه عناصر،
-   والمختار يبقى ما دامت الصفحة مفتوحة (S.staffSub). الأحمر = تنبيهات staffKeys() غير المقروءة، ويختفي بالنقر على التبويب */
+   والمختار يبقى ما دامت الصفحة مفتوحة (S.staffSub). الأحمر = أحداث staffKeys() غير المقروءة (H5)، ويختفي بالنقر على التبويب */
 function subTab(g, defs){
   const cur = S.staffSub[g];
   if (defs.some(([v]) => v === cur)) return cur;
-  return (defs.find(([, n]) => n) || defs[0])[0];
+  // H5: أول تبويب فيه جديد غير مقروء، وإلا أول تبويب فيه عناصر
+  return (defs.find(([v]) => staffNew(g + ':' + v)) || defs.find(([, n]) => n) || defs[0])[0];
 }
+// H5: رقم واحد على كل تبويب: الأحمر بعدد الجديد غير المقروء إن وُجد، وإلا الرمادي بعدد العناصر (ويُخفى إن كان صفراً)
 function subTabs(g, defs, cur, body){
-  const nw = staffKeys().reduce((m, x) => { const [gg, v] = x.sub.split(':'); if (gg === g) (m[v] ||= new Set()).add(x.card); return m; }, {});
-  return `<div class="tabs sub" role="tablist" aria-label="${t('st.subAria.' + g)}">${defs.map(([v, n]) => { const r = nw[v]?.size || 0;
+  return `<div class="tabs sub" role="tablist" aria-label="${t('st.subAria.' + g)}">${defs.map(([v, n]) => { const r = staffNew(g + ':' + v);
+      const num = r ? `<span class="count"><span aria-hidden="true">${r}</span><span class="sr-only">${t('mine.newSr', {n: r})}</span></span>` : n ? `<span class="tab-n">${n}</span>` : '';
       return `<button role="tab" id="st-${g}-${v}" aria-controls="sp-${g}" aria-selected="${v === cur}" tabindex="${v === cur ? 0 : -1}" data-act="staffSub" data-g="${g}" data-v="${v}">
-        <span>${t('st.sub.' + v)}</span>${n ? `<span class="tab-n">${n}</span>` : ''}${r ? `<span class="count"><span aria-hidden="true">${r}</span><span class="sr-only">${t('mine.newSr', {n: r})}</span></span>` : ''}</button>`; }).join('')}</div>
+        <span>${t('st.sub.' + v)}</span>${num}</button>`; }).join('')}</div>
     <div role="tabpanel" id="sp-${g}" aria-labelledby="st-${g}-${cur}" tabindex="0" class="sub-panel">${body}</div>`;
 }
 /* إشعار تسليم من واجد (للموظف): «استلمته» يفتح نموذج الغرض معبّأً، و«لم يصل» يغلقه */

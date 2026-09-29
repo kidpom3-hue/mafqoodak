@@ -51,9 +51,6 @@ header.top{position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1
 .brand{display:flex;align-items:center;gap:8px;min-width:0}
 .brand svg{width:30px;height:30px;flex:none}
 .wordmark{font-family:var(--f-display);font-weight:800;font-size:21px;letter-spacing:-.01em}
-.office-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding-block:6px;padding-inline:12px 10px;font-size:13.5px;font-weight:600}
-.office-chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.office-chip svg{width:16px;height:16px;color:var(--primary)}
 
 /* segmented */
 .seg{display:inline-flex;background:var(--surface-2);border-radius:12px;padding:3px;gap:2px}
@@ -405,12 +402,8 @@ form.hero-search{flex-direction:row;align-items:center;gap:8px;background:var(--
 @media (max-width:400px){
   .top-row{gap:8px}
   .wordmark{font-size:18px}
-  .office-chip{padding-inline:10px 8px;gap:4px}
-  .office-chip svg:last-child{display:none}   /* سهم القائمة */
 }
-@media (max-width:340px){
-  .wordmark{display:none}   /* يبقى الشعار ظاهراً */
-}
+/* H5: اسم التطبيق «مفقودك» ظاهر دائماً بجانب الشعار (من 320 فأكثر) */
 
 /* صفحة سياسة الخصوصية */
 .legal h2{font-size:17px;font-weight:700}
@@ -804,16 +797,13 @@ html[data-text] .pill{white-space:normal}
 .sheet-list{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .sheet-list .btn{justify-content:flex-start}
 /* H3: الشريط العلوي يعطي الأولوية لاسم المكتب؛ وفي الجوال (تحت 560px، ومنه 390 و412 و430) زر الدخول أيقونة فقط (36px) */
-.top-actions>*:not(.office-chip){flex:none}
-.top-actions .office-chip{flex:0 1 auto}
+.top-actions>*{flex:none}
 @media (max-width:599px){
   .login-btn{width:36px;height:36px;padding:0;justify-content:center}
   .login-btn .login-txt{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-  .office-chip{font-size:13px}
-  .office-chip svg:first-child{display:none}   /* أيقونة نوع المكتب: يبقى الاسم كاملاً */
 }
 /* H3: بالإنجليزية الكلمة «Mafqoodak» أعرض، فتحت 560px يبقى الشعار وحده ليتسع اسم المكتب كاملاً */
-@media (max-width:599px){ html[lang=en] .wordmark{display:none} }
+
 /* H2: خانة البحث في لوحة الموظف بعرض كامل في الجوال، فيظهر نصها كاملاً */
 /* (important لأن للخانة style="flex:1" في staff.js) */
 @media (max-width:479px){ #s-tools .filters .searchbar{flex:1 1 100%!important} }
@@ -910,7 +900,6 @@ html[data-text] .pill{white-space:normal}
   .aa-btn,.lang-btn{width:36px;min-width:36px;padding:0}
   .lang-btn .lang-txt{display:none}
   .lang-btn svg{display:block}
-  .wordmark{display:none}
   .top-actions{gap:6px}
 }
 .sf-id svg{background:var(--surface);border-radius:9px;padding:3px}
@@ -958,11 +947,12 @@ html[data-text] .pill{white-space:normal}
   .how-panel .how.how3 li{padding-bottom:0}
   .how-panel .how.how3 li:not(:last-child)::after{display:block;border:0;border-top:2px solid var(--primary-line);top:15px;bottom:auto;inset-inline-start:40px;inset-inline-end:-14px}
 }
-/* «خصوصيتك أولاً»: سطر تحت العنوان، وأيقونة في دائرة خضراء فاتحة، وحدّ أخضر رفيع في بداية كل بطاقة، وارتفاع متساوٍ */
-.sec-head.sec-sub{flex-direction:column;align-items:flex-start;gap:2px}
-.sec-sub p{font-size:13px;color:var(--muted)}
+/* «خصوصيتك أولاً»: أيقونة في دائرة خضراء فاتحة، وارتفاع متساوٍ للبطاقات.
+   H5: الخط الأخضر شريط مستقيم داخل البطاقة (عنصر ::before بعرض 3px على الحافة الأولى)، بعيد عن الزوايا 16px أعلى وأسفل،
+   بدل حدّ border-inline-start الذي كان يلتف مع استدارة الزوايا */
 .features.compact{grid-auto-rows:1fr}
-.features.compact .feat{border-inline-start:3px solid var(--primary)}
+.features.compact .feat{position:relative}
+.features.compact .feat::before{content:"";position:absolute;inset-inline-start:0;top:16px;bottom:16px;width:3px;border-radius:3px;background:var(--primary)}
 .features.compact .feat svg{width:32px;height:32px;padding:7px;border-radius:50%;background:var(--primary-soft);color:var(--primary)}
 /* صفّا «تفاصيل الخدمات» و«مؤشرات المكتب»: روابط هادئة بعرض كامل (أيقونة في مربع أخضر فاتح، وعنوان، ووصف قصير، وسهم) */
 .link-rows{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
@@ -975,3 +965,10 @@ html[data-text] .pill{white-space:normal}
 .link-row > svg{color:var(--muted);width:18px;height:18px}
 .lr-ic{width:34px;height:34px;border-radius:9px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;flex:none}
 .lr-ic svg{width:18px;height:18px}
+/* ---------- H5: الشريط العلوي ---------- */
+/* «مفقودك» ظاهر دائماً بجانب الشعار. بحجم خط كبير على شاشة ضيقة (≤400px) يبقى الشريط العلوي بحجمه العادي
+   (نعكس تكبير body)، فيتسع الاسم والأزرار الثلاثة في سطر واحد؛ ويبقى المحتوى مكبّراً، والأزرار 36px */
+@media (max-width:400px){
+  html[data-text=l] header.top{zoom:.893}
+  html[data-text=xl] header.top{zoom:.8}
+}

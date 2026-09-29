@@ -149,7 +149,6 @@ export const EN = {
   "home.statAvail": "Ready to collect",
   "home.statReturned": "Returned to owners",
   "home.statKeep": "{unit} retention",
-  "home.privacySub": "We protect your data at every step",
   "home.moreAria": "Service and indicator links",
   "home.svcDesc": "Requirements, steps and timing",
   "home.numDesc": "Return rate, average time and satisfaction",

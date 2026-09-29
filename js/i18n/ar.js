@@ -149,7 +149,6 @@ export const AR = {
   "home.statAvail": "متاح للاستلام",
   "home.statReturned": "أُعيد لأصحابه",
   "home.statKeep": "{unit} مدة الحفظ",
-  "home.privacySub": "نحمي بياناتك في كل خطوة",
   "home.moreAria": "روابط الخدمة والمؤشرات",
   "home.svcDesc": "المتطلبات والخطوات والمدة",
   "home.numDesc": "نسبة الإعادة ومتوسط المدة والرضا",
