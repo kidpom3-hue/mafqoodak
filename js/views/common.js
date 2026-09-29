@@ -137,17 +137,16 @@ export function photoModePicker(sel = 'blur'){
     <span class="hint">${t('c.photoModeHint')}</span>
     <span class="hint">${t('c.blurColorHint')}</span></div>`;
 }
-// capture (H9): يفتح كاميرا الجوال الخلفية مباشرة (نموذج إضافة غرض جديد)
-export function photoField(existingKey, label, extra = '', capture = false){
+export function photoField(existingKey, label, extra = ''){
   return `<div class="field" id="photo-field"><span class="label">${label}</span>
     <div class="photo-drop">
       <div class="pv" id="pv">${existingKey ? `<img data-photo="${esc(existingKey)}" alt="" hidden>` : ''}${icon('camera')}</div>
       <div class="col">
         <div class="btn-row">
-          <span class="btn sm ghost filebtn">${icon('camera')}${t('c.pickPhoto')}<input type="file" accept="image/*" ${capture ? 'capture="environment" ' : ''}id="photo-in" aria-label="${t('c.pickPhoto')}"></span>
+          <span class="btn sm ghost filebtn">${icon('camera')}${t('c.pickPhoto')}<input type="file" accept="image/*" id="photo-in" aria-label="${t('c.pickPhoto')}"></span>
           <button type="button" class="btn sm ghost" data-act="removePhoto" id="rm-photo" ${existingKey ? '' : 'hidden'}>${icon('x')}${t('c.remove')}</button>
         </div>
-        ${aiReady() && !capture ? `<button type="button" class="btn sm soft" data-act="aiFill" id="ai-btn" disabled>${icon('spark')}${t('c.aiFill')}</button>` : ''}
+        ${aiReady() ? `<button type="button" class="btn sm soft" data-act="aiFill" id="ai-btn" disabled>${icon('spark')}${t('c.aiFill')}</button>` : ''}
         <span class="ai-status" id="ai-status"></span>
       </div>
     </div>

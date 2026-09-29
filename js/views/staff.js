@@ -419,6 +419,31 @@ function topCats(o, sel){
   if (sel && !ids.includes(sel)) ids[ids.length - 1] = sel;
   return ids;
 }
+/* H9: صورة الغرض في الإضافة السريعة: لا يُفتح شيء حتى يضغط الموظف زراً.
+   data-ph: 'pick' ثلاثة أزرار · 'view' المعاينة مع «تغيير» و«حذف» · 'none' اختار «بلا صورة»
+   «التقط صورة» (كاميرا الجوال مباشرة) للأجهزة التي تعمل باللمس فقط، وفي الكمبيوتر «اختر صورة» */
+function quickPhoto(){
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const file = (id, cap) => `<input type="file" accept="image/*" ${cap ? 'capture="environment" ' : ''}id="${id}" class="photo-file">`;
+  return `<div class="field qp" id="photo-field" data-ph="pick"><span class="label">${t('if.photo')}</span>
+    <div class="qp-pick">
+      ${touch ? `<label class="qp-btn">${icon('camera')}<span>${t('if.takePhoto')}</span>${file('photo-cam', true)}</label>` : ''}
+      <label class="qp-btn">${icon('image')}<span>${t(touch ? 'if.fromGallery' : 'c.pickPhoto')}</span>${file('photo-in', false)}</label>
+      <button type="button" class="qp-btn" data-act="noPhoto">${icon('x')}<span>${t('if.noPhoto')}</span></button>
+    </div>
+    <div class="qp-view">
+      <div class="pv" id="pv">${icon('camera')}</div>
+      <div class="col">
+        <div class="btn-row">
+          <label class="btn sm ghost filebtn">${icon('edit')}<span>${t('if.change')}</span>${file('photo-chg', false)}</label>
+          <button type="button" class="btn sm ghost" data-act="removePhoto" id="rm-photo">${icon('trash')}${t('if.delPhoto')}</button>
+        </div>
+        <span class="ai-status" id="ai-status" role="status"></span>
+      </div>
+    </div>
+    <div class="qp-none"><span class="muted">${t('if.noPhotoSet')}</span><button type="button" class="btn sm ghost" data-act="photoPick">${icon('camera')}${t('if.addPhoto')}</button></div>
+  </div>`;
+}
 export function vItemForm(){
   const o = curOffice(); const i = S.route.params.id ? full(item(S.route.params.id)) : null;
   // عند قبول بلاغ: نعبّئ النموذج من بيانات البلاغ (التصنيف، النوع، اللون، الصورة...)
@@ -449,13 +474,8 @@ export function vItemForm(){
     // الظاهر: الصورة، والتصنيف (أكثرها استخداماً أولاً)، والعنوان، والمكان، والتفاصيل السرية المطلوبة للتصنيف. والباقي في «تفاصيل إضافية»
     const top = topCats(o, src.cat), others = CATS.map(c => c.id).filter(id => !top.includes(id));
     return `<div class="wrap" data-view="add">${hero}
-    <form data-form="item" class="panel quick-form" novalidate data-quick="1" data-step="cam">
-      <div class="cam-step" id="cam-step">
-        <span class="cam-ico">${icon('camera')}</span><b>${t('if.camTitle')}</b><span class="muted">${t('if.camHint')}</span>
-        <button type="button" class="btn block" data-act="camOpen">${icon('camera')}${t('if.camOpen')}</button>
-        <button type="button" class="btn ghost block" data-act="noPhoto">${t('if.noPhoto')}</button>
-      </div>
-      ${photoField(null, t('if.photo'), '', true)}
+    <form data-form="item" class="panel quick-form" novalidate data-quick="1">
+      ${quickPhoto()}
       <div class="field" id="cat-field"><span class="label">${t('c.category')}</span>${catPicker(src.cat, top)}
         <details class="more-box all-cats" id="cat-all"><summary>${icon('grid')}<span>${t('if.allCats')}</span>${icon('chev')}</summary>
           <div class="more-body">${catPicker(src.cat, others)}</div></details></div>

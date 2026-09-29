@@ -68,6 +68,8 @@ function clearPhoto(form){
   const rm = form.querySelector('#rm-photo'); if (rm) rm.hidden = true;
   const ai = form.querySelector('#ai-btn'); if (ai) ai.disabled = true;
   const inp = form.querySelector('#photo-in'); if (inp) inp.value = '';
+  form.querySelectorAll('.photo-file').forEach(x => x.value = '');
+  if (form.dataset.quick){ photoState(form, 'pick'); form.querySelector('.qp-btn input, .qp-btn')?.focus(); }   // H9: «حذف» يعيد الأزرار
 }
 /* v7: صور إثبات طلب الاستلام (اختيارية، صورتان على الأكثر): صورة قديمة للغرض أو فاتورته، يراها الموظف فقط.
    تُضغط بدالة الصور نفسها (< 350KB) وتُحفظ مع الطلب في العملية نفسها (claimProofs) */
@@ -87,23 +89,22 @@ async function onPhoto(input){
     form.querySelector('#pv').innerHTML = `<img src="${dataUrl}" alt="">`;
     form.querySelector('#rm-photo').hidden = false;
     const ai = form.querySelector('#ai-btn'); if (ai){ ai.disabled = false; if (st) st.textContent = t('a.aiHint'); }
-    // H9: بعد الالتقاط يظهر النموذج والصورة في أعلاه، ويقترح الذكاء الاصطناعي الحقول (إن كان مفعّلاً)
-    if (form.dataset.quick){ quickStep(form); if (aiReady()) aiSuggest(form, blob); }
-  } catch { toast(t('a.photoFail')); if (form.dataset.quick) quickStep(form); }
+    // H9: المعاينة تحل مكان الأزرار، ويقترح الذكاء الاصطناعي الحقول (إن كان مفعّلاً)
+    if (form.dataset.quick){ photoState(form, 'view'); focusNext(form); if (aiReady()) aiSuggest(form, blob); }
+  } catch { toast(t('a.photoFail')); }
 }
 
 // ما يبقى من آخر غرض حُفظ (المكان وتفاصيله والتاريخ)، يُنقل إلى AGAIN عند «أضف آخر»
 const LAST_ADD = {v: null};
 /* ---------- الإضافة السريعة (H9) ----------
-   الخطوة الأولى الكاميرا؛ بعد الصورة (أو «بلا صورة») يظهر النموذج ويذهب التركيز إلى أول خانة ناقصة */
-function quickStep(form){
-  if (form.dataset.step !== 'cam') return;
-  form.dataset.step = 'form';
+   لا يُفتح شيء تلقائياً: الموظف يختار «التقط صورة» أو «من المعرض» أو «بلا صورة».
+   photoState: 'pick' الأزرار · 'view' المعاينة مع «تغيير» و«حذف» · 'none' بلا صورة */
+function photoState(form, v){ const f = form.querySelector('#photo-field.qp'); if (f) f.dataset.ph = v; }
+// بعد اختيار الصورة (أو «بلا صورة») ينتقل التركيز إلى أول خانة ناقصة: التصنيف، وإلا العنوان
+function focusNext(form){
   const first = !form.querySelector('input[name=cat]:checked') ? form.querySelector('input[name=cat]') : form.querySelector('[name=title]');
   first?.focus({preventScroll: true});
 }
-// كاميرا الجوال مباشرة: يجب أن تُفتح داخل ضغطة المستخدم نفسها (لا بعد انتظار)
-function openCam(){ const inp = document.querySelector('form[data-quick] #photo-in'); if (inp) inp.click(); }
 /* اقتراح الذكاء الاصطناعي: التصنيف والنوع والعنوان واللون، مع علامة «اقتراح» على كل خانة عُبّئت.
    لا يُحفظ شيء تلقائياً، ولا يغيّر ما عدّله الموظف بيده. إن فشل أو تأخر أكثر من 6 ثوانٍ: يكمل الموظف يدوياً بلا رسالة خطأ */
 const AI_WAIT = 6000;
@@ -480,11 +481,11 @@ async function submitForm(form){
       <div class="list">${matches.map(r => `<div class="box"><b>${esc(r.title)}</b><span class="meta">${esc(catName(r.cat))} · ${esc(colorName(r.color))} · ${t('st.lostOn', {date: relDay(r.lostDate)})}</span>${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}</div>`).join('')}</div>
       <p class="muted">${t('a.matchesHint')}</p>
       <div class="btn-row"><button class="btn" data-act="pickAll" data-i="${esc(id)}" data-rs="${esc(matches.map(r => r.id).join(','))}">${icon('check')}${t('a.pickAll')}</button><button class="btn ghost" data-act="closeSheet">${t('a.later')}</button></div>
-      ${quick ? `<button class="btn soft block" data-act="addAgain">${icon('camera')}${t('if.addAgain')}</button>` : ''}`);
+      ${quick ? `<button class="btn soft block" data-act="addAgain">${icon('plus')}${t('if.addAgain')}</button>` : ''}`);
     // H9: بعد الحفظ: «أضف آخر» يفتح الكاميرا مباشرة ويبقي المكان والتاريخ
     else if (quick) openSheet(`<h2>${icon('check')} ${t('if.savedTitle', {ref: esc(data.ref)})}</h2>
       <p class="muted">${t('if.savedHint')}</p>
-      <div class="btn-row"><button class="btn" data-act="addAgain">${icon('camera')}${t('if.addAgain')}</button><button class="btn ghost" data-act="closeSheet">${t('if.done')}</button></div>`);
+      <div class="btn-row"><button class="btn" data-act="addAgain">${icon('plus')}${t('if.addAgain')}</button><button class="btn ghost" data-act="closeSheet">${t('if.done')}</button></div>`);
     return;
   }
 
@@ -735,7 +736,6 @@ const ACT = {
     if (r === 'add') AGAIN.v = null;   // H9: غرض جديد من البداية (آخر تصنيف ومكان فقط)
     go(r, el.dataset.id ? {id: el.dataset.id} : {}, !fromNav);   // data-id: مثل بطاقة خدمة محددة (service)
     if (fromNav && r !== homeRoute()) tabEntry();
-    if (r === 'add') openCam();   // «أضف غرضاً» يفتح الكاميرا مباشرة
   },
   back(){ back(); },
   login(){ go('login', {next: S.route.name === 'login' ? null : S.route}); },
@@ -889,9 +889,10 @@ const ACT = {
   removePhoto(el){ clearPhoto(el.closest('form')); },
   aiFill(){ if (aiReady()) aiFill(); },
   // H9: الإضافة السريعة: فتح الكاميرا، أو المتابعة بلا صورة، أو «أضف آخر» بعد الحفظ (يبقى المكان والتاريخ)
-  camOpen(){ openCam(); },
-  noPhoto(el){ quickStep(el.closest('form')); },
-  addAgain(){ AGAIN.v = LAST_ADD.v; go('add', {}, S.route.name !== 'add'); openCam(); },
+  noPhoto(el){ const f = el.closest('form'); photoState(f, 'none'); focusNext(f); },
+  photoPick(el){ const f = el.closest('form'); photoState(f, 'pick'); f.querySelector('.qp-btn input, .qp-btn')?.focus(); },
+  // «أضف آخر»: نموذج جديد بالأزرار الثلاثة، يبقى فيه التصنيف والمكان والتاريخ، ولا يُفتح شيء تلقائياً
+  addAgain(){ AGAIN.v = LAST_ADD.v; go('add', {}, S.route.name !== 'add'); },
   aiMatch(el){ if (aiReady()) aiMatch(el.dataset.id); },
   // «وجدته بنفسي»: تأكيد أولاً، وتنبيه إن كان المكتب رشّح غرضاً أو ظهر غرض مشابه (فيطلب استلامه بدل الإغلاق)
   closeReport(el){
@@ -1248,7 +1249,7 @@ export function bindEvents(){
       // المُسلَّم والمؤرشف والمُتصرَّف فيه تُجلب عند اختيار الفلتر فقط
       if (t.value !== 'active') loadExtraItems(t.value);
     }
-    if (t.id === 'photo-in') onPhoto(t);
+    if (t.id === 'photo-in' || t.classList.contains('photo-file')) onPhoto(t);
     if (t.id === 'proof-in') onProofs(t);
     // v7: نموذج فيه قائمة فحوص (التسليم): الزر يعمل فقط بعد تعليم كل المربعات
     const af = t.closest?.('form[data-allcheck]'); if (af) af.querySelector('[type=submit]').disabled = ![...af.querySelectorAll('input[type=checkbox]')].every(x => x.checked);
