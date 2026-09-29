@@ -3,10 +3,11 @@ import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STA
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, candidatesFor, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist } from '../state.js';
-import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
+import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
+import { MS_NOTE } from '../workflow.js';   // H9: ملاحظة مدة الإضافة لا تُعرض في السجل
 
 /* ---------- staff dashboard ---------- */
 export function vStaff(){
@@ -134,7 +135,7 @@ export function timeline(i){
         <b>${LOG_ACTIONS.includes(e.action) ? t('log.' + e.action) : esc(e.action)}</b>
         <span class="meta">${fmtDateTime(e.at)}${e.by ? ` · ${t('tl.by')} ${person(e.by)}` : ''}</span>
         ${claimant ? `<span class="meta">${t('tl.claimant')} ${person(claimant)}</span>` : ''}
-        ${e.note ? `<span class="tl-note">${esc(noteText(e.note))}</span>` : ''}
+        ${e.note && !MS_NOTE.test(e.note) ? `<span class="tl-note">${esc(noteText(e.note))}</span>` : ''}
       </div></li>`; }).join('')}</ol>
     ${events.length < 2 ? `<p class="hint">${t('tl.hint')}</p>` : ''}
   </div>`;
@@ -410,38 +411,93 @@ function acceptBtn(r){
 
 /* ---------- staff: add / edit item ---------- */
 // الحقول السرية (الاسم التفصيلي، اللون، الماركة، الوصف، المبنى والقاعة، موضع الحفظ) تُقرأ من itemSecrets وتُحفظ فيها
+// H9: أكثر 6 تصنيفات في أغراض المكتب (تُكمَّل بترتيب القائمة)، ومعها التصنيف المختار إن لم يكن منها
+function topCats(o, sel){
+  const n = {}; for (const x of S.items) if (x.officeId === o?.id) n[x.cat] = (n[x.cat] || 0) + 1;
+  const ids = Object.keys(n).filter(k => CATS.some(c => c.id === k)).sort((a, b) => n[b] - n[a]).slice(0, 6);
+  for (const c of CATS){ if (ids.length >= 6) break; if (!ids.includes(c.id)) ids.push(c.id); }
+  if (sel && !ids.includes(sel)) ids[ids.length - 1] = sel;
+  return ids;
+}
 export function vItemForm(){
   const o = curOffice(); const i = S.route.params.id ? full(item(S.route.params.id)) : null;
   // عند قبول بلاغ: نعبّئ النموذج من بيانات البلاغ (التصنيف، النوع، اللون، الصورة...)
   const r = !i && S.route.params.fromReport ? S.reports.find(x => x.id === S.route.params.fromReport) : null;
   // عند استلام غرض من واجد سجّل إشعار تسليم: التصنيف والنوع ومكان العثور وتاريخه
   const f = !i && !r && S.route.params.fromFound ? S.found.find(x => x.id === S.route.params.fromFound) : null;
+  // H9: غرض جديد عادي = الإضافة السريعة: الكاميرا أولاً، وآخر تصنيف ومكان، وما بقي من «أضف آخر» (المكان والتاريخ)
+  const quick = !i && !r && !f;
+  const P = quick ? addPrefs() : {}, A = quick ? AGAIN.v : null;
+  const q = quick ? {cat: CATS.some(c => c.id === P.cat) ? P.cat : '', spot: A ? A.spot : (o?.spots || []).includes(P.spot) ? P.spot : '', bldg: A?.bldg || '', room: A?.room || ''} : null;
   const src = i || (r ? {cat: r.cat, sub: r.sub, color: r.color, title: r.title, desc: r.desc, spot: r.spot, bldg: r.bldg, room: r.room, details: r.details || {}}
-    : f ? {cat: f.cat, sub: f.sub, title: subName(f.sub) || cat(f.cat).name, spot: f.spot, bldg: f.bldg, room: f.room} : null);
+    : f ? {cat: f.cat, sub: f.sub, title: subName(f.sub) || cat(f.cat).name, spot: f.spot, bldg: f.bldg, room: f.room} : q);
   // الموظف يرى الأصل الواضح (p_)، والقيمة القديمة true صورتها في itemPhotos
   const photoKey = i?.photo ? (i.photo === true ? i.id : 'p_' + i.id) : r?.photo && !cat(r.cat).sensitive ? 'r_' + r.id : null;
   const mode = ['clear', 'blur', 'none'].includes(i?.photo) ? i.photo : i?.photo === true ? 'clear' : 'blur';
   resetForm(!!i?.photo, i ? null : photoKey);
+  const date = `<div class="field"><label for="f-date">${t('if.date')}</label><input id="f-date" name="foundDate" type="date" class="input" value="${esc(i?.foundDate || f?.foundDate || A?.date || today())}" max="${today()}"></div>`;
+  const spot = `<div class="field"><label for="f-spot">${t('if.spot')}</label><select id="f-spot" name="spot" class="input">${spotOptions(o, src?.spot || '')}</select></div>`;
+  const desc = `<div class="field"><label for="f-desc">${t('if.desc')}</label><textarea id="f-desc" name="desc" class="input" maxlength="600" placeholder="${t('if.descPh')}">${esc(src?.desc || '')}</textarea></div>`;
+  const rest = `<div class="field"><label for="f-storage">${t('if.storage')} <span class="hint">${t('if.staffOnly')}</span></label><input id="f-storage" name="storage" class="input" maxlength="40" value="${esc(i?.storage || '')}" placeholder="${t('if.storagePh')}"></div>
+      <div class="field"><label for="f-finder">${t('if.finder')} <span class="hint">${t('c.optional')} · ${t('if.staffOnly')}</span></label><input id="f-finder" name="finderNote" class="input" maxlength="80" autocomplete="off" value="${esc(i?.finderNote || '')}" placeholder="${t('if.finderPh')}">
+        <span class="hint">${t('if.finderHint')}</span></div>`;
+  const secretNote = `<div class="note">${icon('lock')}<span>${t('if.secretNote')}</span></div>`;
+  const subs = `<div class="field" id="subs-field" ${src?.cat && cat(src.cat).subs.length ? '' : 'hidden'}><span class="label">${t('c.type')}</span><div id="subs">${src?.cat ? subsPicker(src.cat, src.sub) : ''}</div></div>`;
+  const title = `<div class="field"><label for="f-title">${t('if.title')}</label><input id="f-title" name="title" class="input" required maxlength="80" value="${esc(src?.title || '')}" placeholder="${t('if.titlePh')}"></div>`;
+  const hero = `<section class="hero"><div class="hero-kicker">${icon('tag')}${i ? t('if.kEdit', {ref: esc(i.ref)}) : t(r ? 'if.kReport' : f ? 'if.kFound' : 'if.kNew', {office: esc(oName(o))})}</div><h1 class="hero-title">${t(i ? 'if.tEdit' : r ? 'if.tReport' : f ? 'if.tFound' : 'if.tNew')}</h1></section>`;
+  if (quick){
+    // الظاهر: الصورة، والتصنيف (أكثرها استخداماً أولاً)، والعنوان، والمكان، والتفاصيل السرية المطلوبة للتصنيف. والباقي في «تفاصيل إضافية»
+    const top = topCats(o, src.cat), others = CATS.map(c => c.id).filter(id => !top.includes(id));
+    return `<div class="wrap" data-view="add">${hero}
+    <form data-form="item" class="panel quick-form" novalidate data-quick="1" data-step="cam">
+      <div class="cam-step" id="cam-step">
+        <span class="cam-ico">${icon('camera')}</span><b>${t('if.camTitle')}</b><span class="muted">${t('if.camHint')}</span>
+        <button type="button" class="btn block" data-act="camOpen">${icon('camera')}${t('if.camOpen')}</button>
+        <button type="button" class="btn ghost block" data-act="noPhoto">${t('if.noPhoto')}</button>
+      </div>
+      ${photoField(null, t('if.photo'), '', true)}
+      <div class="field" id="cat-field"><span class="label">${t('c.category')}</span>${catPicker(src.cat, top)}
+        <details class="more-box all-cats" id="cat-all"><summary>${icon('grid')}<span>${t('if.allCats')}</span>${icon('chev')}</summary>
+          <div class="more-body">${catPicker(src.cat, others)}</div></details></div>
+      ${subs}
+      ${title}
+      ${spot}
+      ${spotExtra(src)}
+      <div id="cat-fields" data-mode="item">${catFields(src.cat, src, 'item', 'req')}</div>
+      <details class="more-box" id="if-more">
+        <summary>${icon('plus')}<span>${t('if.more')}</span>${icon('chev')}</summary>
+        <div class="more-body">
+          <div id="cat-fields-opt">${catFields(src.cat, src, 'item', 'opt')}</div>
+          ${desc}
+          ${date}
+          ${photoModePicker(mode)}
+          ${rest}
+          ${secretNote}
+        </div>
+      </details>
+      <div class="form-err" hidden></div>
+      <button class="btn block" type="submit">${icon('check')}${t('if.save')}</button>
+    </form>
+  </div>`;
+  }
   return `<div class="wrap" data-view="add">${i || r || f ? backBtn() : ''}
-    <section class="hero"><div class="hero-kicker">${icon('tag')}${i ? t('if.kEdit', {ref: esc(i.ref)}) : t(r ? 'if.kReport' : f ? 'if.kFound' : 'if.kNew', {office: esc(oName(o))})}</div><h1 class="hero-title">${t(i ? 'if.tEdit' : r ? 'if.tReport' : f ? 'if.tFound' : 'if.tNew')}</h1></section>
+    ${hero}
     ${r ? `<div class="note info">${icon('bell')}<span>${t('if.fromReport')}</span></div>` : ''}
     ${f ? `<div class="note info">${icon('tag')}<span>${t('if.fromFound')}${f.note ? `<br><b>${t('hi.finderNote')}</b> ${esc(f.note)}` : ''}</span></div>` : ''}
     <form data-form="item" class="panel" novalidate ${r ? `data-report="${esc(r.id)}"` : ''} ${f ? `data-found="${esc(f.id)}"` : ''}>
       ${photoField(photoKey, t('if.photo'), photoModePicker(mode))}
       <div class="field"><span class="label">${t('c.category')}</span>${catPicker(src?.cat || '')}</div>
-      <div class="field" id="subs-field" ${src?.cat && cat(src.cat).subs.length ? '' : 'hidden'}><span class="label">${t('c.type')}</span><div id="subs">${src?.cat ? subsPicker(src.cat, src.sub) : ''}</div></div>
-      <div class="note">${icon('lock')}<span>${t('if.secretNote')}</span></div>
+      ${subs}
+      ${secretNote}
       <div id="cat-fields" data-mode="item">${catFields(src?.cat, src, 'item')}</div>
-      <div class="field"><label for="f-title">${t('if.title')}</label><input id="f-title" name="title" class="input" required maxlength="80" value="${esc(src?.title || '')}" placeholder="${t('if.titlePh')}"></div>
-      <div class="field"><label for="f-desc">${t('if.desc')}</label><textarea id="f-desc" name="desc" class="input" maxlength="600" placeholder="${t('if.descPh')}">${esc(src?.desc || '')}</textarea></div>
+      ${title}
+      ${desc}
       <div class="two">
-        <div class="field"><label for="f-spot">${t('if.spot')}</label><select id="f-spot" name="spot" class="input">${spotOptions(o, src?.spot || '')}</select></div>
-        <div class="field"><label for="f-date">${t('if.date')}</label><input id="f-date" name="foundDate" type="date" class="input" value="${esc(i?.foundDate || f?.foundDate || today())}" max="${today()}"></div>
+        ${spot}
+        ${date}
       </div>
       ${spotExtra(src)}
-      <div class="field"><label for="f-storage">${t('if.storage')} <span class="hint">${t('if.staffOnly')}</span></label><input id="f-storage" name="storage" class="input" maxlength="40" value="${esc(i?.storage || '')}" placeholder="${t('if.storagePh')}"></div>
-      <div class="field"><label for="f-finder">${t('if.finder')} <span class="hint">${t('c.optional')} · ${t('if.staffOnly')}</span></label><input id="f-finder" name="finderNote" class="input" maxlength="80" autocomplete="off" value="${esc(i?.finderNote || '')}" placeholder="${t('if.finderPh')}">
-        <span class="hint">${t('if.finderHint')}</span></div>
+      ${rest}
       <div class="form-err" hidden></div>
       <button class="btn block" type="submit">${icon('check')}${t(i ? 'if.saveEdit' : 'if.save')}</button>
     </form>
