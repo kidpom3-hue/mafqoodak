@@ -1,5 +1,5 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
-import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, isHighValue, GROUP_EXPIRE_DAYS } from '../constants.js';
+import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, GROUP_EXPIRE_DAYS } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist } from '../state.js';
@@ -290,9 +290,6 @@ export function claimCardStaff(c, opts){
   if (!i && iid) ensureItem(iid);
   const loadingIt = !i && !!iid && itemLoading(iid);
   const orphan = isOrphan(c);
-  // v7: الغرض الثمين: الموافقات حتى الآن (الأولى تبقي الطلب قيد المراجعة حتى الموافقة الثانية)
-  const apps = Array.isArray(c.approvals) ? c.approvals : [];
-  const hv = !!i && isHighValue(i.cat) && c.status === 'pending';
   // تحذير: طلبات كثيرة من المستخدم نفسه في هذا المكتب خلال 30 يوماً
   const all = [...S.claims, ...(S.claimHist || []).filter(h => !S.claims.some(x => x.id === h.id))];
   const month = c.uid === 'deleted' ? 0 : all.filter(x => x.uid === c.uid && x.createdAt >= Date.now() - 30 * 864e5).length;
@@ -307,7 +304,7 @@ export function claimCardStaff(c, opts){
     : loadingIt && ['pending', 'approved'].includes(c.status) ? ''
     : orphan ? `<div class="btn-row"><button class="btn sm" data-act="closeOrphan" data-id="${esc(c.id)}">${icon('x')}${t('st.orphanClose')}</button></div>`
     : c.status === 'pending' ? `<div class="btn-row">
-      ${(hv && apps.includes(S.uid)) || unlinked ? '' : `<button class="btn sm" data-act="approve" data-id="${esc(c.id)}">${icon('check')}${t(hv && apps.length ? 'st.approveSecond' : 'st.approve')}</button>`}
+      ${unlinked ? '' : `<button class="btn sm" data-act="approve" data-id="${esc(c.id)}">${icon('check')}${t('st.approve')}</button>`}
       <button class="btn sm ghost" data-act="ask" data-id="${esc(c.id)}">${icon('question')}${t(c.question ? 'qa.askAgain' : 'qa.ask')}</button>
       <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}${t('c.reject')}</button></div>`
     : c.status === 'approved' ? `<div class="btn-row">
@@ -320,7 +317,7 @@ export function claimCardStaff(c, opts){
     : c.status === 'approved' ? (left === null ? t('st.comeNoDate') : left < 0 ? t('st.comeLate', {dur: durText(-left)}) : t('st.comeIn', {dur: durText(left)}))
     : c.status === 'done' ? t('st.doneAt', {when: when(c.doneAt)}) : t('st.endedAt', {when: when(c.decidedAt || c.createdAt)});
   const warn = c.status === 'approved' && left !== null && left < 864e5;
-  // v7: بلاغ سابق للعثور، وسجل صاحب الطلب في هذا المكتب (قراءة واحدة عند فتح البطاقة)، وصور الإثبات، والموافقة الثانية للأغراض الثمينة
+  // v7: بلاغ سابق للعثور، وسجل صاحب الطلب في هذا المكتب (قراءة واحدة عند فتح البطاقة)، وصور الإثبات
   const prior = i && c.reportId ? priorReport(c, i) : null;
   const hist = claimerHist(c, opts?.open || CARD_OPEN.get('s:' + c.id));
   const histLine = hist ? `<div class="meta claimer-hist${hist.rejected >= 2 ? ' flag' : ''}">${icon('users')}${t('st.claimerHist', {n: tp('n.prevClaims', hist.n), m: tp('n.rejectedClaims', hist.rejected)})}</div>` : '';
@@ -329,11 +326,8 @@ export function claimCardStaff(c, opts){
       ${i && ['clear', 'blur', 'none'].includes(i.photo) ? `<figure><div class="row-thumb">${icon('camera')}<img data-photo="p_${esc(i.id)}" alt="" hidden></div><figcaption>${t('st.itemPhoto')}</figcaption></figure>` : ''}
       ${Array.from({length: nProofs}, (_, k) => `<figure><div class="row-thumb">${icon('camera')}<img data-photo="cp_${esc(c.id)}_${k}" alt="" hidden></div><figcaption>${t('st.proofPhoto', {n: k + 1})}</figcaption></figure>`).join('')}
     </div>` : '';
-  const appNote = !hv ? '' : apps.includes(S.uid) ? `<div class="note info">${icon('check')}<span>${t('st.approvedWaiting')}</span></div>`
-    : apps.length ? `<div class="note warn">${icon('users')}<span>${t('st.secondNeeded', {who: `<b data-uname="${esc(apps[0])}">…</b>`})}</span></div>`
-    : `<div class="note info">${icon('shield')}<span>${t('st.highValue')}</span></div>`;
   return mcard({key: 's:' + c.id, open: opts?.open, fresh: opts?.fresh, muted: !['pending', 'approved'].includes(c.status), tone: warn ? 'warn' : '', pillHtml: pill(CLAIM_STATUS, c.status), next,
-    head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${orphan ? t('st.orphanTitle') : i ? esc(showTitle(i)) : c.grouped && !iid ? t('grp.' + c.cat + '.title') : t('c.loadingDots')}</h3>${c.grouped ? `<span class="pill info">${t('gc.pill')}</span>` : ''}${person(c.uid)}${prior ? `<span class="pill ok prior">${icon('bell')}${t('st.priorReport')}</span>` : ''}${hv && apps.length && !apps.includes(S.uid) ? `<span class="pill warn">${t('st.yourSecond')}</span>` : ''}`,
+    head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${orphan ? t('st.orphanTitle') : i ? esc(showTitle(i)) : c.grouped && !iid ? t('grp.' + c.cat + '.title') : t('c.loadingDots')}</h3>${c.grouped ? `<span class="pill info">${t('gc.pill')}</span>` : ''}${person(c.uid)}${prior ? `<span class="pill ok prior">${icon('bell')}${t('st.priorReport')}</span>` : ''}`,
     body: `<div class="box-head"><div class="claim-who">${whenLine('c.sentAt', c.createdAt)}${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div></div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
     ${c.editedAt ? `<div class="note info edited">${icon('edit')}<span>${t('st.editedAfter', {when: when(c.editedAt)})}</span></div>` : ''}
@@ -341,7 +335,7 @@ export function claimCardStaff(c, opts){
     ${c.status === 'approved' && c.pickupBy ? `<div class="meta ${late ? 'flag' : ''}">${t(late ? 'st.pickupEnded' : 'st.pickupUntil', {date: dateOf(c.pickupBy)})}</div>` : ''}
     ${conflictNote(kind)}
     ${rv ? `<div class="note warn">${icon('info')}<span>${t('st.rivalNote')}</span></div>` : ''}
-    ${tip}${histLine}${appNote}
+    ${tip}${histLine}
     ${orphan ? `<div class="note warn orphan-note">${icon('alert')}<span>${orphanText(i)}</span></div>` : ''}
     ${loadingIt ? `<div class="note">${icon('clock')}<span>${t('c.loadingDots')}</span></div>` : ''}
     ${lk && c.status === 'pending' ? `<div class="note ok">${icon('check')}<span>${t('gc.linkedTo', {ref: `<b dir="ltr">${esc(i?.ref || '')}</b>`})}</span></div>` : ''}
