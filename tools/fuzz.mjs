@@ -66,6 +66,9 @@ const db = {
   'claims/g_zed_cash_1': claim('', 'zed', {grouped: true, cat: 'cash', lostSpot: P('g.spot'), details: {amount: P('g.amount'), holder: P('g.holder')}}),
   'claims/g_amy_cash_2': claim('', 'amy', {grouped: true, cat: 'cash', details: {amount: '150'}}), 'claimLinks/g_amy_cash_2': {officeId: O, itemId: 'ic', by: 'staffA', at: now},
   'claims/g_zed_nope_3': claim('', 'zed', {grouped: true, cat: 'nope', details: 'x', lostDate: 'x'}),
+  // H13a: طلبات يتيمة: على غرض محذوف (لا items/gone)، وعلى غرض مؤرشف، وطلب مقبول على غرض محذوف
+  'claims/gone_zed': claim('gone', 'zed'), 'claims/gone2_amy': claim('gone2', 'amy', {status: 'approved', pickupBy: now + day}),
+  'items/iar': item('iar', {status: 'archived'}), 'itemSecrets/iar': secret(), 'claims/iar_amy': claim('iar', 'amy'),
   'reports/rb': {officeId: O, uid: 'zed', cat: 'nope', title: P('repb.title'), lostDate: 'x', status: 'open', createdAt: 'x', renewedAt: 'x', editedAt: 'x'},
   'foundReports/fb': {officeId: O, uid: 'zed', cat: 'nope', foundDate: 'x', status: 'pending', createdAt: 'x'},
 };

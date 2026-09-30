@@ -1,5 +1,5 @@
 // عناصر واجهة مشتركة بين الصفحات
-import { icon, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf } from '../constants.js';
+import { icon, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf, statusLabel, ITEM_STATUS } from '../constants.js';
 import { t, hasKey } from '../i18n.js';
 import { LS, esc, relDay, colorDot, isBuilding, roomWord, spotText, showTitle, when, fmtDate, isoDay } from '../utils.js';
 import { aiReady } from '../firebase.js';   // H8: ai.js يُحمَّل عند الحاجة فقط
@@ -19,6 +19,8 @@ export const addPrefs = () => LS.get('addPrefs:' + S.uid, {}) || {};
 export const saveAddPrefs = p => LS.set('addPrefs:' + S.uid, {cat: String(p.cat || ''), spot: String(p.spot || '')});
 export const AGAIN = {v: null};
 
+// H13a: حالة غرض طلبٍ لم يعد متاحاً، بنص واضح: حُذف من المستودع، أو حالته الفعلية (سُلّم، مؤرشف، تُصرّف فيه)
+export const orphanText = i => !i ? t('st.orphanGone') : t('st.orphanState', {status: esc(statusLabel(ITEM_STATUS[i.status] || ITEM_STATUS.archived))});
 export const backBtn = (label = t('c.back')) => `<button class="back" data-act="back">${icon('back')}${label}</button>`;
 
 /* ---------- صور المفقودات ----------

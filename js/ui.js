@@ -113,7 +113,17 @@ window.addEventListener('popstate', () => {
 export function renderAll(){ renderHeader(); renderMain(); renderNav(); renderSheet(); hydrate(); }
 
 /* ارتفاع الترويسة في متغير CSS ليلتصق شريط البحث تحتها مباشرة، وظل خفيف عند الالتصاق */
-function syncHeader(){ const h = $('#hdr'); if (h) document.documentElement.style.setProperty('--hdr-h', h.offsetHeight + 'px'); }
+/* H13a: ومعه --hdr-vh = ارتفاعها الظاهر فعلاً (بعد zoom حجم الخط) لـ scroll-padding-top في CSS: أي تمرير إلى عنصر
+   (التركيز، فتح بطاقة من «يحتاج انتباهك»، خطأ في نموذج) يُبقيه تحت الترويسة الملتصقة لا خلفها.
+   ويُحدَّث كلما تغيّر ارتفاعها (شريط «وثّق بريدك»، تغيير اللغة أو حجم الخط، تدوير الشاشة) عبر ResizeObserver */
+let hdrObs = null;
+function syncHeader(){
+  const h = $('#hdr'); if (!h) return;
+  const root = document.documentElement.style;
+  root.setProperty('--hdr-h', h.offsetHeight + 'px');
+  root.setProperty('--hdr-vh', Math.ceil(h.getBoundingClientRect().height) + 'px');
+  if (!hdrObs && 'ResizeObserver' in window){ hdrObs = new ResizeObserver(() => syncHeader()); hdrObs.observe(h); }
+}
 function markStuck(){
   const bar = $('#browse-bar'); if (!bar) return;
   const top = parseFloat(getComputedStyle(bar).top) || 0;

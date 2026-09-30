@@ -14,7 +14,7 @@ import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor
 // (أزرار لوحة الموظف لا تظهر إلا بعد تحميلها، فهي موجودة عند النقر)
 import { mod, load } from './lazy.js';
 const SM = () => mod('staff');
-import { FORM, AGAIN, saveAddPrefs, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, detailReq } from './views/common.js';
+import { FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, detailReq } from './views/common.js';
 import { setTheme, setTextSize } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
 import { aiReady } from './firebase.js';
@@ -725,6 +725,19 @@ function confirmSheet(title, text, yes, fn, danger = true){
   PENDING_CONFIRM = fn;
   openSheet(`<h2>${title}</h2><p class="muted">${esc(text)}</p><div class="btn-row"><button class="btn ${danger ? 'danger' : ''}" data-act="confirmYes">${icon(danger ? 'trash' : 'check')}${esc(yes)}</button><button class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>`);
 }
+/* H13a: طلب على غرض لم يعد متاحاً: رسالة بحالته الفعلية (حُذف، سُلّم، أُرشف، تُصرّف فيه) وزر «إغلاق الطلب» */
+function orphanSheet(c, i){
+  openSheet(`<h2>${icon('alert')} ${t('st.orphanTitle')}</h2>
+    <div class="note warn">${icon('info')}<span>${orphanText(i)}</span></div>
+    <p class="muted">${t('st.orphanHint')}</p>
+    <div class="btn-row"><button class="btn" data-act="closeOrphan" data-id="${esc(c.id)}">${icon('x')}${t('st.orphanClose')}</button><button class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>`);
+}
+// إنهاء طلب يتيم: «منتهٍ» بملاحظة «الغرض لم يعد متاحاً»، ثم بريد عام لصاحبه
+async function closeOrphanClaim(c){
+  const ok = await write(() => wf.closeOrphan(c), t('st.orphanClosed'));
+  if (ok) emailUser(c.uid);
+  return ok;
+}
 // طلب الموظف نفسه على الغرض لا يعدّله هو (فصل المهام)، فننبّهه
 function ownNotice(res){ if (res?.skippedOwn) setTimeout(() => toast(t('a.ownOpen')), 2900); }
 // حذف صور الغرض وتفاصيله السرية (قبل حذف الغرض نفسه). القواعد ترفض حذف مستند غير موجود، لذلك نحذف الموجود فقط.
@@ -891,7 +904,7 @@ const ACT = {
     LS.set('mineTab', el.dataset.v);
     // H4: النقر على التبويب يسجّل تنبيهاته مقروءة، فتختفي شارته الحمراء (وتبقى مختفية بعد التحديث)
     markSeenKeys(unseenKeys().filter(k => keyTab(k) === el.dataset.v));
-    renderAll(); document.getElementById('mt-' + el.dataset.v)?.focus();
+    renderAll(); document.getElementById('mt-' + el.dataset.v)?.focus({preventScroll: true});
   },
   // «لاحقاً» في «يحتاج انتباهك»: تختفي المهمة حتى يتغير مفتاحها (حدث جديد)
   // H4: تبويب فرعي للموظف (قراري/الحضور/قادمة/منتهية، ولها مرشّح/مفتوحة/مغلقة): النقر يسجّل جديده مقروءاً
@@ -899,7 +912,7 @@ const ACT = {
     const g = el.dataset.g, v = el.dataset.v; S.staffSub[g] = v;
     // H5: كل أحداث التبويب تُسجَّل مقروءة (staffSeen)، فيختفي الأحمر وحدود البطاقات الجديدة فوراً
     markStaffSeen(staffKeys().filter(x => x.sub === g + ':' + v).map(x => x.k));
-    SM()?.updateStaff(); renderNav(); document.getElementById(`st-${g}-${v}`)?.focus();
+    SM()?.updateStaff(); renderNav(); document.getElementById(`st-${g}-${v}`)?.focus({preventScroll: true});   // H13a: بلا قفزة تحت الترويسة
   },
   attLater(el){ LS.set('snoozed', [...new Set([...LS.get('snoozed', []), el.dataset.k])].slice(-200)); renderAll(); },
   openCard(el){ openCard(el.dataset.tab, el.dataset.card, el.dataset.ended === '1'); },
@@ -916,6 +929,14 @@ const ACT = {
   withdrawClaim(el){
     const c = S.myClaims.find(x => x.id === el.dataset.id); if (!c || c.status !== 'pending') return;
     confirmSheet(t('cl.withdrawQ'), t(wf.canDeleteOwnClaim(c) ? 'cl.withdrawBody' : 'cl.withdrawCancelBody'), t('cl.withdraw'), () => write(() => wf.withdrawClaim(c), t('cl.withdrawn')), true);
+  },
+  // H13a: إغلاق طلب يتيم (غرضه غير متاح أو محذوف)، واحد أو كلها من تنبيه «قراري»
+  async closeOrphan(el){ const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return; closeSheet(); await closeOrphanClaim(c); },
+  closeOrphans(){
+    const list = SM()?.orphanClaims?.() || []; if (!list.length) return;
+    confirmSheet(t('st.orphansQ', {claims: tp('n.claim', list.length)}), t('st.orphansBody'), t('st.orphansClose'), async () => {
+      for (const c of list) await closeOrphanClaim(c);
+    });
   },
   // H11: البطاقة المجمّعة في المفقودات: «أثبت أنه لك» يفتح الطلب بالوصف (بعد الدخول)
   gclaim(el){ const cat = el.dataset.cat; if (!S.uid) return go('login', {next: {name: 'gclaim', params: {cat}}}); go('gclaim', {cat}); },
@@ -996,8 +1017,12 @@ const ACT = {
   },
   async approve(el){
     const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return;
-    const i = item(claimItemId(c));   // H11: الطلب المجمّع: الغرض المربوط (claimLinks)
-    if (!i){ toast(t(c.grouped ? 'wf.needLink' : 'it.gone')); return; }
+    // H11: الطلب المجمّع: الغرض المربوط (claimLinks). H13a: الغرض من الخادم إن لم يكن محمّلاً، ثم فحص حالته
+    const iid = claimItemId(c);
+    if (!iid){ toast(t('wf.needLink')); return; }
+    let i = null;
+    try { i = await wf.fetchItem(iid); } catch (e){ console.warn(e); toast(t('err.offline')); return; }
+    if (!i || !ACTIVE.includes(i.status)) return orphanSheet(c, i);
     // تضارب مصالح (صاحب الطلب سلّم الغرض أو سجّله): القبول يحتاج سبباً مكتوباً يُحفظ في الطلب والسجل
     const kind = conflictOf(c, full(i));
     if (kind) return openSheet(`<h2>${icon('alert')} ${t('a.conflictTitle')}</h2>
@@ -1215,8 +1240,11 @@ const ACT = {
     const s = await dbx.list('items', [['sample', '==', true]]).catch(() => []);
     if (!s.length) return toast(t('a.noSamples'));
     confirmSheet(t('a.delSamplesQ', {items: tp('n.sampleGen', s.length)}), t('a.delSamplesBody'), t('a.delSamplesBtn'), async () => {
-      for (const i of s){ await delItemParts(i); await dbx.del('items/' + i.id).catch(e => console.warn(e)); }
-      S.counts.samples = 0; toast(t('a.samplesDeleted')); renderAll();
+      // H13a: batch لكل مثال مع إغلاق طلباته المفتوحة (من الخادم) وحذف صوره وتفاصيله (wf.deleteItem)؛
+      // كان الحذف المتسلسل يترك طلبات مفتوحة على أغراض محذوفة
+      let failed = 0;
+      for (const i of s){ try { await wf.deleteItem(i); } catch (e){ console.warn(e); failed++; } }
+      S.counts.samples = failed; toast(failed ? t('a.samplesPartly', {n: failed}) : t('a.samplesDeleted')); renderAll();
     });
   },
   confirmYes(){ const fn = PENDING_CONFIRM; PENDING_CONFIRM = null; closeSheet(); if (fn) fn(); },
