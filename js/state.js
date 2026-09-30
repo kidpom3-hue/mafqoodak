@@ -323,9 +323,6 @@ export function staffEvents(){
     if (c.status !== 'pending' || c.uid === S.uid) continue;
     add('nc:' + c.id, 'claims:decide', 's:' + c.id, c.createdAt);
     if (answered(c)) add(`na:${c.id}:${c.answeredAt}`, 'claims:decide', 's:' + c.id, c.answeredAt);
-    // v7: غرض ثمين وافق عليه موظف آخر: «بانتظار موافقتك الثانية» (بلا وقت، فيبقى جديداً حتى يُقرأ)
-    const ap = Array.isArray(c.approvals) ? c.approvals : [];
-    if (ap.length === 1 && !ap.includes(S.uid)) add(`ap:${c.id}:${ap[0]}`, 'claims:decide', 's:' + c.id, null);
     // H11: طلب مجمّع لم يُربط: أفضل مرشّح له حدث جديد (بوقت تسجيل الغرض)، فغرض جديد مطابق يظهر جديداً
     if (isGroupClaim(c) && !claimItemId(c)){ const top = groupCands(c, 1)[0]; if (top) add(`gm:${c.id}:${top.i.id}`, 'claims:decide', 's:' + c.id, top.i.createdAt || null); }
   }

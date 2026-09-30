@@ -59,6 +59,8 @@ const db = {
   'publicStats/tc-ahsa': {month: ds(0).slice(0, 7), monthReceived: 3, monthReturned: 1, totalReceived: 40, totalReturned: 28, returnRate: 70, avgDays: 3.5, avgRating: 4.5, ratings: 12, updatedAt: now},
   // بيانات بأنواع خاطئة (كانت القواعد القديمة تقبلها): يجب ألا تُعطّل أي صفحة
   'items/ib': item('ib', {cat: 'nope', foundDate: 'x', createdAt: 'x', updatedAt: 'x'}), 'itemSecrets/ib': secret({details: 'x'}),
+  // H14: طلب قديم فيه موافقة أولى فقط (وحقل approvals بنوع خاطئ): يُعرض كأي طلب قيد المراجعة
+  'claims/i1_old1': claim('i1', 'old1', {approvals: ['staffA']}), 'claims/i1_old2': claim('i1', 'old2', {approvals: P('approvals')}),
   'claims/ib_zed': claim('ib', 'zed', {lostDate: 'x', createdAt: 'x', askedAt: 'x', answeredAt: 9e15, editedAt: 'x', details: 'x'}),
   'claims/i1_bad': claim('i1', 'bad', {lostDate: 'x', createdAt: 'x', pickupBy: 'x'}),
   // H11: نقود (تصنيف مجمّع) وطلبات مجمّعة بالوصف: غير مربوط، ومربوط، وتصنيف خاطئ، وتفاصيل بأنواع خاطئة

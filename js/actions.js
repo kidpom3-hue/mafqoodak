@@ -440,7 +440,6 @@ async function submitForm(form){
     if (fromReport) data.fromReport = fromReport;   // ربط الغرض بالبلاغ الذي قُبل
     if (fromFound) data.fromFound = fromFound;      // ربط الغرض بإشعار التسليم
     // v9: التعديل update للحقول التي يعرضها النموذج فقط (لا الحالة ولا الحجز ولا التسليم ولا التصرّف) — انظر editPatch أدناه
-    if (existing && !wf.canChangeCat(existing.cat, catId)){ busy(form, false); return formErr(form, t('wf.hvCatAdmin')); }
     // التفاصيل السرية: لموظفي المكتب فقط
     // اللون والماركة فارغان إن لم يكونا في التصنيف (حتى لا تبقى قيمة قديمة بعد تغيير التصنيف)، وإجابات أسئلته في details
     const q = claimOf(catId), {details} = readDetails(form, catId, 'item');
@@ -751,11 +750,9 @@ async function delItemParts(i){
 const needLogin = () => { if (S.uid) return false; go('login', {next: S.route}); return true; };
 // القبول ثم بريد اختياري لصاحب الطلب. reason: سبب القبول (تضارب المصالح)
 async function doApprove(c, reason = ''){
-  // v7: الغرض الثمين: الموافقة الأولى تنتظر موافقة ثانية (لا بريد لصاحب الطلب حتى القبول الفعلي)
-  let res = '';
-  const ok = await write(async () => { res = await wf.approveClaim(c, {reason}); });
-  if (ok) toast(t(res === 'first' ? 'a.approvedFirst' : 'a.approved'));
-  if (ok && res !== 'first') emailUser(c.uid);
+  // H14: القبول بموظف واحد لكل التصنيفات
+  const ok = await write(() => wf.approveClaim(c, {reason}));
+  if (ok){ toast(t('a.approved')); emailUser(c.uid); }
   return ok;
 }
 // تسجيل الخروج على جهاز مشترك: نمسح رموز الاستلام والتنبيهات المقروءة وتفعيل الإشعارات من المتصفح،

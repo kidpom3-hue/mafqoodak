@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v9 (H12: إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
+// قواعد حماية بيانات مفقودك — الإصدار v10 (H14: موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -65,8 +65,8 @@ service cloud.firestore {
         && (!exists(rateDoc()) || get(rateDoc()).data.at < request.time - duration.value(20, 's'));
     }
     // ── v7: تقوية إثبات الملكية ──
-    // الأغراض الثمينة: قبولها يحتاج موافقتين من شخصين مختلفين (نفس القائمة HIGH_VALUE في js/constants.js — عدّلهما معاً)
-    // v9: والبطاقات والمحافظ أيضاً (فيها هوية وبطاقات بنكية)
+    // الأغراض الثمينة (نفس القائمة HIGH_VALUE في js/constants.js — عدّلهما معاً)
+    // v10 (H14): للتسليم المباشر والحذف بصلاحية الإدارة فقط. القبول بموظف واحد لكل التصنيفات
     function highValue() { return ['cash', 'phones', 'jewelry', 'ids', 'wallets']; }
     function claimDoc(id) { return /databases/$(database)/documents/claims/$(id); }
     // ── v8 (H11): الطلب المجمّع (بالوصف، بلا اختيار غرض) للتصنيفات ذات العنوان العام العام
@@ -91,21 +91,6 @@ service cloud.firestore {
       return request.resource.data.handoverCode is string && request.resource.data.handoverCode.size() <= 16
         && hashing.sha256(claimId + ':' + request.resource.data.handoverCode).toHexString().lower()
            == (exists(codeDoc(claimId)) ? get(codeDoc(claimId)).data.hash : resource.data.get('codeHash', '-'));
-    }
-    function apps(d) { return d.get('approvals', []); }
-    // قائمة الموافقات لا تتغير، أو تكبر بموافقة من يكتب الآن فقط (لا يوافق الموظف مرتين)
-    function approvalsOk() {
-      return apps(request.resource.data) == apps(resource.data)
-        || (apps(request.resource.data).size() == apps(resource.data).size() + 1
-            && apps(request.resource.data).hasAll(apps(resource.data))
-            && apps(request.resource.data).removeAll(apps(resource.data)) == [me()]);
-    }
-    // الانتقال إلى «مقبول» لغرض ثمين: موافقتان على الأقل من شخصين مختلفين، وليس بينهما صاحب الطلب
-    function dualOk(itemId) {
-      return !(get(/databases/$(database)/documents/items/$(itemId)).data.cat in highValue())
-        || (apps(request.resource.data).size() >= 2
-            && apps(request.resource.data)[0] != apps(request.resource.data)[1]
-            && !(resource.data.uid in apps(request.resource.data)));
     }
     // بريد الكلية: إن كان للمكتب نمط نطاقات (claimDomainRe يحسبه التطبيق من claimDomains) فالبريد الموثّق يطابقه
     function domainOk(officeId) {
@@ -235,12 +220,9 @@ service cloud.firestore {
         // «سُلّم» فقط بطلب اكتمل بالرمز، أو بتسليم مباشر موثّق باسم المستلم في التفاصيل السرية
         && (request.resource.data.status != 'returned' || resource.data.status == 'returned'
             || getAfter(/databases/$(database)/documents/claims/$(resource.data.get('reservedFor', '-'))).data.status == 'done'
-            // v9: التسليم المباشر لغرض ثمين (بلا رمز ولا موافقتين): للإدارة فقط
+            // v9: التسليم المباشر لغرض ثمين (بلا رمز استلام): للإدارة فقط
             || (getAfter(/databases/$(database)/documents/itemSecrets/$(itemId)).data.get('handoverNote', '') != ''
                 && (isAdmin() || !(resource.data.cat in highValue()))))
-        // v9: تغيير التصنيف من ثمين أو إليه: للإدارة فقط (حتى لا يُتجاوز شرط الموافقتين)
-        && (request.resource.data.cat == resource.data.cat || isAdmin()
-            || (!(resource.data.cat in highValue()) && !(request.resource.data.cat in highValue())))
         // v9: حماية الحجز: غرض محجوز لطلب لا يُفك حجزه (تغيير reservedFor أو الخروج من «محجوز»)
         // ما دام ذلك الطلب «مقبولاً» بعد العملية؛ أي يُغلق الطلب (رفض، انتهاء، تسليم) في العملية نفسها
         && (resource.data.get('reservedFor', '') == ''
@@ -368,7 +350,7 @@ service cloud.firestore {
       allow update: if (isStaffOf(resource.data.officeId)
           // فصل المهام: الموظف لا يقرر في طلب أرسله هو
           && resource.data.uid != me()
-          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote', 'answer', 'answeredAt', 'approvals', 'proofs', 'itemId', 'handoverCode'])
+          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote', 'answer', 'answeredAt', 'proofs', 'itemId', 'handoverCode'])
           // v9: handoverCode يُكتب فقط في الانتقال إلى «مكتمل» (ولا يتغير غير ذلك)
           && (request.resource.data.get('handoverCode', '') == resource.data.get('handoverCode', '')
               || (request.resource.data.status == 'done' && resource.data.status != 'done'))
@@ -377,18 +359,17 @@ service cloud.firestore {
               || (resource.data.get('grouped', false) == true && resource.data.itemId == ''
                   && request.resource.data.status == 'approved'
                   && request.resource.data.itemId == get(linkDoc(claimId)).data.itemId))
-          // v7: موافقة الموظف تُضاف مرة واحدة، وعدد الصور يصير 0 فقط (عند حذفها مع إغلاق الطلب)
-          && approvalsOk()
+          // v7: عدد الصور يصير 0 فقط (عند حذفها مع إغلاق الطلب). v10: حقل approvals القديم لا يُكتب بعد الآن
           && (request.resource.data.get('proofs', 0) == resource.data.get('proofs', 0) || request.resource.data.get('proofs', 0) == 0)
           // H7: الموظف لا يكتب إجابة: يحذف الإجابة القديمة فقط عند سؤال جديد (أو يتركها كما هي)
           && (!('answer' in request.resource.data) || request.resource.data.answer == resource.data.get('answer', null))
           && (!('answeredAt' in request.resource.data) || request.resource.data.answeredAt == resource.data.get('answeredAt', null))
           && request.resource.data.status in ['pending', 'approved', 'done', 'rejected', 'expired', 'cancelled']
-          && (request.resource.data.status != 'approved' || resource.data.status == 'approved' || (approveOk(claimId, request.resource.data.itemId) && dualOk(request.resource.data.itemId)))
+          && (request.resource.data.status != 'approved' || resource.data.status == 'approved' || approveOk(claimId, request.resource.data.itemId))
           && (request.resource.data.status != 'done' || resource.data.status == 'done' || (doneOk(claimId, resource.data.itemId) && codeOk(claimId)))
           && strMax(request.resource.data, 'note', 600) && strMax(request.resource.data, 'question', 600)
           && strMax(request.resource.data, 'handoverNote', 600))
-        // v9: «إلغاء» صاحب الطلب لطلبه قيد المراجعة (بعد سؤال الموظف أو موافقة أولى لا يُحذف، فلا يُعاد إرساله لتخمين جديد)
+        // v9: «إلغاء» صاحب الطلب لطلبه قيد المراجعة (بعد سؤال الموظف لا يُحذف، فلا يُعاد إرساله لتخمين جديد)
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending'
           && request.resource.data.status == 'cancelled' && onlyChanges(['status', 'cancelledAt'])
           && fresh(request.resource.data, 'cancelledAt'))
@@ -418,10 +399,10 @@ service cloud.firestore {
         || (signedIn() && resource.data.uid == me() && resource.data.status in ['done', 'rejected', 'expired', 'cancelled']
           && request.resource.data.uid == 'deleted' && request.resource.data.proof == ''
           && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'claimantName', 'idLast4', 'handoverNote', 'details', 'ratingNote', 'anonymizedAt']));
-      // يحذف المستخدم طلبه ما دام قيد المراجعة، ولم يسأله الموظف، ولا موافقة عليه (v9)؛ غير ذلك «إلغاء» بالأعلى
+      // يحذف المستخدم طلبه ما دام قيد المراجعة، ولم يسأله الموظف (v10: شرط الموافقة الأولى أُلغي)؛ غير ذلك «إلغاء» بالأعلى
       allow delete: if isAdmin()
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending'
-            && !('question' in resource.data) && apps(resource.data).size() == 0);
+            && !('question' in resource.data));
     }
 
     // إشعار تسليم: من وجد غرضاً يسجّله قبل أن يسلّمه، ويؤكد الموظف استلامه ويحوّله إلى غرض في المستودع

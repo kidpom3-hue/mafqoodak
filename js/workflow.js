@@ -154,20 +154,7 @@ export async function approveClaim(c, {reason = ''} = {}){
   const linked = c.grouped && !c.itemId ? S.links[c.id]?.itemId || '' : '';
   if (c.grouped && !c.itemId && !linked) fail(t('wf.needLink'));
   const i = await freshItem(c.itemId || linked);
-  /* v7: الغرض الثمين يحتاج موافقتين من شخصين مختلفين. الموافقة الأولى تُحفظ في approvals ويبقى الطلب قيد المراجعة؛
-     الثانية (موظف آخر أو الإدارة) تقبله. القواعد تفرض ذلك (dualOk) */
-  const apps = Array.isArray(c.approvals) ? c.approvals : [];
-  if (isHighValue(i.cat)){
-    if (apps.includes(S.uid)) fail(t('wf.alreadyApproved'));
-    if (!apps.length){
-      const note0 = String(reason || '').trim().slice(0, 600);
-      const b1 = dbx.batch();
-      b1.update(dbx.ref('claims/' + c.id), {approvals: [S.uid], ...(note0 ? {note: note0} : {})});
-      log(b1, i.officeId, 'approve1', {itemId: i.id, claimId: c.id, note: note0});
-      await commit(b1, true);
-      return 'first';
-    }
-  }
+  // H14: القبول بموظف واحد لكل التصنيفات (لا موافقة ثانية ولا حقل approvals)
   const holder = i.status === 'reserved' && S.claims.find(x => x.id === i.reservedFor && x.status === 'approved');
   if (!(i.status === 'available' || (i.status === 'reserved' && !holder))) fail(t('wf.notAvailable'));
   if (i.status === 'reserved'){
@@ -181,7 +168,7 @@ export async function approveClaim(c, {reason = ''} = {}){
   const note = String(reason || '').trim().slice(0, 600);
   const b = dbx.batch();
   b.update(dbx.ref('claims/' + c.id), {status: 'approved', decidedAt: Date.now(), decidedBy: S.uid, pickupBy, ...(note ? {note} : {}),
-    ...(isHighValue(i.cat) ? {approvals: [...apps, S.uid]} : {}), ...(linked ? {itemId: linked} : {})});
+    ...(linked ? {itemId: linked} : {})});
   itemUpdate(b, i, {status: 'reserved', reservedFor: c.id, updatedAt: Date.now()});
   log(b, i.officeId, 'approve', {itemId: i.id, claimId: c.id, note});
   await commit(b, true);
@@ -198,9 +185,8 @@ export async function reactivateClaim(c){
   if (!['available', 'reserved'].includes(i.status)) fail(t('wf.cantReactivate'));
   const now = Date.now(), b = dbx.batch();
   let to = 'pending';
-  // v7: الغرض الثمين يعود «مقبولاً» مباشرة فقط إن كانت له موافقتان من قبل؛ وإلا يعود قيد المراجعة
-  const dual = !isHighValue(i.cat) || new Set(c.approvals || []).size >= 2;
-  if (i.status === 'available' && dual){
+  // H14: الغرض المتاح يعود «مقبولاً» مباشرة لكل التصنيفات
+  if (i.status === 'available'){
     to = 'approved';
     const o = S.offices.find(x => x.id === i.officeId);
     b.update(dbx.ref('claims/' + c.id), {status: 'approved', note: '', decidedAt: now, decidedBy: S.uid, pickupBy: now + pickupDays(o) * 864e5});
@@ -259,9 +245,9 @@ export async function verifyHandover(c, receiver = {}, checks = [], code = ''){
   return {skippedOwn};
 }
 
-/* v9: صاحب الطلب يسحب طلبه قيد المراجعة. قبل سؤال الموظف وأي موافقة: يُحذف. بعدهما: «إلغاء» (يبقى الطلب،
+/* v9: صاحب الطلب يسحب طلبه قيد المراجعة. قبل سؤال الموظف: يُحذف. بعده: «إلغاء» (يبقى الطلب،
    فلا يُحذف ويُعاد إرساله لتخمين إجابة السؤال). في العملية نفسها: حذف صور الإثبات وإزالته من الحصة */
-export const canDeleteOwnClaim = c => c?.status === 'pending' && !c.question && !(Array.isArray(c.approvals) && c.approvals.length);
+export const canDeleteOwnClaim = c => c?.status === 'pending' && !c.question;
 export async function withdrawClaim(c){
   if (!c || c.uid !== S.uid || c.status !== 'pending') fail(t('wf.notPending'));
   const b = dbx.batch();
@@ -272,10 +258,9 @@ export async function withdrawClaim(c){
   await b.commit();
 }
 
-/* v9: صلاحيات تمنع تجاوز الموافقتين للأغراض الثمينة (القواعد تفرضها أيضاً، والواجهة تخفي أزرارها):
-   تغيير التصنيف من ثمين أو إليه، والتسليم المباشر لغرض ثمين: للإدارة فقط.
+/* v9/H14: صلاحيات الأغراض الثمينة (القواعد تفرضها أيضاً، والواجهة تخفي أزرارها):
+   التسليم المباشر لغرض ثمين (بلا رمز استلام): للإدارة فقط.
    الحذف: للإدارة، أو للموظف إن كان مثالاً، أو متاحاً سُجّل قبل أقل من 24 ساعة وليس ثميناً (خطأ إدخال) */
-export const canChangeCat = (from, to) => S.isAdmin || from === to || (!isHighValue(from) && !isHighValue(to));
 export const canDirectReturn = i => S.isAdmin || !isHighValue(i?.cat);
 export const canDeleteItem = i => !!i && (S.isAdmin || i.sample === true
   || (i.status === 'available' && typeof i.createdAt === 'number' && i.createdAt > Date.now() - 864e5 && !isHighValue(i.cat)));
@@ -284,7 +269,6 @@ export const canDeleteItem = i => !!i && (S.isAdmin || i.sample === true
    ولا disposal)، والتفاصيل السرية كاملة، وقيد «تعديل» في السجل */
 export async function editItem(i, patch, secret){
   for (const k of ['status', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt', 'officeId', 'createdBy', 'createdAt', 'ref']) delete patch[k];
-  if (patch.cat && !canChangeCat(i.cat, patch.cat)) fail(t('wf.hvCatAdmin'));
   const b = dbx.batch();
   itemUpdate(b, i, {...patch, updatedAt: Date.now()}, {...secret, officeId: i.officeId});
   log(b, i.officeId, 'edit', {itemId: i.id});
