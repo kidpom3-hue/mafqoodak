@@ -1,6 +1,6 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
 import { icon, LOGO, CATS, cat, catName, isGrouped, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
-import { $, $$, esc, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
+import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard } from '../state.js';
 import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM } from './common.js';
@@ -8,6 +8,7 @@ export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
 import { aiReady } from '../firebase.js';
 import { hydrate, go } from '../ui.js';
+import { canDeleteItem } from '../workflow.js';   // v9: زر الحذف حسب صلاحيته (القواعد تفرضها أيضاً)
 import { msgOf } from '../notify.js';
 
 /* ---------- visitor: choose place ---------- */
@@ -156,7 +157,7 @@ export function vItem(){
         <button class="btn" data-act="editItem" data-id="${esc(i.id)}">${icon('edit')}${t('c.edit')}</button>
         <button class="btn ghost" data-act="itemStatus" data-id="${esc(i.id)}">${icon('swap')}${t('it.changeStatus')}</button>
         <button class="btn ghost" data-act="labels" data-ids="${esc(i.id)}">${icon('qr')}${t('lb.one')}</button>
-        <button class="btn danger" data-act="delItem" data-id="${esc(i.id)}">${icon('trash')}${t('c.delete')}</button>
+        ${canDeleteItem(i) ? `<button class="btn danger" data-act="delItem" data-id="${esc(i.id)}">${icon('trash')}${t('c.delete')}</button>` : ''}
       </div>
       ${SM.rivals(i).length ? `<div class="note warn">${icon('info')}<span>${t('it.rival')}</span></div>` : ''}
       ${cls.length ? `<div class="section-title">${t('it.claims')}</div><div class="list">${cls.map(c => SM.claimCardStaff(c, {open: true})).join('')}</div>` : ''}`;
@@ -455,13 +456,17 @@ export function claimCardMine(c){
   if (gone && ['pending', 'approved'].includes(c.status)) body = `<div class="note warn">${icon('info')}<span>${t('mine.gone')}</span></div>`;
   // سؤال تحقق من المكتب: بانتظار إجابتك، أو أجبت عنه
   else if (c.status === 'pending' && awaitingAnswer(c)) body = `<div class="note info qa-ask">${icon('question')}<span><b>${t('qa.fromOffice')}</b> ${esc(c.question)}</span></div>
-    <button class="btn sm" data-act="answerQ" data-id="${esc(c.id)}" style="align-self:flex-start">${icon('edit')}${t('qa.answerBtn')}</button>`;
+    <div class="btn-row"><button class="btn sm" data-act="answerQ" data-id="${esc(c.id)}">${icon('edit')}${t('qa.answerBtn')}</button>
+      <button class="btn sm ghost" data-act="withdrawClaim" data-id="${esc(c.id)}">${icon('x')}${t('cl.withdraw')}</button></div>`;
   else if (c.status === 'pending') body = `<p class="muted">${t(gw ? 'gc.pendingMine' : 'mine.pending')}</p>${qaBox(c)}
-    ${claimEditable(c) && (i || gw) ? `<button class="btn sm ghost" data-act="editClaim" data-id="${esc(c.id)}" style="align-self:flex-start">${icon('edit')}${t('cl.edit')}</button>` : ''}`;
+    <div class="btn-row">${claimEditable(c) && (i || gw) ? `<button class="btn sm ghost" data-act="editClaim" data-id="${esc(c.id)}">${icon('edit')}${t('cl.edit')}</button>` : ''}
+      <button class="btn sm ghost" data-act="withdrawClaim" data-id="${esc(c.id)}">${icon('x')}${t('cl.withdraw')}</button></div>`;
   else if (c.status === 'approved'){
     // رمز الاستلام في مكان بارز أعلى البطاقة: خط كبير، وزر نسخ، وآخر موعد للاستلام
-    if (code) top = `<div class="code-tag code-hero"><small>${t('mine.code')}</small><span class="digits" dir="ltr">${esc(code)}</span>
-      <button class="btn sm ghost" data-act="copy" data-v="${esc(code)}">${icon('copy')}${t('c.copy')}</button>
+    // v9: الرمز XXXX-XXXX ومعه QR بالرمز نفسه (يُرسم بعد تحميل qr.js في hydrate)
+    if (code) top = `<div class="code-tag code-hero"><small>${t('mine.code')}</small><span class="digits" dir="ltr">${esc(fmtPickup(code))}</span>
+      <div class="code-qr" data-qr="${esc(fmtPickup(code))}" aria-hidden="true"></div>
+      <button class="btn sm ghost" data-act="copy" data-v="${esc(fmtPickup(code))}">${icon('copy')}${t('c.copy')}</button>
       ${c.pickupBy ? `<small class="${late ? 'late' : ''}">${t(late ? 'st.pickupEnded' : 'mine.codeUntil', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`, when: when(c.pickupBy)})}</small>` : ''}
       <small>${t('mine.codeHint')}</small></div>`;
     body = code ? `<dl class="facts"><dt>${t('st.cmpPlace')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>`

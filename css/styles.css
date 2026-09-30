@@ -1035,3 +1035,8 @@ label.check, .box-head, .box-head b{min-width:0;overflow-wrap:anywhere}
 .list>.cand+.cand{border-top:1px dashed var(--line);padding-top:8px}
 .note.gq{flex-wrap:wrap}
 .note.gq .btn{margin-inline-start:auto}
+/* v9 (H12): رمز الاستلام 8 أحرف XXXX-XXXX ومعه QR (خلفية بيضاء دائماً ليُقرأ) */
+.code-hero .digits{font-size:clamp(24px,8vw,36px);letter-spacing:.04em;white-space:nowrap}
+.code-qr{inline-size:132px;block-size:132px;padding:6px;border-radius:10px;background:var(--qr-bg);align-self:center}
+.code-qr:empty{display:block}
+.code-qr svg{inline-size:100%;block-size:100%;display:block}

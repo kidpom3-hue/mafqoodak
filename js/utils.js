@@ -169,7 +169,11 @@ function sha256Fallback(str){
   }
   return h.map(v => (v >>> 0).toString(16).padStart(8, '0')).join('');
 }
-export const genCode = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, '0');
+// v9 (H12): رمز الاستلام 8 أحرف من REF_CHARS (بلا أحرف متشابهة)، يظهر XXXX-XXXX. بصمته في claimCodes، والخادم يفحصه عند التسليم
+export const genCode = () => refCode(8);
+// الرمز كما يكتبه الموظف: الأرقام العربية إلى لاتينية، وأحرف كبيرة، وبلا شرطة أو مسافات (والرموز القديمة 6 أرقام تبقى كما هي)
+export const normPickup = s => latinDigits(s).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+export const fmtPickup = c => { const s = String(c || ''); return s.length === 8 ? s.slice(0, 4) + '-' + s.slice(4) : s; };
 // حروف رقم القيد والأكواد القصيرة: بلا أحرف متشابهة (O/0، I/1، B/8...)
 const REF_CHARS = 'ACDEFHJKMNPRTUVWXY34679';
 export const refCode = (n = 4) => [...crypto.getRandomValues(new Uint8Array(n))].map(x => REF_CHARS[x % REF_CHARS.length]).join('');

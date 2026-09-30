@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v7 (تقوية إثبات الملكية؛ v6: فحص أمني H7)
+// قواعد حماية بيانات مفقودك — الإصدار v9 (H12: إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -66,12 +66,32 @@ service cloud.firestore {
     }
     // ── v7: تقوية إثبات الملكية ──
     // الأغراض الثمينة: قبولها يحتاج موافقتين من شخصين مختلفين (نفس القائمة HIGH_VALUE في js/constants.js — عدّلهما معاً)
-    function highValue() { return ['cash', 'phones', 'jewelry']; }
+    // v9: والبطاقات والمحافظ أيضاً (فيها هوية وبطاقات بنكية)
+    function highValue() { return ['cash', 'phones', 'jewelry', 'ids', 'wallets']; }
     function claimDoc(id) { return /databases/$(database)/documents/claims/$(id); }
     // ── v8 (H11): الطلب المجمّع (بالوصف، بلا اختيار غرض) للتصنيفات ذات العنوان العام العام
     // (نفس القائمة GROUP_CATS في js/constants.js — عدّلهما معاً)
     function groupCats() { return ['cash', 'ids', 'wallets', 'keys']; }
     function linkDoc(id) { return /databases/$(database)/documents/claimLinks/$(id); }
+    // ── v9 (H12): رمز الاستلام يُفحص على الخادم ──
+    // بصمة الرمز في claimCodes/{claimId} (لا يقرؤها أحد)، والموظف يكتب الرمز الذي قدّمه المستلم في handoverCode
+    // عند التسليم؛ القواعد تحسب sha256(رقم الطلب:الرمز) وتقارنها. الطلبات القديمة (قبل v9): البصمة في codeHash بالطلب نفسه
+    function codeDoc(id) { return /databases/$(database)/documents/claimCodes/$(id); }
+    // v9: غرض يحذفه موظف المكتب (غير الإدارة): مثال، أو متاح سُجّل قبل أقل من 24 ساعة وليس ثميناً
+    function deletable(d) {
+      return d.get('sample', false) == true
+        || (d.status == 'available' && d.createdAt is number && d.createdAt > request.time.toMillis() - 86400000
+            && !(d.cat in highValue()));
+    }
+    function itemGone(itemId) { return !exists(/databases/$(database)/documents/items/$(itemId)); }
+    function itemDeletable(itemId) {
+      return itemGone(itemId) || deletable(get(/databases/$(database)/documents/items/$(itemId)).data);
+    }
+    function codeOk(claimId) {
+      return request.resource.data.handoverCode is string && request.resource.data.handoverCode.size() <= 16
+        && hashing.sha256(claimId + ':' + request.resource.data.handoverCode).toHexString().lower()
+           == (exists(codeDoc(claimId)) ? get(codeDoc(claimId)).data.hash : resource.data.get('codeHash', '-'));
+    }
     function apps(d) { return d.get('approvals', []); }
     // قائمة الموافقات لا تتغير، أو تكبر بموافقة من يكتب الآن فقط (لا يوافق الموظف مرتين)
     function approvalsOk() {
@@ -153,7 +173,9 @@ service cloud.firestore {
         && isDay(d, 'lostDate') && ts(d, 'createdAt') && ts(d, 'closedAt') && ts(d, 'renewedAt') && ts(d, 'pickedAt')
         && strMax(d, 'title', 400) && strMax(d, 'desc', 4000) && strMax(d, 'sub', 200) && strMax(d, 'color', 60)
         && strMax(d, 'spot', 400) && strMax(d, 'bldg', 40) && strMax(d, 'room', 60)
-        && (!('ai' in d) || d.ai is map);
+        // v9: نتيجة المطابقة الذكية: الوقت والقائمة فقط (10 على الأكثر)
+        && (!('ai' in d) || (d.ai is map && d.ai.keys().hasOnly(['at', 'matches'])
+            && (!('matches' in d.ai) || (d.ai.matches is list && d.ai.matches.size() <= 10))));
     }
 
     // إعداد التطبيق: أول مستخدم يُكمل الإعداد يصبح المالك
@@ -213,8 +235,20 @@ service cloud.firestore {
         // «سُلّم» فقط بطلب اكتمل بالرمز، أو بتسليم مباشر موثّق باسم المستلم في التفاصيل السرية
         && (request.resource.data.status != 'returned' || resource.data.status == 'returned'
             || getAfter(/databases/$(database)/documents/claims/$(resource.data.get('reservedFor', '-'))).data.status == 'done'
-            || getAfter(/databases/$(database)/documents/itemSecrets/$(itemId)).data.get('handoverNote', '') != '');
-      allow delete: if isStaffOf(resource.data.officeId);
+            // v9: التسليم المباشر لغرض ثمين (بلا رمز ولا موافقتين): للإدارة فقط
+            || (getAfter(/databases/$(database)/documents/itemSecrets/$(itemId)).data.get('handoverNote', '') != ''
+                && (isAdmin() || !(resource.data.cat in highValue()))))
+        // v9: تغيير التصنيف من ثمين أو إليه: للإدارة فقط (حتى لا يُتجاوز شرط الموافقتين)
+        && (request.resource.data.cat == resource.data.cat || isAdmin()
+            || (!(resource.data.cat in highValue()) && !(request.resource.data.cat in highValue())))
+        // v9: حماية الحجز: غرض محجوز لطلب لا يُفك حجزه (تغيير reservedFor أو الخروج من «محجوز»)
+        // ما دام ذلك الطلب «مقبولاً» بعد العملية؛ أي يُغلق الطلب (رفض، انتهاء، تسليم) في العملية نفسها
+        && (resource.data.get('reservedFor', '') == ''
+            || (request.resource.data.get('reservedFor', '') == resource.data.reservedFor && request.resource.data.status == 'reserved')
+            || !existsAfter(claimDoc(resource.data.reservedFor))
+            || getAfter(claimDoc(resource.data.reservedFor)).data.status != 'approved');
+      // v9: الحذف للإدارة، أو لموظف المكتب إذا كان مثالاً، أو متاحاً سُجّل قبل أقل من 24 ساعة وليس ثميناً (خطأ إدخال)
+      allow delete: if isAdmin() || (isStaffOf(resource.data.officeId) && deletable(resource.data));
     }
 
     // التفاصيل السرية للغرض (اللون، الماركة، الوصف، مكان العثور والمبنى والقاعة، موضع الحفظ): لموظفي مكتبه فقط
@@ -226,7 +260,8 @@ service cloud.firestore {
       allow update: if isStaffOf(resource.data.officeId)
         && request.resource.data.officeId == resource.data.officeId
         && validSecret(request.resource.data);
-      allow delete: if isStaffOf(resource.data.officeId);
+      // v9: التفاصيل السرية تُحذف مع غرضها فقط، وبشرط حذفه نفسه (فلا يمحو موظف أدلة غرض ثمين)
+      allow delete: if isAdmin() || (isStaffOf(resource.data.officeId) && itemDeletable(itemId));
     }
 
     // الصورة الأصلية الواضحة: لموظفي المكتب فقط (العامة في itemPhotos: واضحة أو مموّهة أو غير موجودة حسب اختيار الموظف)
@@ -235,6 +270,7 @@ service cloud.firestore {
       allow create, update: if isStaffOf(request.resource.data.officeId)
         && request.resource.data.keys().hasOnly(['officeId', 'data']) && smallImage()
         && get(/databases/$(database)/documents/items/$(itemId)).data.officeId == request.resource.data.officeId;
+      // الأصل الواضح: يُحذف عند إزالة الصورة من غرض موجود، أو مع الغرض بشرط حذفه (v9)
       allow delete: if isStaffOf(resource.data.officeId);
     }
 
@@ -264,6 +300,8 @@ service cloud.firestore {
         (resource.data.uid == me()
           && request.resource.data.uid == me()
           && request.resource.data.officeId == resource.data.officeId
+          // v9: وقت الإنشاء لا يتغير عند التعديل (يحدد صلاحية البلاغ وترتيبه)
+          && request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null)
           && request.resource.data.get('staffPick', '') == resource.data.get('staffPick', '')
           // «ليس غرضي»: يرفض صاحب البلاغ ترشيح الموظف الحالي فقط
           && (request.resource.data.get('pickRejected', '') == resource.data.get('pickRejected', '')
@@ -289,7 +327,9 @@ service cloud.firestore {
     match /claims/{claimId} {
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
       allow create: if verified()
-        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'details', 'no', 'status', 'codeHash', 'createdAt', 'proofs', 'cat', 'grouped'])
+        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'details', 'no', 'status', 'createdAt', 'proofs', 'cat', 'grouped'])
+        // v9: الطلب الجديد بلا codeHash؛ بصمة الرمز في claimCodes تُنشأ في العملية نفسها
+        && existsAfter(codeDoc(claimId))
         // v7: عدد صور الإثبات المرفقة (0–2)، وحدّ الطلبات الجارية وحدّ التصنيف (claimQuota في العملية نفسها)، ونطاق بريد الكلية
         && (!('proofs' in request.resource.data) || (request.resource.data.proofs is int && request.resource.data.proofs >= 0 && request.resource.data.proofs <= 2))
         && claimId in getAfter(/databases/$(database)/documents/claimQuota/$(me())).data.open
@@ -302,7 +342,6 @@ service cloud.firestore {
         && (!('idLast4' in request.resource.data) || request.resource.data.idLast4.matches('[0-9]{4}'))
         && request.resource.data.uid == me()
         && request.resource.data.status == 'pending'
-        && request.resource.data.codeHash is string && request.resource.data.codeHash.size() <= 128
         && strMax(request.resource.data, 'proof', 5000)
         && strMax(request.resource.data, 'lostSpot', 400)
         && strMax(request.resource.data, 'color', 60) && strMax(request.resource.data, 'brand', 200)
@@ -329,7 +368,10 @@ service cloud.firestore {
       allow update: if (isStaffOf(resource.data.officeId)
           // فصل المهام: الموظف لا يقرر في طلب أرسله هو
           && resource.data.uid != me()
-          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote', 'answer', 'answeredAt', 'approvals', 'proofs', 'itemId'])
+          && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote', 'answer', 'answeredAt', 'approvals', 'proofs', 'itemId', 'handoverCode'])
+          // v9: handoverCode يُكتب فقط في الانتقال إلى «مكتمل» (ولا يتغير غير ذلك)
+          && (request.resource.data.get('handoverCode', '') == resource.data.get('handoverCode', '')
+              || (request.resource.data.status == 'done' && resource.data.status != 'done'))
           // v8: رقم الغرض لا يتغير، إلا في الطلب المجمّع عند قبوله: يُكتب مرة واحدة = الغرض المربوط في claimLinks
           && (request.resource.data.itemId == resource.data.itemId
               || (resource.data.get('grouped', false) == true && resource.data.itemId == ''
@@ -343,9 +385,13 @@ service cloud.firestore {
           && (!('answeredAt' in request.resource.data) || request.resource.data.answeredAt == resource.data.get('answeredAt', null))
           && request.resource.data.status in ['pending', 'approved', 'done', 'rejected', 'expired', 'cancelled']
           && (request.resource.data.status != 'approved' || resource.data.status == 'approved' || (approveOk(claimId, request.resource.data.itemId) && dualOk(request.resource.data.itemId)))
-          && (request.resource.data.status != 'done' || resource.data.status == 'done' || doneOk(claimId, resource.data.itemId))
+          && (request.resource.data.status != 'done' || resource.data.status == 'done' || (doneOk(claimId, resource.data.itemId) && codeOk(claimId)))
           && strMax(request.resource.data, 'note', 600) && strMax(request.resource.data, 'question', 600)
           && strMax(request.resource.data, 'handoverNote', 600))
+        // v9: «إلغاء» صاحب الطلب لطلبه قيد المراجعة (بعد سؤال الموظف أو موافقة أولى لا يُحذف، فلا يُعاد إرساله لتخمين جديد)
+        || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending'
+          && request.resource.data.status == 'cancelled' && onlyChanges(['status', 'cancelledAt'])
+          && fresh(request.resource.data, 'cancelledAt'))
         // صاحب الطلب يجيب عن سؤال الموظف ما دام طلبه قيد المراجعة
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending' && ('question' in resource.data)
           && onlyChanges(['answer', 'answeredAt'])
@@ -372,9 +418,10 @@ service cloud.firestore {
         || (signedIn() && resource.data.uid == me() && resource.data.status in ['done', 'rejected', 'expired', 'cancelled']
           && request.resource.data.uid == 'deleted' && request.resource.data.proof == ''
           && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'claimantName', 'idLast4', 'handoverNote', 'details', 'ratingNote', 'anonymizedAt']));
-      // يحذف المستخدم طلبه ما دام قيد المراجعة فقط
+      // يحذف المستخدم طلبه ما دام قيد المراجعة، ولم يسأله الموظف، ولا موافقة عليه (v9)؛ غير ذلك «إلغاء» بالأعلى
       allow delete: if isAdmin()
-        || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending');
+        || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending'
+            && !('question' in resource.data) && apps(resource.data).size() == 0);
     }
 
     // إشعار تسليم: من وجد غرضاً يسجّله قبل أن يسلّمه، ويؤكد الموظف استلامه ويحوّله إلى غرض في المستودع
@@ -403,6 +450,8 @@ service cloud.firestore {
         // الموظف يؤكد الاستلام ويربطه بالغرض
         || (isStaffOf(resource.data.officeId) && onlyChanges(['status', 'receivedAt', 'receivedBy', 'itemId'])
           && request.resource.data.status in ['pending', 'received', 'cancelled']
+          // v9: من استلم = الموظف الذي يكتب الآن
+          && (request.resource.data.get('receivedBy', '') == resource.data.get('receivedBy', '') || request.resource.data.receivedBy == me())
           && strMax(request.resource.data, 'itemId', 100));
       allow delete: if isAdmin() || (signedIn() && resource.data.uid == me() && resource.data.status != 'received');
     }
@@ -433,6 +482,8 @@ service cloud.firestore {
             && !exists(/databases/$(database)/documents/staff/$(me()))
             && request.resource.data.officeId in getAfter(/databases/$(database)/documents/staff/$(me())).data.offices))
         && request.resource.data.by == me()
+        // v9: وقت القيد «الآن» (لا تاريخ مزوّر في سلسلة الحيازة)
+        && fresh(request.resource.data, 'at')
         && request.resource.data.keys().hasOnly(['officeId', 'itemId', 'claimId', 'reportId', 'action', 'by', 'at', 'note', 'checks'])
         // v7: فحوص التسليم التي علّمها الموظف (مفاتيح نصوص فقط، بلا بيانات شخصية)
         && (!('checks' in request.resource.data) || (request.resource.data.checks is list && request.resource.data.checks.size() <= 10))
@@ -487,6 +538,18 @@ service cloud.firestore {
 
     // v7: صور إثبات اختيارية لطلب الاستلام (صورة قديمة للغرض أو فاتورته، صورتان على الأكثر): claimProofs/{claimId}_{0|1}.
     // يراها صاحب الطلب وموظفو المكتب فقط، ولا تظهر في أي صفحة عامة. تُحذف مع إغلاق الطلب
+    // v9 (H12): بصمة رمز الاستلام: لا يقرؤها أحد (ولا صاحبها)، ولا تُعدَّل ولا تُحذف.
+    // ينشئها صاحب الطلب في عملية إنشاء الطلب نفسها (الطلب غير موجود قبلها، وله بعدها)
+    match /claimCodes/{claimId} {
+      allow read: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'hash'])
+        && request.resource.data.uid == me()
+        && request.resource.data.hash is string && request.resource.data.hash.size() == 64
+        && !exists(claimDoc(claimId)) && getAfter(claimDoc(claimId)).data.uid == me();
+      allow update, delete: if false;
+    }
+
     // v8 (H11): ربط الطلب المجمّع بغرض: للموظفين فقط (صاحب الطلب لا يرى الغرض ولا المرشّحين قبل القبول)
     // موظف المكتب يربطه مرة واحدة (لا تعديل)، بغرض متاح من المكتب والتصنيف نفسيهما، وليس في طلب أرسله هو
     match /claimLinks/{claimId} {
@@ -519,7 +582,7 @@ service cloud.firestore {
       allow delete: if isAdmin()
         // صاحب الطلب قبل قرار الموظف (أو مع حذف الطلب نفسه)
         || (signedIn() && resource.data.uid == me()
-            && (!existsAfter(claimDoc(resource.data.claimId)) || getAfter(claimDoc(resource.data.claimId)).data.status == 'pending'))
+            && (!existsAfter(claimDoc(resource.data.claimId)) || getAfter(claimDoc(resource.data.claimId)).data.status in ['pending', 'cancelled']))
         // الموظف عند إغلاق الطلب (تسليم أو رفض أو إلغاء أو انتهاء) في العملية نفسها
         || (isStaffOf(resource.data.officeId)
             && (!existsAfter(claimDoc(resource.data.claimId))

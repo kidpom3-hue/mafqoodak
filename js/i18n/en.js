@@ -591,7 +591,6 @@ export const EN = {
   "a.needOrg": "Enter the organisation name.",
   "a.badCode": "The reference code must be 2–4 Latin letters, e.g. TCA.",
   "a.officeSaved": "Location saved",
-  "a.code6": "The code has 6 digits.",
   "a.codeWrong": "That code isn't right. Check it with the claimant.",
   "a.handedOver": "Verified and handed over to the owner",
   "a.needPassDel": "Enter your password to confirm.",
@@ -1395,4 +1394,14 @@ export const EN = {
   "log.expire": "Claim by description closed without a match",
   "gc.expiredMine": "The office did not match your description with any recorded item within 30 days, so the claim was closed. If you have new details, send a new claim.",
   "gc.nsExpired": "Closed without a match within 30 days",
+  // H12: security fixes (rules v9)
+  "a.code8": "The pickup code has 8 characters, like XXXX-XXXX (older codes have 6 digits).",
+  "cl.withdraw": "Withdraw claim",
+  "cl.withdrawQ": "Withdraw this claim?",
+  "cl.withdrawBody": "The claim and its proof photos are deleted. You can send a new claim later.",
+  "cl.withdrawCancelBody": "The claim is cancelled (the office asked a question or a staff member approved it). It stays cancelled in the record and can't be sent again for the same item.",
+  "cl.withdrawn": "Claim withdrawn.",
+  "wf.hvCatAdmin": "Only admins can change a category to or from a valuable one.",
+  "wf.hvDirectAdmin": "Only admins can hand over a valuable item directly. Hand it over with the pickup code after two approvals.",
+  "wf.cantDelete": "You can't delete this item. Deleting is for admins, samples, or an ordinary available item recorded less than 24 hours ago.",
 };

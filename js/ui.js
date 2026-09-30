@@ -9,7 +9,7 @@ import { vHome, updateHome, vFound, vHandin } from './views/home.js';
 import { vPrivacy } from './views/privacy.js';
 import { tabNum } from './views/common.js';   // H6: كل شارة رقمية تمرّ بها (رقم واحد: أحمر للجديد أو رمادي للعدد)
 // H8: صفحات الموظف والإدارة والإحصاءات والسجل والطباعة والخدمات تُحمَّل عند أول فتح لها فقط (lazy.js)
-import { need, loadingHtml, setLazyHooks } from './lazy.js';
+import { need, load, loadingHtml, setLazyHooks } from './lazy.js';
 import { SETTINGS } from './config.js';
 import { cat } from './constants.js';
 
@@ -249,6 +249,9 @@ const lazy = 'IntersectionObserver' in window ? new IntersectionObserver(entries
 
 /* تحميل الصور وأسماء المستخدمين بعد رسم الصفحة */
 export function hydrate(){
+  // v9: QR رمز الاستلام في «طلباتي» (qr.js يُحمَّل عند الحاجة، ومكانه محجوز بالحجم نفسه)
+  const qrs = [...document.querySelectorAll('.code-qr[data-qr]:empty')];
+  if (qrs.length) load('qr').then(m => qrs.forEach(el => { if (el.isConnected && !el.firstChild) el.innerHTML = m.qrSvg(el.dataset.qr, {label: t('mine.code')}); })).catch(() => {});
   $$('img[data-photo]').forEach(img => {
     if (img.dataset.loaded) return;
     const box = img.closest('.thumb, .detail-photo, .row-thumb, .pv');
