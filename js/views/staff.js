@@ -2,12 +2,12 @@
 import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, isHighValue, GROUP_EXPIRE_DAYS } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist } from '../state.js';
-import { backBtn, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
+import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist } from '../state.js';
+import { backBtn, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
-import { MS_NOTE, expireGroupClaim } from '../workflow.js';
+import { MS_NOTE, expireGroupClaim, OPEN } from '../workflow.js';
 import { emailUser } from '../notify.js';   // H9: ملاحظة مدة الإضافة لا تُعرض في السجل
 
 /* ---------- staff dashboard ---------- */
@@ -271,10 +271,25 @@ function expireOld(){
     expireGroupClaim(c).then(ok => { if (ok) emailUser(c.uid); }).catch(e => console.warn(e));
   }
 }
+/* H13a: طلب يتيم = مفتوح (قيد المراجعة أو مقبول) وغرضه محذوف أو غير نشط بعد جلبه من الخادم */
+function isOrphan(c){
+  if (!OPEN.includes(c.status)) return false;
+  const iid = claimItemId(c); if (!iid) return false;
+  const i = item(iid);
+  if (!i){ ensureItem(iid); return !itemLoading(iid); }
+  return !ACTIVE.includes(i.status);
+}
+// الطلبات اليتيمة التي يستطيع الموظف إغلاقها (لا طلبه هو): للتنبيه أعلى «الاستلام» وزر «إغلاقها كلها»
+export const orphanClaims = () => S.claims.filter(c => c.uid !== S.uid && isOrphan(c));
 export function claimCardStaff(c, opts){
   // H11: الطلب المجمّع: الغرض المربوط (claimLinks) قبل القبول، ورقمه في الطلب بعده
   const lk = c.grouped && !c.itemId ? linkOf(c) : null, unlinked = !!c.grouped && !c.itemId && !lk;
-  const i = item(claimItemId(c));
+  // H13a: الغرض غير محمّل (S.items فيها النشطة فقط): نجلبه مرة واحدة ونعرض «جارٍ التحميل». بعد الجلب، إن كان
+  // محذوفاً أو غير نشط والطلب مفتوح = طلب يتيم: عنوان «غرض غير متاح»، وحالته، وزر واحد «إغلاق الطلب»
+  const iid = claimItemId(c), i = item(iid);
+  if (!i && iid) ensureItem(iid);
+  const loadingIt = !i && !!iid && itemLoading(iid);
+  const orphan = isOrphan(c);
   // v7: الغرض الثمين: الموافقات حتى الآن (الأولى تبقي الطلب قيد المراجعة حتى الموافقة الثانية)
   const apps = Array.isArray(c.approvals) ? c.approvals : [];
   const hv = !!i && isHighValue(i.cat) && c.status === 'pending';
@@ -289,6 +304,8 @@ export function claimCardStaff(c, opts){
   // الطلب المنتهي أو الملغى يُعاد تفعيله من سجل الطلبات (الغرض متاح ← مقبول ومحجوز له، وإلا ← قيد المراجعة)
   const again = !own && ['expired', 'cancelled'].includes(c.status) && c.uid !== 'deleted' ? `<div class="btn-row"><button class="btn sm soft" data-act="reactivate" data-id="${esc(c.id)}">${icon('swap')}${t('st.reactivate')}</button></div>` : '';
   const actions = own && ['pending', 'approved'].includes(c.status) ? `<div class="note">${icon('info')}<span>${t('st.ownClaim')}</span></div>`
+    : loadingIt && ['pending', 'approved'].includes(c.status) ? ''
+    : orphan ? `<div class="btn-row"><button class="btn sm" data-act="closeOrphan" data-id="${esc(c.id)}">${icon('x')}${t('st.orphanClose')}</button></div>`
     : c.status === 'pending' ? `<div class="btn-row">
       ${(hv && apps.includes(S.uid)) || unlinked ? '' : `<button class="btn sm" data-act="approve" data-id="${esc(c.id)}">${icon('check')}${t(hv && apps.length ? 'st.approveSecond' : 'st.approve')}</button>`}
       <button class="btn sm ghost" data-act="ask" data-id="${esc(c.id)}">${icon('question')}${t(c.question ? 'qa.askAgain' : 'qa.ask')}</button>
@@ -316,7 +333,7 @@ export function claimCardStaff(c, opts){
     : apps.length ? `<div class="note warn">${icon('users')}<span>${t('st.secondNeeded', {who: `<b data-uname="${esc(apps[0])}">…</b>`})}</span></div>`
     : `<div class="note info">${icon('shield')}<span>${t('st.highValue')}</span></div>`;
   return mcard({key: 's:' + c.id, open: opts?.open, fresh: opts?.fresh, muted: !['pending', 'approved'].includes(c.status), tone: warn ? 'warn' : '', pillHtml: pill(CLAIM_STATUS, c.status), next,
-    head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${i ? esc(showTitle(i)) : c.grouped ? t('grp.' + c.cat + '.title') : esc(claimNo(c))}</h3>${c.grouped ? `<span class="pill info">${t('gc.pill')}</span>` : ''}${person(c.uid)}${prior ? `<span class="pill ok prior">${icon('bell')}${t('st.priorReport')}</span>` : ''}${hv && apps.length && !apps.includes(S.uid) ? `<span class="pill warn">${t('st.yourSecond')}</span>` : ''}`,
+    head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${orphan ? t('st.orphanTitle') : i ? esc(showTitle(i)) : c.grouped && !iid ? t('grp.' + c.cat + '.title') : t('c.loadingDots')}</h3>${c.grouped ? `<span class="pill info">${t('gc.pill')}</span>` : ''}${person(c.uid)}${prior ? `<span class="pill ok prior">${icon('bell')}${t('st.priorReport')}</span>` : ''}${hv && apps.length && !apps.includes(S.uid) ? `<span class="pill warn">${t('st.yourSecond')}</span>` : ''}`,
     body: `<div class="box-head"><div class="claim-who">${whenLine('c.sentAt', c.createdAt)}${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div></div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
     ${c.editedAt ? `<div class="note info edited">${icon('edit')}<span>${t('st.editedAfter', {when: when(c.editedAt)})}</span></div>` : ''}
@@ -325,8 +342,10 @@ export function claimCardStaff(c, opts){
     ${conflictNote(kind)}
     ${rv ? `<div class="note warn">${icon('info')}<span>${t('st.rivalNote')}</span></div>` : ''}
     ${tip}${histLine}${appNote}
+    ${orphan ? `<div class="note warn orphan-note">${icon('alert')}<span>${orphanText(i)}</span></div>` : ''}
+    ${loadingIt ? `<div class="note">${icon('clock')}<span>${t('c.loadingDots')}</span></div>` : ''}
     ${lk && c.status === 'pending' ? `<div class="note ok">${icon('check')}<span>${t('gc.linkedTo', {ref: `<b dir="ltr">${esc(i?.ref || '')}</b>`})}</span></div>` : ''}
-    ${i ? claimCompare(c, full(i)) : c.grouped ? groupAnswers(c) : `<div class="proof">${esc(c.proof)}</div>`}
+    ${i && !orphan ? claimCompare(c, full(i)) : c.grouped ? groupAnswers(c) : `<div class="proof">${esc(c.proof)}</div>`}
     ${unlinked && c.status === 'pending' ? groupBox(c, own) : ''}
     ${proofs}
     ${i ? '' : qaBox(c)}
@@ -355,7 +374,11 @@ export function staffClaims(){
   const fresh = new Set(staffKeys().map(x => x.card));
   const defs = [['decide', pend.length], ['come', appr.length], ['incoming', fs.length], ['ended', hist ? hist.length : null]];
   const cur = subTab('claims', defs);
-  const body = cur === 'decide' ? (pend.length ? `<div class="list">${pend.map((c, k) => claimCardStaff(c, {open: k === 0, fresh: fresh.has('s:' + c.id)})).join('')}</div>` : `<p class="muted">${t('st.noNew')}</p>`)
+  // H13a: تنبيه أعلى «قراري»: طلبات مفتوحة على أغراض محذوفة أو غير نشطة (لا إغلاق صامت: زر «إغلاقها كلها»)
+  const orph = orphanClaims();
+  const orphBar = orph.length ? `<div class="note warn orphans">${icon('alert')}<span>${t('st.orphans', {claims: tp('n.openClaims', orph.length)})}</span>
+    <button class="btn sm" data-act="closeOrphans">${icon('x')}${t('st.orphansClose')}</button></div>` : '';
+  const body = cur === 'decide' ? orphBar + (pend.length ? `<div class="list">${pend.map((c, k) => claimCardStaff(c, {open: k === 0, fresh: fresh.has('s:' + c.id)})).join('')}</div>` : `<p class="muted">${t('st.noNew')}</p>`)
     : cur === 'come' ? (appr.length ? `<div class="list">${appr.map(c => claimCardStaff(c)).join('')}</div>` : `<p class="muted">${t('st.noCome')}</p>`)
     : cur === 'incoming' ? handins(fs, fresh)
     : hist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}${t('st.showHist')}</button>`

@@ -678,5 +678,25 @@ const handCp = (b, r) => { b.update(r('claims/cp1_alice'), {status: 'done', done
 // النتيجة: batch واحد يكفي (ضمن حد 20 قراءة للعملية)، فيبقى التسليم وإغلاق المنافسين معاً كما في workflow.js
 await t('v9-7: التسليم + إغلاق 3 منافسين (6 صور + 3 حصص) في batch واحد', batch(A, (b, r) => { handCp(b, r); closeRivals(b, r); }));
 
+// ── H13a: طلب يتيم (غرضه حُذف) يغلقه الموظف «منتهياً»: القواعد لا تقرأ الغرض في هذا الانتقال ──
+await env.withSecurityRulesDisabled(async c => {
+  const d = c.firestore();
+  await setDoc(doc(d, 'claims/gone1_bob'), {...claim('gone1', 'bob'), proofs: 1});   // لا يوجد items/gone1
+  await setDoc(doc(d, 'claimProofs/gone1_bob_0'), {claimId: 'gone1_bob', officeId: O, uid: 'bob', data: IMG, createdAt: now});
+  await setDoc(doc(d, 'claimQuota/bob'), {open: ['gone1_bob']});
+  await setDoc(doc(d, 'claims/gone2_carol'), {...claim('gone2', 'carol'), status: 'approved', pickupBy: now + DAY});
+});
+await t('H13a: إغلاق طلب يتيم (غرضه محذوف) «منتهياً» مع صورته وحصته في batch واحد', batch(A, (b, r) => {
+  b.update(r('claims/gone1_bob'), {status: 'expired', note: 'الغرض لم يعد متاحاً', decidedAt: now, decidedBy: 'staffA', proofs: 0});
+  b.delete(r('claimProofs/gone1_bob_0'));
+  b.set(r('claimQuota/bob'), {open: arrayRemove('gone1_bob')}, {merge: true});
+  b.set(r('logs/' + lid()), {...logDoc('staffA', 'expire', {itemId: 'gone1', claimId: 'gone1_bob'}), at: Date.now()}); }));
+await t('H13a: إغلاق طلب مقبول غرضه محذوف «منتهياً»', updateDoc(doc(A, 'claims/gone2_carol'), {status: 'expired', note: 'الغرض لم يعد متاحاً', decidedAt: now, decidedBy: 'staffA'}));
+await t('H13a: قبول طلب غرضه محذوف مرفوض', batch(A, (b, r) => {
+  b.update(r('claims/gone1_bob'), {status: 'approved', decidedAt: now, decidedBy: 'staffA', pickupBy: now}); }), false);
+// الإغلاق من الخادم: الموظف يستعلم عن طلبات غرض بالمكتب والغرض والحالة (openClaimsFor)
+await t('H13a: الموظف يستعلم عن الطلبات المفتوحة على غرض في مكتبه', q(A, 'claims', ['officeId', '==', O], ['itemId', '==', 'gone2'], ['status', 'in', ['pending', 'approved']]));
+await t('H13a: الزائر لا يستعلم عن طلبات غرض', q(alice, 'claims', ['officeId', '==', O], ['itemId', '==', 'gone2'], ['status', 'in', ['pending', 'approved']]), false);
+
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

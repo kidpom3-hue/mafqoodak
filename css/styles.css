@@ -1040,3 +1040,8 @@ label.check, .box-head, .box-head b{min-width:0;overflow-wrap:anywhere}
 .code-qr{inline-size:132px;block-size:132px;padding:6px;border-radius:10px;background:var(--qr-bg);align-self:center}
 .code-qr:empty{display:block}
 .code-qr svg{inline-size:100%;block-size:100%;display:block}
+/* H13a: التمرير إلى أي عنصر يُبقيه تحت الترويسة الملتصقة (ارتفاعها الظاهر --hdr-vh يحدّثه syncHeader في ui.js) */
+html{scroll-padding-top:calc(var(--hdr-vh,64px) + 8px)}
+/* H13a: تنبيه الطلبات على أغراض غير متاحة أعلى «قراري» */
+.note.orphans{flex-wrap:wrap;align-items:center}
+.note.orphans .btn{margin-inline-start:auto}

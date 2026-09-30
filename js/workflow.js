@@ -83,10 +83,35 @@ async function freshItem(id){
   return i;
 }
 const notMine = c => { if (c.uid === S.uid) fail(t('wf.own')); };
-// إنهاء بقية الطلبات المفتوحة على الغرض. طلب الموظف نفسه يُستثنى لأن القواعد تمنعه من تعديله.
-function closeOthers(b, itemId, exceptId, status, note){
+/* H13a: الغرض كما هو على الخادم (أو null إن حُذف فعلاً)، لا من S.items (النشطة فقط) */
+export async function fetchItem(id){
+  if (!id) return null;
+  return item(id) || await dbx.get('items/' + id).then(d => d ? {id, ...d} : null);
+}
+/* H13a: طلب مفتوح على غرض لم يعد متاحاً (سُلّم، أُرشف، تُصرّف فيه، أو حُذف): يُنهى «منتهياً» بملاحظة واضحة.
+   القواعد لا تقرأ الغرض في هذا الانتقال (حالة الطلب فقط)، فيعمل ولو حُذف الغرض */
+export async function closeOrphan(c){
+  notMine(c);
+  if (!OPEN.includes(c.status)) fail(t('wf.notPending'));
+  const b = dbx.batch(), note = tAr('sys.itemUnavailable');
+  closeClaim(b, c, {status: 'expired', note, decidedAt: Date.now(), decidedBy: S.uid});
+  log(b, c.officeId, 'expire', {itemId: c.itemId, claimId: c.id, note});
+  await commit(b);
+}
+/* H13a: الطلبات المفتوحة على غرض (قيد المراجعة والمقبولة) من الخادم، لا من S.claims المحلية وحدها:
+   الاشتراك المحلي قد لا يرى طلباً وصل قبل ثوانٍ، ولا يرى طلبات مكتب آخر (الإدارة). تُدمج القائمتان بلا تكرار.
+   الاستعلام بالمكتب والغرض والحالة (مساواة و«in» فقط، بلا فهرس مركّب؛ والمكتب شرط قواعد القراءة للموظف) */
+export async function openClaimsFor(itemId, officeId){
+  const srv = await dbx.list('claims', [['officeId', '==', officeId], ['itemId', '==', itemId], ['status', 'in', OPEN]]);
+  const m = new Map(openClaimsOf(itemId).map(c => [c.id, c]));
+  for (const c of srv) m.set(c.id, c);
+  return [...m.values()].filter(c => OPEN.includes(c.status));
+}
+/* إنهاء بقية الطلبات المفتوحة على الغرض في الـ batch نفسه (مع حذف صور الإثبات وإزالتها من الحصة: closeClaim).
+   طلب الموظف نفسه يُستثنى لأن القواعد تمنعه من تعديله */
+async function closeOthers(b, i, exceptId, status, note){
   let skippedOwn = false;
-  for (const o of openClaimsOf(itemId)){
+  for (const o of await openClaimsFor(i.id, i.officeId)){
     if (o.id === exceptId) continue;
     if (o.uid === S.uid){ skippedOwn = true; continue; }
     closeClaim(b, o, {status, note, decidedAt: Date.now(), decidedBy: S.uid});
@@ -227,7 +252,7 @@ export async function verifyHandover(c, receiver = {}, checks = [], code = ''){
   closeClaim(b, c, {status: 'done', doneAt: Date.now(), doneBy: S.uid, handoverNote: tAr('sys.receivedBy', {name, last4}), handoverCode: code});
   itemUpdate(b, i, {status: 'returned', returnedAt: Date.now(), updatedAt: Date.now()});
   // اختُبر في المحاكي: التسليم + إغلاق 3 منافسين (بصورهم وحصصهم) يبقى ضمن حد القراءات في batch واحد
-  const skippedOwn = closeOthers(b, i.id, c.id, 'rejected', tAr('sys.handedVerified'));
+  const skippedOwn = await closeOthers(b, i, c.id, 'rejected', tAr('sys.handedVerified'));
   log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id, note: tAr('sys.receivedBy', {name, last4}), checks: checks.map(String).slice(0, 10)});
   // رفض القواعد هنا = الرمز لا يطابق البصمة (أو سبق موظف آخر بالتسليم): نعرض «الرمز غير صحيح»
   await commit(b, true).catch(e => { if (e instanceof FlowError) fail(t('a.codeWrong')); throw e; });
@@ -295,9 +320,10 @@ export async function setItemStatus(i, to, note = ''){
     if (String(note).trim().length < 6) fail(t('wf.needHandoverNote'));
     patch.returnedAt = now;
     secret = {...secretOf(i), handoverNote: String(note).slice(0, 600)};
-    skippedOwn = closeOthers(b, i.id, '', 'cancelled', tAr('sys.handedDirect'));
+    // H13a: التسليم (المباشر أيضاً) يرفض بقية الطلبات
+    skippedOwn = await closeOthers(b, i, '', 'rejected', tAr('sys.handedDirect'));
   } else if (to === 'archived'){
-    skippedOwn = closeOthers(b, i.id, '', 'cancelled', tAr('sys.archived'));
+    skippedOwn = await closeOthers(b, i, '', 'cancelled', tAr('sys.archived'));
   } else fail(t('wf.badStatus'));
   itemUpdate(b, i, patch, secret);
   log(b, i.officeId, 'status:' + to, {itemId: i.id, note: to === 'returned' ? tAr('sys.directHandover') : note});
@@ -337,16 +363,24 @@ export async function disposeItems(items, method, note = ''){
   if (!DISPOSAL[method]) fail(t('wf.pickMethod'));
   if (method === 'finder' && !items.every(finderOk)) fail(t('wf.noFinder'));
   let n = 0;
-  // دفعات صغيرة: حد writeBatch في Firestore 500 عملية
-  for (let k = 0; k < items.length; k += 60){
+  const one = async (b, i, claims, now) => {
+    itemUpdate(b, i, {status: 'disposed', disposal: method, disposedAt: now, reservedFor: '', updatedAt: now}, {...secretOf(i), disposalNote: String(note).slice(0, 600)});
+    for (const o of claims) if (o.uid !== S.uid) closeClaim(b, o, {status: 'cancelled', note: tAr('sys.retentionEnded'), decidedAt: now, decidedBy: S.uid});
+    log(b, i.officeId, 'dispose', {itemId: i.id, note: tAr('disposal.' + method) + (note ? ' — ' + note : '')});
+    n++;
+  };
+  // H13a: طلبات كل غرض من الخادم. الغرض الذي له طلبات مفتوحة في batch وحده (مع إغلاقها)، والبقية معاً
+  // في دفعات صغيرة (حد writeBatch في Firestore 500 عملية)
+  const plain = [];
+  for (const i of items){
+    if (i.status !== 'available') continue;
+    const claims = await openClaimsFor(i.id, i.officeId);
+    if (!claims.length){ plain.push(i); continue; }
+    const b = dbx.batch(); await one(b, i, claims, Date.now()); await commit(b);
+  }
+  for (let k = 0; k < plain.length; k += 60){
     const b = dbx.batch(); const now = Date.now();
-    for (const i of items.slice(k, k + 60)){
-      if (i.status !== 'available') continue;
-      itemUpdate(b, i, {status: 'disposed', disposal: method, disposedAt: now, reservedFor: '', updatedAt: now}, {...secretOf(i), disposalNote: String(note).slice(0, 600)});
-      closeOthers(b, i.id, '', 'cancelled', tAr('sys.retentionEnded'));
-      log(b, i.officeId, 'dispose', {itemId: i.id, note: tAr('disposal.' + method) + (note ? ' — ' + note : '')});
-      n++;
-    }
+    for (const i of plain.slice(k, k + 60)) await one(b, i, [], now);
     await commit(b);
   }
   return n;
@@ -357,10 +391,12 @@ export async function disposeItems(items, method, note = ''){
 export async function deleteItem(i){
   if (!canDeleteItem(i)) fail(t('wf.cantDelete'));
   const b = dbx.batch();
-  const skippedOwn = closeOthers(b, i.id, '', 'cancelled', tAr('sys.deleted'));
+  const skippedOwn = await closeOthers(b, i, '', 'cancelled', tAr('sys.deleted'));
   if (pubPhoto(i)) b.delete(dbx.ref('itemPhotos/' + i.id));
-  if (['clear', 'blur', 'none'].includes(i.photo)) b.delete(dbx.ref('itemPhotosPrivate/' + i.id));
-  if (S.secrets[i.id]) b.delete(dbx.ref('itemSecrets/' + i.id));
+  // القواعد ترفض حذف مستند غير موجود (تقرأ resource.data)، فنتأكد من وجود الأصل الخاص والتفاصيل السرية قبل حذفهما
+  // (الأمثلة من مكاتب أخرى ليست في الاشتراك المحلي)
+  if (['clear', 'blur', 'none'].includes(i.photo) && await dbx.get('itemPhotosPrivate/' + i.id).catch(() => null)) b.delete(dbx.ref('itemPhotosPrivate/' + i.id));
+  if (S.secrets[i.id] || await dbx.get('itemSecrets/' + i.id).catch(() => null)) b.delete(dbx.ref('itemSecrets/' + i.id));
   b.delete(dbx.ref('items/' + i.id));
   log(b, i.officeId, 'delete', {itemId: i.id, note: full(i).title || i.ref});
   await commit(b);

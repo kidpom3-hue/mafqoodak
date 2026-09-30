@@ -1404,4 +1404,18 @@ export const EN = {
   "wf.hvCatAdmin": "Only admins can change a category to or from a valuable one.",
   "wf.hvDirectAdmin": "Only admins can hand over a valuable item directly. Hand it over with the pickup code after two approvals.",
   "wf.cantDelete": "You can't delete this item. Deleting is for admins, samples, or an ordinary available item recorded less than 24 hours ago.",
+  // H13a: claims on items that are no longer available
+  "st.orphanTitle": "Item not available",
+  "st.orphanGone": "This item was deleted from storage, but the claim is still open.",
+  "st.orphanState": "This item is no longer available (now “{status}”), but the claim is still open.",
+  "st.orphanHint": "This claim can't be approved. Close it so the claimant is told and their claim slot is freed.",
+  "st.orphanClose": "Close claim",
+  "st.orphanClosed": "Claim closed. The claimant will see that the item is no longer available.",
+  "st.orphans": "{claims} on items that are no longer available (deleted, returned or archived).",
+  "st.orphansClose": "Close them all",
+  "st.orphansQ": "Close {claims}?",
+  "st.orphansBody": "Each claim ends as expired with the note “The item is no longer available”, and its owner is told.",
+  "sys.itemUnavailable": "The item is no longer available",
+  "a.samplesPartly": "Samples deleted, but {n} could not be deleted. Try again.",
+  "mine.itemUnavailable": "The item is no longer available at the office, so your claim was closed. If yours is still missing, file a lost report.",
 };

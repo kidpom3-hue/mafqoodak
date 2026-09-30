@@ -1,7 +1,7 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
 import { icon, LOGO, CATS, cat, catName, isGrouped, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
 import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
-import { t, tp, noteText } from '../i18n.js';
+import { t, tp, tAr, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard } from '../state.js';
 import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
@@ -475,7 +475,8 @@ export function claimCardMine(c){
   }
   else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>${t('mine.done', {when: relTime(c.doneAt)})}</span></div>${rateBox(c)}`;
   else if (c.status === 'rejected') body = `<div class="note warn">${icon('info')}<span>${c.note ? t('mine.rejectedWhy', {note: esc(noteText(c.note))}) : t('mine.rejected')}</span></div>`;
-  else if (c.status === 'expired') body = `<div class="note warn">${icon('clock')}<span>${t(gw ? 'gc.expiredMine' : 'mine.expired')}</span></div>`;
+  // H13a: أُغلق لأن الغرض لم يعد متاحاً (حُذف أو سُلّم أو أُرشف): سبب واضح بدل «انتهت مهلة الاستلام»
+  else if (c.status === 'expired') body = `<div class="note warn">${icon('clock')}<span>${t(c.note === tAr('sys.itemUnavailable') ? 'mine.itemUnavailable' : gw ? 'gc.expiredMine' : 'mine.expired')}</span></div>`;
   else if (c.status === 'cancelled') body = `<div class="note">${icon('info')}<span>${c.note ? t('mine.cancelledWhy', {note: esc(noteText(c.note))}) : t('mine.cancelled')}</span></div>`;
   // الخطوة التالية (سطر واحد في الملخّص)
   const need = claimNeed(c);
