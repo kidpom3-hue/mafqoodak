@@ -215,19 +215,55 @@ export async function askQuestion(c, q){
 /* التسليم بعد التحقق من الرمز: فقط للطلب المقبول الذي حُجز له الغرض.
    receiver: {name, last4} من طابق الموظف بطاقته (المستلم الفعلي، وقد يكون مفوّضاً)، تُحفظ في handoverNote بالطلب.
    checks (v7): مفاتيح فحوص التسليم حسب التصنيف التي علّمها الموظف كلها؛ تُحفظ في قيد السجل بلا أي بيانات شخصية */
-export async function verifyHandover(c, receiver = {}, checks = []){
+export async function verifyHandover(c, receiver = {}, checks = [], code = ''){
   notMine(c);
+  // v9: الرمز يُفحص على الخادم (القواعد تحسب بصمته وتقارنها بـ claimCodes)، فلا مقارنة هنا
+  if (!/^[A-Z0-9]{6,8}$/.test(code)) fail(t('a.codeWrong'));
   const i = await freshItem(c.itemId);
   if (c.status !== 'approved' || i.status !== 'reserved' || i.reservedFor !== c.id) fail(t('wf.notReserved'));
   const name = String(receiver.name || '').trim().slice(0, 120), last4 = String(receiver.last4 || '').trim();
   if (name.length < 3 || !/^\d{4}$/.test(last4)) fail(t('wf.needReceiver'));
   const b = dbx.batch();
-  closeClaim(b, c, {status: 'done', doneAt: Date.now(), doneBy: S.uid, handoverNote: tAr('sys.receivedBy', {name, last4})});
+  closeClaim(b, c, {status: 'done', doneAt: Date.now(), doneBy: S.uid, handoverNote: tAr('sys.receivedBy', {name, last4}), handoverCode: code});
   itemUpdate(b, i, {status: 'returned', returnedAt: Date.now(), updatedAt: Date.now()});
+  // اختُبر في المحاكي: التسليم + إغلاق 3 منافسين (بصورهم وحصصهم) يبقى ضمن حد القراءات في batch واحد
   const skippedOwn = closeOthers(b, i.id, c.id, 'rejected', tAr('sys.handedVerified'));
   log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id, note: tAr('sys.receivedBy', {name, last4}), checks: checks.map(String).slice(0, 10)});
-  await commit(b, true);
+  // رفض القواعد هنا = الرمز لا يطابق البصمة (أو سبق موظف آخر بالتسليم): نعرض «الرمز غير صحيح»
+  await commit(b, true).catch(e => { if (e instanceof FlowError) fail(t('a.codeWrong')); throw e; });
   return {skippedOwn};
+}
+
+/* v9: صاحب الطلب يسحب طلبه قيد المراجعة. قبل سؤال الموظف وأي موافقة: يُحذف. بعدهما: «إلغاء» (يبقى الطلب،
+   فلا يُحذف ويُعاد إرساله لتخمين إجابة السؤال). في العملية نفسها: حذف صور الإثبات وإزالته من الحصة */
+export const canDeleteOwnClaim = c => c?.status === 'pending' && !c.question && !(Array.isArray(c.approvals) && c.approvals.length);
+export async function withdrawClaim(c){
+  if (!c || c.uid !== S.uid || c.status !== 'pending') fail(t('wf.notPending'));
+  const b = dbx.batch();
+  for (let k = 0; k < (Number(c.proofs) || 0); k++) b.delete(dbx.ref(`claimProofs/${c.id}_${k}`));
+  if (canDeleteOwnClaim(c)) b.delete(dbx.ref('claims/' + c.id));
+  else b.update(dbx.ref('claims/' + c.id), {status: 'cancelled', cancelledAt: Date.now()});
+  b.set(dbx.ref('claimQuota/' + c.uid), {open: arrayRemove(c.id)}, {merge: true});
+  await b.commit();
+}
+
+/* v9: صلاحيات تمنع تجاوز الموافقتين للأغراض الثمينة (القواعد تفرضها أيضاً، والواجهة تخفي أزرارها):
+   تغيير التصنيف من ثمين أو إليه، والتسليم المباشر لغرض ثمين: للإدارة فقط.
+   الحذف: للإدارة، أو للموظف إن كان مثالاً، أو متاحاً سُجّل قبل أقل من 24 ساعة وليس ثميناً (خطأ إدخال) */
+export const canChangeCat = (from, to) => S.isAdmin || from === to || (!isHighValue(from) && !isHighValue(to));
+export const canDirectReturn = i => S.isAdmin || !isHighValue(i?.cat);
+export const canDeleteItem = i => !!i && (S.isAdmin || i.sample === true
+  || (i.status === 'available' && typeof i.createdAt === 'number' && i.createdAt > Date.now() - 864e5 && !isHighValue(i.cat)));
+
+/* v9: تعديل غرض من نموذج الموظف: batch واحد فيه update للحقول المعدّلة فقط (لا status ولا reservedFor ولا returnedAt
+   ولا disposal)، والتفاصيل السرية كاملة، وقيد «تعديل» في السجل */
+export async function editItem(i, patch, secret){
+  for (const k of ['status', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt', 'officeId', 'createdBy', 'createdAt', 'ref']) delete patch[k];
+  if (patch.cat && !canChangeCat(i.cat, patch.cat)) fail(t('wf.hvCatAdmin'));
+  const b = dbx.batch();
+  itemUpdate(b, i, {...patch, updatedAt: Date.now()}, {...secret, officeId: i.officeId});
+  log(b, i.officeId, 'edit', {itemId: i.id});
+  await commit(b);
 }
 
 /* إنهاء الحجز: انتهت مهلة الاستلام أو قرار الموظف. الطلب «انتهى» والغرض متاح */
@@ -255,6 +291,7 @@ export async function setItemStatus(i, to, note = ''){
       closeClaim(b, held, {status: 'expired', note: tAr('sys.madeAvailable'), decidedAt: now, decidedBy: S.uid});
     }
   } else if (to === 'returned'){
+    if (!canDirectReturn(i)) fail(t('wf.hvDirectAdmin'));
     if (String(note).trim().length < 6) fail(t('wf.needHandoverNote'));
     patch.returnedAt = now;
     secret = {...secretOf(i), handoverNote: String(note).slice(0, 600)};
@@ -318,6 +355,7 @@ export async function disposeItems(items, method, note = ''){
 /* حذف غرض: تُلغى طلباته المفتوحة، وتُحذف صوره وتفاصيله السرية، ثم الغرض نفسه، في batch واحد.
    القواعد ترفض حذف مستند غير موجود، لذلك نضيف الموجود فقط. */
 export async function deleteItem(i){
+  if (!canDeleteItem(i)) fail(t('wf.cantDelete'));
   const b = dbx.batch();
   const skippedOwn = closeOthers(b, i.id, '', 'cancelled', tAr('sys.deleted'));
   if (pubPhoto(i)) b.delete(dbx.ref('itemPhotos/' + i.id));

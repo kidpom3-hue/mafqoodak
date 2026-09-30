@@ -111,7 +111,7 @@ python -m http.server 8000
 - «أضف حقل رقم الغرفة عند تسجيل المفقود»
 - «اجعل اللون الأساسي أزرق»
 
-يقرأ Claude ملف `CLAUDE.md` ليفهم بنية المشروع، ثم يعدّل الكود ويرفع التغييرات إلى المستودع. تظهر التعديلات على الرابط خلال دقيقة تقريباً.
+يقرأ Claude ملف `.claude/CLAUDE.md` ليفهم بنية المشروع، ثم يعدّل الكود ويرفع التغييرات إلى المستودع. تظهر التعديلات على الرابط خلال دقيقة تقريباً.
 
 ---
 
@@ -285,22 +285,28 @@ App Check يضيف طبقة أخرى: يتأكد أن الطلبات تأتي م
   - سياسة CSP تمنع أي سكربت مضمّن، والتطبيق لا يُعرض داخل إطار في موقع آخر.
 - نتائج الفحص الكامل في [`docs/AUDIT.md`](docs/AUDIT.md).
 
-## إعدادات أمان يدوية في Firebase وGoogle Cloud (المرحلة H7)
-هذه لا يستطيع الكود فعلها عنك. نفّذها بالترتيب:
-1. **App Check:**
+## إعدادات أمان يدوية في Firebase وGoogle Cloud (حُدّثت في H12، قواعد v9)
+هذه لا يستطيع الكود فعلها عنك. نفّذها بالترتيب بعد دمج H12:
+1. **نشر قواعد v9:**
+   - Firebase Console ← Firestore Database ← Rules ← الصق `firestore.rules` كاملاً ← **Publish**.
+   - تأكد أن أول سطر تعليق فيها يقول «الإصدار v9».
+   - بدون النشر يُرفض إرسال طلبات الاستلام الجديدة، لأنها تُنشئ `claimCodes`.
+2. **App Check:**
    - أنشئ مفتاح reCAPTCHA v3 للنطاق `kidpom3-hue.github.io` (الخطوات في قسم App Check أعلاه).
    - ضع مفتاح الموقع في `SETTINGS.appCheck.siteKey` في `js/config.js`.
    - راقب أسبوعاً في Firebase Console ← App Check (نسبة الطلبات الموثّقة)، ثم فعّل **Enforce** لـ Firestore وAuthentication.
-   - بدونه يستطيع أي سكربت يستخدم المفاتيح العامة استهلاك حصة القراءة المجانية (50 ألف قراءة يومياً) فيتوقف الموقع حتى اليوم التالي.
-2. **تقييد مفتاح API:**
+   - بدونه يستطيع أي سكربت يستخدم المفاتيح العامة استهلاك حصة القراءة المجانية (50 ألف قراءة يومياً)، فيتوقف الموقع حتى اليوم التالي.
+3. **تقييد مفتاح API:**
    - Google Cloud Console ← APIs & Services ← **Credentials** ← افتح مفتاح `Browser key` الخاص بالمشروع.
-   - Application restrictions ← **HTTP referrers**، وأضف: `kidpom3-hue.github.io/*` و`mafqoodak-50269.firebaseapp.com/*` و`localhost`.
-3. **الدخول (Authentication ← Settings):**
-   - في **Authorized domains** أبقِ النطاقات الثلاثة فقط: `kidpom3-hue.github.io` و`mafqoodak-50269.firebaseapp.com` و`localhost`.
+   - Application restrictions ← **HTTP referrers**، وأضف فقط: `kidpom3-hue.github.io/*` و`mafqoodak-50269.firebaseapp.com/*`.
+4. **الدخول (Authentication ← Settings):**
    - فعّل **Email enumeration protection**.
+   - في **Authorized domains** احذف `localhost`، وأبقِ `kidpom3-hue.github.io` و`mafqoodak-50269.firebaseapp.com`.
+   - للتجربة على جهازك أضف `localhost` مؤقتاً ثم احذفه.
    - في **Password policy** اجعل الحد الأدنى 8 أحرف.
-4. **EmailJS (قبل تفعيله):** في لوحة EmailJS اجعل **Allowed origins** نطاق الموقع فقط، وضع حداً للإرسال.
-5. **بعد نشر القواعد:** قارن القواعد المنشورة في Firebase Console ← Firestore ← Rules بملف `firestore.rules` في المستودع (أول سطر تعليق فيهما: «الإصدار v6»).
+5. **بريد الكلية (اختياري):** إن أردت اشتراط بريد الكلية في طلبات مكتب `tc-ahsa`: الإدارة ← المواقع ← تعديل ← «نطاق بريد الكلية لطلب الاستلام» (مثل `tvtc.edu.sa`).
+6. **EmailJS (قبل تفعيله):** في لوحة EmailJS اجعل **Allowed origins** نطاق الموقع فقط (`https://kidpom3-hue.github.io`)، وضع حداً للإرسال.
+7. **تحقق من عدم نشر ملفات المطوّر:** بعد نشر الموقع شغّل `curl -I https://kidpom3-hue.github.io/mafqoodak/CLAUDE.md`، ويجب أن يرجع `404`.
 
 ## إثبات الملكية (المرحلة H9، قواعد v7)
 **بعد دمج هذه المرحلة انشر `firestore.rules` من Firebase Console ← Firestore Database ← Rules ← Publish.** بدون النشر يُرفض إرسال طلبات الاستلام الجديدة.
@@ -335,7 +341,7 @@ App Check يضيف طبقة أخرى: يتأكد أن الطلبات تأتي م
 4. يُسجَّل التصدير في «سجل العمليات» (من صدّره ومتى).
 
 ## ما يُنشر على الموقع (المرحلة H8)
-ملف `_config.yml` يمنع GitHub Pages من نشر ملفات المطوّر: `tools` و`docs` و`CLAUDE.md` و`README.md` و`firestore.rules` و`firestore.indexes.json` و`firebase.json`. تبقى كلها في المستودع كما هي. للتأكد بعد النشر، افتح `https://kidpom3-hue.github.io/mafqoodak/CLAUDE.md`: يجب أن تظهر صفحة 404، والموقع يعمل.
+ملف `_config.yml` يمنع GitHub Pages من نشر ملفات المطوّر: `tools` و`docs` و`README.md` و`firestore.rules` و`firestore.indexes.json` و`firebase.json`. وتعليمات Claude في `.claude/CLAUDE.md` لا تُنشر أصلاً (Jekyll يتجاهل المجلدات التي تبدأ بنقطة). تبقى كلها في المستودع كما هي. للتأكد بعد النشر: `curl -I https://kidpom3-hue.github.io/mafqoodak/CLAUDE.md` و`…/.claude/CLAUDE.md` يجب أن يرجعا 404، والموقع يعمل.
 
 ## فحص الجودة (للمطوّر)
 شغّلها كلها قبل كل Pull Request:

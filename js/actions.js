@@ -1,7 +1,7 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
 import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS } from './constants.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
-import { $, esc, today, relDay, pill, sha, genCode, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
+import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
 import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId } from './state.js';
 import * as wf from './workflow.js';
@@ -347,6 +347,7 @@ async function submitForm(form){
     // v7: مكتب يشترط بريد الكلية
     if (!claimEmailOk(S.offices.find(o => o.id === officeId), S.me?.email)){ busy(form, false); return formErr(form, t('cl.domainNeed')); }
     const proofs = (FORM.proofs || []).slice(0, 2);
+    // v9: رمز 8 أحرف؛ بصمته في claimCodes (لا يقرؤها أحد) تُنشأ مع الطلب، والطلب نفسه بلا codeHash
     const code = genCode(); const codeHash = await sha(id + ':' + code);
     LS.set('codes', {...LS.get('codes', {}), [id]: code});
     await dbx.set('users/' + S.uid + '/private/codes', {codes: {[id]: code}}, {merge: true}).catch(e => console.warn(e));
@@ -361,10 +362,11 @@ async function submitForm(form){
         lostSpot: val('spot'), bldg, room, lostDate: val('lostDate'),
         ...(val('reportId') ? {reportId: val('reportId').slice(0, 100)} : {}),
         ...(proofs.length ? {proofs: proofs.length} : {}),
-        status: 'pending', codeHash, createdAt},
+        status: 'pending', createdAt},
         // v7: في العملية نفسها: الحصة (قائمة الطلبات الجارية ووقت آخر طلب في هذا التصنيف) وصور الإثبات
         (b, ref) => {
           b.set(ref('claimQuota/' + S.uid), {open: arrayUnion(id), lastByCat: {[catId]: serverTimestamp()}}, {merge: true});
+          b.set(ref('claimCodes/' + id), {uid: S.uid, hash: codeHash});
           proofs.forEach((data, k) => b.set(ref(`claimProofs/${id}_${k}`), {claimId: id, officeId, uid: S.uid, data, createdAt: Date.now()}));
         });
     } catch (e){
@@ -437,8 +439,8 @@ async function submitForm(form){
     if (pubColor && photo && !redo) data.pubColor = pubColor;
     if (fromReport) data.fromReport = fromReport;   // ربط الغرض بالبلاغ الذي قُبل
     if (fromFound) data.fromFound = fromFound;      // ربط الغرض بإشعار التسليم
-    // التعديل يعيد كتابة المستند كاملاً: نحافظ على الحقول التي لا يعرضها النموذج
-    for (const k of ['fromReport', 'fromFound', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt']) if (existing?.[k] !== undefined) data[k] = existing[k];
+    // v9: التعديل update للحقول التي يعرضها النموذج فقط (لا الحالة ولا الحجز ولا التسليم ولا التصرّف) — انظر editPatch أدناه
+    if (existing && !wf.canChangeCat(existing.cat, catId)){ busy(form, false); return formErr(form, t('wf.hvCatAdmin')); }
     // التفاصيل السرية: لموظفي المكتب فقط
     // اللون والماركة فارغان إن لم يكونا في التصنيف (حتى لا تبقى قيمة قديمة بعد تغيير التصنيف)، وإجابات أسئلته في details
     const q = claimOf(catId), {details} = readDetails(form, catId, 'item');
@@ -455,8 +457,11 @@ async function submitForm(form){
     }
     // الترتيب: items أولاً (القواعد تتحقق من مكتبه)، ثم itemSecrets والصور
     const quick = !!form.dataset.quick;   // H9: الإضافة السريعة (رقم القيد يظهر في نافذة «أضف آخر» بدل الرسالة)
-    const ok = await write(() => dbx.set('items/' + id, data), existing ? t('a.itemUpdated') : quick ? '' : t('a.itemSaved', {ref: data.ref}));
-    if (ok) await write(() => dbx.set('itemSecrets/' + id, secret));
+    // v9: الغرض الموجود: batch واحد (update لحقوله العامة المعدّلة + التفاصيل السرية + قيد «تعديل»)
+    const editPatch = {cat: data.cat, sub: data.sub, title: data.title, foundDate: data.foundDate, photo: data.photo, pubColor: data.pubColor ?? deleteField()};
+    const ok = existing ? await write(() => wf.editItem(existing, editPatch, secret), t('a.itemUpdated'))
+      : await write(() => dbx.set('items/' + id, data), quick ? '' : t('a.itemSaved', {ref: data.ref}));
+    if (ok && !existing) await write(() => dbx.set('itemSecrets/' + id, secret));
     if (ok && redo){
       // الأصل الواضح للموظفين، ثم النسخة العامة حسب الاختيار: واضحة، أو مموّهة حقاً (24px)، أو لا شيء
       const src = original || await getPhoto(existing?.photo === true ? id : 'p_' + id);
@@ -479,12 +484,12 @@ async function submitForm(form){
     // H9: مدة الإضافة (من فتح النموذج إلى الحفظ) بالمللي ثانية، تُسجَّل مع قيد الإنشاء لمتوسطها في الإحصاءات
     const ms = existing ? 0 : Math.max(0, Date.now() - (FORM.t0 || Date.now()));
     if (quick){ saveAddPrefs({cat: catId, spot: val('spot')}); LAST_ADD.v = {spot: val('spot'), bldg, room, date: data.foundDate}; }
-    const linked = await write(() => wf.itemSaved({...data, id}, {created: !existing, fromReport, fromFound, ms}),
+    if (existing){ back(); return; }   // قيد «تعديل» كُتب مع التعديل نفسه (wf.editItem)
+    const linked = await write(() => wf.itemSaved({...data, id}, {created: true, fromReport, fromFound, ms}),
       fromReport ? t('a.reportAccepted') : fromFound ? t('hi.receivedToast') : '');
     // بريد اختياري (EmailJS): لصاحب البلاغ بأن المكتب رشّح له غرضاً، وللواجد بأن المكتب استلم ما وجده
     if (linked && fromReport) emailUser(S.reports.find(r => r.id === fromReport)?.uid);
     if (linked && fromFound) emailUser(S.found.find(f => f.id === fromFound)?.uid);
-    if (existing){ back(); return; }
     // المطابقة على جهة الموظف تشمل التفاصيل السرية
     // البلاغات القديمة (أكثر من 60 يوماً دون تجديد) لا تدخل في المطابقة
     const matches = S.reports.filter(r => r.status === 'open' && !isStale(r) && r.id !== fromReport && matchScore(r, {...data, ...secret, id}) >= MATCH_MIN);
@@ -539,21 +544,28 @@ async function submitForm(form){
   }
 
   if (kind === 'verify'){
-    const c = S.claims.find(x => x.id === form.dataset.id); const code = latinDigits(val('code')).replace(/\D/g, '');
+    // v9: الرمز 8 أحرف (XXXX-XXXX) أو 6 أرقام للطلبات القديمة؛ يُطبَّع ويُرسل للخادم، والقواعد تتحقق من بصمته
+    const c = S.claims.find(x => x.id === form.dataset.id); const code = normPickup(val('code'));
     if (!c) return;
-    if (code.length !== 6) return formErr(form, t('a.code6'));
+    if (code.length !== 8 && !/^\d{6}$/.test(code)) return formErr(form, t('a.code8'));
     // هوية المستلم الفعلي: «طابقتُ البطاقة» إلزامية، والاسم وآخر 4 أرقام (قد يكون مفوّضاً عن صاحب الطلب)
     if (!fd.get('matched')) return formErr(form, t('a.needMatched'));
     if (val('rname').length < 3 || !/^\d{4}$/.test(val('rlast4'))) return formErr(form, t('wf.needReceiver'));
-    if (await sha(c.id + ':' + code) !== c.codeHash) return formErr(form, t('a.codeWrong'));
     busy(form, true);
     // التسليم فقط للطلب الذي حُجز له الغرض، وتُغلق بقية طلباته في العملية نفسها
     let res = null; const it = item(c.itemId);   // قبل التسليم: الغرض المُسلَّم يخرج من قائمة النشطة
     // v7: فحوص التسليم حسب التصنيف: كلها معلّمة، وتُحفظ مفاتيحها في السجل
     const checks = fd.getAll('hc').map(String), need = handoverChecks(it?.cat);
     if (!need.every(k => checks.includes(k))){ busy(form, false); return formErr(form, t('ho.needAll')); }
-    const ok = await write(async () => { res = await wf.verifyHandover(c, {name: val('rname'), last4: val('rlast4')}, need); }, t('a.handedOver'));
-    busy(form, false); if (!ok) return;
+    let wrong = false;
+    const ok = await write(async () => {
+      try { res = await wf.verifyHandover(c, {name: val('rname'), last4: val('rlast4')}, need, code); }
+      catch (e){ if (e?.msg === t('a.codeWrong')){ wrong = true; return; } throw e; }
+    }, '');
+    busy(form, false);
+    if (wrong) return formErr(form, t('a.codeWrong'), 'code');
+    if (!ok) return;
+    toast(t('a.handedOver'));
     emailFinder(it);
     closeSheet(); refreshCounts(); ownNotice(res); return;
   }
@@ -583,11 +595,10 @@ async function submitForm(form){
           ...(c.answer ? {answer: ''} : {}), ...(c.claimantName ? {claimantName: ''} : {}), ...(c.idLast4 ? {idLast4: ''} : {}), ...(c.handoverNote ? {handoverNote: ''} : {}), ...(c.details ? {details: {}} : {}), ...(c.ratingNote ? {ratingNote: ''} : {}), anonymizedAt: Date.now()});
         else if (c.status === 'pending'){
           // v7: الطلب قيد المراجعة يُحذف مع صور إثباته، ويُزال من حصة الطلبات الجارية، في عملية واحدة
-          const b = dbx.batch();
-          for (let k = 0; k < (Number(c.proofs) || 0); k++) b.delete(dbx.ref(`claimProofs/${c.id}_${k}`));
-          b.delete(dbx.ref('claims/' + c.id));
-          b.set(dbx.ref('claimQuota/' + user.uid), {open: arrayRemove(c.id)}, {merge: true});
-          await b.commit();
+          // v9: بعد سؤال الموظف أو موافقة أولى لا يُحذف: يُلغى، ثم تُمسح بياناته الشخصية كالمنتهي
+          await wf.withdrawClaim(c);
+          if (!wf.canDeleteOwnClaim(c)) await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '',
+            ...(c.answer ? {answer: ''} : {}), ...(c.claimantName ? {claimantName: ''} : {}), ...(c.idLast4 ? {idLast4: ''} : {}), ...(c.details ? {details: {}} : {}), anonymizedAt: Date.now()});
         }
       }
       // إشعارات التسليم: المستلَم يبقى سجلاً للمكتب بلا بيانات صاحبه، والبقية تُحذف
@@ -901,6 +912,11 @@ const ACT = {
   removePhoto(el){ clearPhoto(el.closest('form')); },
   aiFill(){ if (aiReady()) aiFill(); },
   // H9: الإضافة السريعة: فتح الكاميرا، أو المتابعة بلا صورة، أو «أضف آخر» بعد الحفظ (يبقى المكان والتاريخ)
+  // v9: سحب الطلب قيد المراجعة من «طلباتي» (قبل سؤال الموظف يُحذف، وبعده يُلغى)
+  withdrawClaim(el){
+    const c = S.myClaims.find(x => x.id === el.dataset.id); if (!c || c.status !== 'pending') return;
+    confirmSheet(t('cl.withdrawQ'), t(wf.canDeleteOwnClaim(c) ? 'cl.withdrawBody' : 'cl.withdrawCancelBody'), t('cl.withdraw'), () => write(() => wf.withdrawClaim(c), t('cl.withdrawn')), true);
+  },
   // H11: البطاقة المجمّعة في المفقودات: «أثبت أنه لك» يفتح الطلب بالوصف (بعد الدخول)
   gclaim(el){ const cat = el.dataset.cat; if (!S.uid) return go('login', {next: {name: 'gclaim', params: {cat}}}); go('gclaim', {cat}); },
   // H11 (الموظف): ربط الطلب المجمّع بالغرض المختار، أو إرسال سؤال التحقق المقترح بضغطة
@@ -946,7 +962,8 @@ const ACT = {
   // تغيير الحالة يدوياً: متاح، أو سُلّم مباشرة (بملاحظة تسليم)، أو مؤرشف. «محجوز» يأتي من قبول طلب فقط
   itemStatus(el){
     const i = item(el.dataset.id); if (!i) return;
-    const opts = ['available', 'returned', 'archived'];
+    // v9: التسليم المباشر لغرض ثمين للإدارة فقط (بلا رمز ولا موافقتين)
+    const opts = ['available', 'returned', 'archived'].filter(k => k !== 'returned' || wf.canDirectReturn(i));
     openSheet(`<h2>${t('a.statusTitle', {ref: esc(i.ref)})}</h2><div class="list">${opts.map(k => `<button class="opt" data-act="setStatus" data-id="${esc(i.id)}" data-v="${k}" ${k === i.status ? 'disabled aria-disabled="true"' : ''}>${pill(ITEM_STATUS, k)}${k === i.status ? `<span class="muted">${t('a.current')}</span>` : ''}</button>`).join('')}</div>
       <p class="hint">${t('a.statusHint', {returned: statusLabel(ITEM_STATUS.returned)})}</p><button class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button>`);
   },
@@ -1103,7 +1120,7 @@ const ACT = {
         <dt>${t('st.cmpLast4')}</dt><dd>${c.idLast4 ? `<b dir="ltr">${esc(c.idLast4)}</b>` : `<span class="muted">${t('st.notSaid')}</span>`}</dd></dl>
       <div class="note warn">${icon('idcard')}<span>${t('a.matchId')}</span></div>${tip}
       <form data-form="verify" data-id="${esc(c.id)}" data-allcheck="1" novalidate>
-        <input name="code" class="input code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" aria-label="${t('mine.code')}">
+        <input name="code" class="input code-input" dir="ltr" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="9" placeholder="XXXX-XXXX" aria-label="${t('mine.code')}">
         <div class="two">
           <div class="field"><label for="vf-name">${t('a.receiverName')}</label><input id="vf-name" name="rname" class="input" maxlength="120" autocomplete="off" value="${esc(c.claimantName || '')}"></div>
           <div class="field"><label for="vf-4">${t('a.last4')}</label><input id="vf-4" name="rlast4" class="input" inputmode="numeric" maxlength="4" dir="ltr" autocomplete="off" value="${esc(c.idLast4 || '')}"></div>
@@ -1257,7 +1274,8 @@ export function bindEvents(){
     if (t.name === 'ratingNote'){ const f = t.closest('form'); if (f) (RATE_DRAFT[f.dataset.id] ||= {}).note = t.value; }
     if (t.id === 'cq'){ S.claimQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffClaims(); hydrate(); }, 120); }
     if (t.id === 'sq'){ S.staffQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffItems(); hydrate(); }, 120); }
-    if (t.name === 'code' && t.classList.contains('code-input')) t.value = latinDigits(t.value).replace(/\D/g, '').slice(0, 6);
+    // v9: رمز الاستلام: أحرف كبيرة وأرقام لاتينية، وشرطة بعد الأحرف الأربعة الأولى (الرموز القديمة: 6 أرقام)
+    if (t.name === 'code' && t.classList.contains('code-input')){ const v = normPickup(t.value); t.value = /^\d{1,6}$/.test(v) || v.length <= 4 ? v : v.slice(0, 4) + '-' + v.slice(4); }
     // خانات الأرقام في أسئلة التصنيف: الأرقام الهندية إلى لاتينية، وحذف ما ليس رقماً
     if (t.classList.contains('num-in')) t.value = detailValue({type: 'num'}, t.value).slice(0, Number(t.maxLength) > 0 ? t.maxLength : 9);
     if (t.classList.contains('code-in')) t.value = normCode(t.value);

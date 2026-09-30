@@ -3,6 +3,7 @@
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, writeBatch, collection, query, where, deleteField, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
 import fs from 'fs';
+import { createHash } from 'crypto';
 
 const env = await initializeTestEnvironment({projectId: 'demo-mafqoodak',
   firestore: {rules: fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8'), host: '127.0.0.1', port: 8085}});
@@ -32,7 +33,10 @@ const as = (uid, verified = true) => { const d = env.authenticatedContext(uid, {
 const alice = as('alice'), bob = as('bob'), carol = as('carol'), dave = as('dave', false), A = as('staffA'), B = as('staffB'), anon = env.unauthenticatedContext().firestore();
 const R = []; let fails = 0;
 async function t(name, p, ok = true){ try { await (ok ? assertSucceeds(p) : assertFails(p)); R.push('✔ ' + name); } catch (e){ fails++; R.push('✘ ' + name + ' — ' + String(e.message || e).slice(0, 160)); } }
-const claim = (item, uid, extra = {}) => ({itemId: item, officeId: O, uid, proof: 'غلاف أحمر وخلفية قطة', color: 'black', brand: '', lostSpot: 'المكتبة', bldg: '', room: '', lostDate: '2026-09-19', status: 'pending', codeHash: 'a'.repeat(64), createdAt: now, ...extra});
+const claim = (item, uid, extra = {}) => ({itemId: item, officeId: O, uid, proof: 'غلاف أحمر وخلفية قطة', color: 'black', brand: '', lostSpot: 'المكتبة', bldg: '', room: '', lostDate: '2026-09-19', status: 'pending', createdAt: now, ...extra});
+// v9: رمز الاستلام: بصمته في claimCodes/{claimId} = sha256(رقم الطلب:الرمز) بأحرف صغيرة، والموظف يكتب الرمز في handoverCode عند التسليم
+const CODE = 'ACDE3467';
+const H = (id, code = CODE) => createHash('sha256').update(id + ':' + code).digest('hex');
 const logDoc = (by, action, x = {}) => ({officeId: O, itemId: x.itemId || '', claimId: x.claimId || '', reportId: '', action, by, at: now, note: x.note || ''});
 const batch = (db, fn) => { const b = writeBatch(db); fn(b, p => doc(db, p)); return b.commit(); };
 /* H7: إنشاء بلاغ أو إشعار تسليم أو طلب استلام كما في التطبيق: الوثيقة + rate/{uid} بوقت الخادم في batch واحد.
@@ -43,7 +47,7 @@ const setRate = async (uid, ms) => env.withSecurityRulesDisabled(async c => { aw
 const setQuota = (uid, q) => env.withSecurityRulesDisabled(async c => { await setDoc(doc(c.firestore(), 'claimQuota/' + uid), q); });
 // (withSecurityRulesDisabled لا يرجع قيمة الدالة، فنحفظها في متغير)
 async function itemCat(id){ let cat = 'bags'; await env.withSecurityRulesDisabled(async c => { cat = (await getDoc(doc(c.firestore(), 'items/' + id))).data()?.cat || 'bags'; }); return cat; }
-async function mk(db, path, data, {keepQuota = false} = {}){
+async function mk(db, path, data, {keepQuota = false, noCode = false} = {}){
   const uid = UID.get(db) || 'x';
   await setRate(uid, Date.now() - 60000);
   const isClaim = path.startsWith('claims/');
@@ -51,7 +55,8 @@ async function mk(db, path, data, {keepQuota = false} = {}){
   // v8: الطلب المجمّع تصنيفه مكتوب فيه (بلا غرض)
   const cat = isClaim ? (data.grouped ? data.cat : await itemCat(data.itemId)) : '';
   return batch(db, (b, r) => { b.set(r(path), data); b.set(r('rate/' + uid), {at: serverTimestamp()});
-    if (isClaim) b.set(r('claimQuota/' + uid), {open: arrayUnion(path.split('/')[1]), lastByCat: {[cat]: serverTimestamp()}}, {merge: true}); });
+    if (isClaim) b.set(r('claimQuota/' + uid), {open: arrayUnion(path.split('/')[1]), lastByCat: {[cat]: serverTimestamp()}}, {merge: true});
+    if (isClaim && !noCode) b.set(r('claimCodes/' + path.split('/')[1]), {uid, hash: H(path.split('/')[1])}); });
 }
 let L = 0; const lid = () => 'log' + (++L);
 
@@ -81,7 +86,7 @@ await t('موظف آخر يقبل طلبه (مع حجز الغرض)', batch(B, (
 
 // ── 3) التسليم: الطلب المحجوز له + إغلاق المنافس + السجل ──
 await t('التسليم في batch: done + returned + رفض المنافس + سجل', batch(B, (b, r) => {
-  b.update(r('claims/i1_alice'), {status: 'done', doneAt: now, doneBy: 'staffB'});
+  b.update(r('claims/i1_alice'), {status: 'done', doneAt: now, doneBy: 'staffB', handoverCode: CODE});
   b.update(r('items/i1'), {status: 'returned', returnedAt: now, updatedAt: now});
   b.update(r('claims/i1_bob'), {status: 'rejected', note: 'سُلّم الغرض لصاحبه بعد التحقق', decidedAt: now, decidedBy: 'staffB'});
   b.set(r('logs/' + lid()), logDoc('staffB', 'handover', {itemId: 'i1', claimId: 'i1_alice'}));
@@ -195,7 +200,7 @@ await t('D: «مكتمل» دون حجز الغرض له مرفوض', batch(A, (
   b.update(r('items/i8'), {status: 'returned', returnedAt: now, updatedAt: now});
 }), false);
 await t('D: التسليم بالرمز (done + returned + handoverNote في الطلب) مقبول', batch(B, (b, r) => {
-  b.update(r('claims/i7_alice'), {status: 'done', doneAt: now, doneBy: 'staffB', handoverNote: 'استلمه: أليس محمد — آخر 4: 1234'});
+  b.update(r('claims/i7_alice'), {status: 'done', doneAt: now, doneBy: 'staffB', handoverNote: 'استلمه: أليس محمد — آخر 4: 1234', handoverCode: CODE});
   b.update(r('items/i7'), {status: 'returned', returnedAt: now, updatedAt: now});
   b.update(r('claims/i7_bob'), {status: 'rejected', note: 'x', decidedAt: now, decidedBy: 'staffB'});
   b.set(r('logs/' + lid()), logDoc('staffB', 'handover', {itemId: 'i7', claimId: 'i7_alice'}));
@@ -432,7 +437,8 @@ await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
   await setDoc(doc(d, 'offices/dom'), {name: 'كلية', active: true, createdAt: 1, claimDomains: ['tvtc.edu.sa'], claimDomainRe: '.*@([a-z0-9-]+[.])*tvtc[.]edu[.]sa'});
   await setDoc(doc(d, 'items/d1'), {...pub('d1'), officeId: 'dom'});
   // طلب قديم (قبل v7) على غرض ثمين، مقبول بلا approvals ولا حصة
-  await setDoc(doc(d, 'claims/lg1_carol'), claim('lg1', 'carol', {status: 'approved', decidedAt: now, decidedBy: 'staffA', pickupBy: now + 864e5}));
+  // طلب قديم (قبل v9): بصمة رمزه (6 أرقام) في codeHash بالطلب نفسه، بلا claimCodes
+  await setDoc(doc(d, 'claims/lg1_carol'), claim('lg1', 'carol', {status: 'approved', decidedAt: now, decidedBy: 'staffA', pickupBy: now + 864e5, codeHash: H('lg1_carol', '482913')}));
   await setDoc(doc(d, 'items/lg1'), {...pub('lg1', 'phones'), status: 'reserved', reservedFor: 'lg1_carol'}); });
 const qu = as('qu');
 const IMG = 'data:image/jpeg;base64,' + 'A'.repeat(100);
@@ -459,7 +465,8 @@ await setQuota('bob', {open: []}); await setRate('bob', Date.now() - 60000);
 await t('v7-3: طلب مع صورة إثبات في batch واحد', batch(bob, (b, r) => {
   b.set(r('claims/p1_bob'), claim('p1', 'bob', {proofs: 1})); b.set(r('rate/bob'), {at: serverTimestamp()});
   b.set(r('claimQuota/bob'), {open: arrayUnion('p1_bob'), lastByCat: {bags: serverTimestamp()}}, {merge: true});
-  b.set(r('claimProofs/p1_bob_0'), {claimId: 'p1_bob', officeId: O, uid: 'bob', data: IMG, createdAt: now}); }));
+  b.set(r('claimProofs/p1_bob_0'), {claimId: 'p1_bob', officeId: O, uid: 'bob', data: IMG, createdAt: now});
+  b.set(r('claimCodes/p1_bob'), {uid: 'bob', hash: H('p1_bob')}); }));
 await t('v7-3: صورة ثانية وعدد الصور 1 مرفوضة', setDoc(doc(bob, 'claimProofs/p1_bob_1'), {claimId: 'p1_bob', officeId: O, uid: 'bob', data: IMG, createdAt: now}), false);
 await t('v7-3: شخص آخر لا يضيف صورة لطلب غيره', setDoc(doc(carol, 'claimProofs/p1_bob_0'), {claimId: 'p1_bob', officeId: O, uid: 'carol', data: IMG, createdAt: now}), false);
 await t('v7-3: صاحب الطلب يقرأ صورته', getDoc(doc(bob, 'claimProofs/p1_bob_0')));
@@ -488,7 +495,7 @@ await t('v7-5: الإدارة موافقة ثانية (مكتب بموظف وا�
   b.update(r('claims/hv2_carol'), {status: 'approved', approvals: ['staffA', 'owner'], decidedAt: now, decidedBy: 'owner', pickupBy: now});
   b.update(r('items/hv2'), {status: 'reserved', reservedFor: 'hv2_carol', updatedAt: now}); })));
 await t('v7-5: طلب قديم مقبول على غرض ثمين بلا approvals يُسلَّم', batch(A, (b, r) => {
-  b.update(r('claims/lg1_carol'), {status: 'done', doneAt: now, doneBy: 'staffA', handoverNote: 'كارول — 1234'});
+  b.update(r('claims/lg1_carol'), {status: 'done', doneAt: now, doneBy: 'staffA', handoverNote: 'كارول — 1234', handoverCode: '482913'});
   b.update(r('items/lg1'), {status: 'returned', returnedAt: now, updatedAt: now}); }));
 // 6) نطاق بريد الكلية
 const stu = withEmail('stu', 'Ali@STU.tvtc.edu.sa'), evil = withEmail('evil', 'x@eviltvtc.edu.sa'), gm = withEmail('gm', 'x@gmail.com');
@@ -514,7 +521,7 @@ await env.withSecurityRulesDisabled(async c => {
   await setDoc(doc(d, 'items/mx'), {...pub('mx', 'cash'), officeId: 'dom'});
 });
 const gc = (uid, cat = 'cash', at = now, x = {}) => ({itemId: '', cat, grouped: true, officeId: O, uid, proof: '', color: '', brand: '', lostSpot: 'المكتبة', bldg: '', room: '',
-  lostDate: '2026-09-19', claimantName: 'اسم كامل', idLast4: '1234', details: {amount: '150'}, status: 'pending', codeHash: 'a'.repeat(64), createdAt: at, ...x});
+  lostDate: '2026-09-19', claimantName: 'اسم كامل', idLast4: '1234', details: {amount: '150'}, status: 'pending', createdAt: at, ...x});
 const gid = (uid, cat, at) => `g_${uid}_${cat}_${at}`;
 const T1 = now, T2 = now + 1, T3 = now + 2;
 await t('v8: طلب مجمّع للنقود (بلا غرض) مقبول', mk(alice, 'claims/' + gid('alice', 'cash', T1), gc('alice', 'cash', T1)));
@@ -551,12 +558,125 @@ await t('v8: قبول بموافقة واحدة مرفوض (ثمين)', gApprove
 await t('v8: القبول الثاني يكتب itemId المربوط ويحجز الغرض', gApprove(B, 'staffB', 'm1', ['staffA', 'staffB']));
 await t('v8: بعد القبول لا يتغير itemId', updateDoc(doc(A, 'claims/' + G), {itemId: 'm2'}), false);
 await t('v8: التسليم بالرمز للطلب المجمّع بعد قبوله', batch(A, (b, r) => {
-  b.update(r('claims/' + G), {status: 'done', doneAt: now, doneBy: 'staffA', handoverNote: 'أليس — 1234'});
+  b.update(r('claims/' + G), {status: 'done', doneAt: now, doneBy: 'staffA', handoverNote: 'أليس — 1234', handoverCode: CODE});
   b.update(r('items/m1'), {status: 'returned', returnedAt: now, updatedAt: now}); }));
 // رفض وانتهاء: يبقيان متاحين دون ربط
 const G2 = gid('alice', 'ids', T3);
 await t('v8: رفض طلب مجمّع بلا ربط مع سبب', updateDoc(doc(A, 'claims/' + G2), {status: 'rejected', note: 'لا يطابق', decidedAt: now, decidedBy: 'staffA'}));
 await t('v8: طلب عادي قديم (بلا cat ولا grouped) ما زال يُقرأ', getDoc(doc(A, 'claims/i6_alice')));
+
+// ── v9 (H12): إصلاحات أمنية ومنطقية ──
+const DAY = 864e5;
+await env.withSecurityRulesDisabled(async c => {
+  const d = c.firestore();
+  const put = async (k, x) => { await setDoc(doc(d, 'items/' + k), {...pub(k, x.cat || 'bags'), ...x}); await setDoc(doc(d, 'itemSecrets/' + k), sec); };
+  for (const k of ['k1', 'k2', 'k3', 'k4']) await put(k, {});                          // رمز الاستلام، والإلغاء
+  await put('c1', {cat: 'bags'}); await put('c2', {cat: 'phones'});                    // تغيير التصنيف
+  await put('dh1', {cat: 'phones'}); await put('dh2', {cat: 'bags'});                  // التسليم المباشر
+  await put('del1', {sample: true, createdAt: now - 30 * DAY}); await put('del2', {createdAt: now - 3600e3});
+  await put('del3', {createdAt: now - 3 * DAY}); await put('del4', {cat: 'phones', createdAt: now - 3600e3}); await put('del5', {cat: 'phones', createdAt: now - 3 * DAY});
+  await put('w1', {cat: 'wallets'}); await put('id1', {cat: 'ids'});                  // البطاقات والمحافظ ثمينة
+  await put('rs1', {status: 'reserved', reservedFor: 'rs1_bob'}); await put('rs2', {status: 'reserved', reservedFor: 'rs2_bob'});
+  await setDoc(doc(d, 'claims/rs1_bob'), {...claim('rs1', 'bob'), status: 'approved', pickupBy: now + DAY});
+  await setDoc(doc(d, 'claims/rs2_bob'), {...claim('rs2', 'bob'), status: 'approved', pickupBy: now + DAY});
+  // 3 طلبات منافسة على غرض واحد، لكل منها صورتا إثبات، وحصة كل صاحب طلب
+  await put('cp1', {status: 'reserved', reservedFor: 'cp1_alice'});
+  await setDoc(doc(d, 'claims/cp1_alice'), {...claim('cp1', 'alice'), status: 'approved', pickupBy: now + DAY});
+  await setDoc(doc(d, 'claimCodes/cp1_alice'), {uid: 'alice', hash: H('cp1_alice')});
+  for (const u of ['bob', 'carol', 'qu']){
+    await setDoc(doc(d, `claims/cp1_${u}`), {...claim('cp1', u), proofs: 2});
+    for (const k of [0, 1]) await setDoc(doc(d, `claimProofs/cp1_${u}_${k}`), {claimId: `cp1_${u}`, officeId: O, uid: u, data: IMG, createdAt: now});
+    await setDoc(doc(d, 'claimQuota/' + u), {open: [`cp1_${u}`]});
+  }
+  await setDoc(doc(d, 'reports/rv9'), {officeId: O, uid: 'alice', cat: 'bags', title: 'حقيبتي', status: 'open', createdAt: now - DAY});
+  await setDoc(doc(d, 'foundReports/fv9'), {officeId: O, uid: 'bob', cat: 'bags', status: 'pending', createdAt: now});
+});
+// 1) رمز الاستلام على الخادم
+await t('v9-1: طلب جديد مع بصمة رمزه (claimCodes) في العملية نفسها', mk(alice, 'claims/k1_alice', claim('k1', 'alice')));
+await t('v9-1: طلب جديد بلا claimCodes مرفوض', mk(bob, 'claims/k1_bob', claim('k1', 'bob'), {noCode: true}), false);
+await t('v9-1: طلب جديد فيه codeHash مرفوض', mk(carol, 'claims/k1_carol', claim('k1', 'carol', {codeHash: H('k1_carol')})), false);
+await t('v9-1: بصمة لطلب موجود من قبل مرفوضة', setDoc(doc(alice, 'claimCodes/k1_alice'), {uid: 'alice', hash: H('x')}), false);
+await t('v9-1: بصمة بطول غير 64 مرفوضة', batch(qu, (b, r) => { b.set(r('claimCodes/k2_qu'), {uid: 'qu', hash: 'ab'}); }), false);
+await t('v9-1: صاحب الطلب لا يقرأ بصمة رمزه', getDoc(doc(alice, 'claimCodes/k1_alice')), false);
+await t('v9-1: الموظف لا يقرأ البصمة', getDoc(doc(A, 'claimCodes/k1_alice')), false);
+await t('v9-1: لا تُعدَّل البصمة ولا تُحذف', deleteDoc(doc(alice, 'claimCodes/k1_alice')), false);
+await t('v9-1: قبول k1', approveB(A, 'k1', 'k1_alice', 'staffA'));
+const doneB = (db, item, cid, code) => batch(db, (b, r) => {
+  b.update(r('claims/' + cid), {status: 'done', doneAt: now, doneBy: 'staffB', handoverNote: 'أليس — 1234', ...(code === null ? {} : {handoverCode: code})});
+  b.update(r('items/' + item), {status: 'returned', returnedAt: now, updatedAt: now});
+});
+await t('v9-1: التسليم برمز خاطئ مرفوض', doneB(B, 'k1', 'k1_alice', 'ACDE3468'), false);
+await t('v9-1: التسليم دون handoverCode مرفوض', doneB(B, 'k1', 'k1_alice', null), false);
+await t('v9-1: handoverCode في غير التسليم مرفوض', updateDoc(doc(B, 'claims/k1_alice'), {handoverCode: CODE}), false);
+await t('v9-1: التسليم بالرمز الصحيح (القواعد تحسب sha256)', doneB(B, 'k1', 'k1_alice', CODE));
+// 2) لا تجاوز للموافقتين
+await t('v9-2: الموظف لا يغيّر التصنيف إلى ثمين', updateDoc(doc(A, 'items/c1'), {cat: 'cash', updatedAt: now}), false);
+await t('v9-2: الموظف لا يغيّر التصنيف من ثمين', updateDoc(doc(A, 'items/c2'), {cat: 'bags', updatedAt: now}), false);
+await t('v9-2: الموظف يغيّر بين تصنيفين عاديين', updateDoc(doc(A, 'items/c1'), {cat: 'glasses', updatedAt: now}));
+await t('v9-2: الإدارة تغيّر التصنيف إلى ثمين', updateDoc(doc(owner, 'items/c1'), {cat: 'cash', updatedAt: now}));
+const directB = (db, item) => batch(db, (b, r) => {
+  b.update(r('itemSecrets/' + item), {handoverNote: 'سُلّم مباشرة: فلان — 1234'});
+  b.update(r('items/' + item), {status: 'returned', returnedAt: now, updatedAt: now});
+});
+await t('v9-2: الموظف لا يسلّم غرضاً ثميناً تسليماً مباشراً', directB(A, 'dh1'), false);
+await t('v9-2: الإدارة تسلّم غرضاً ثميناً تسليماً مباشراً', directB(owner, 'dh1'));
+await t('v9-2: الموظف يسلّم غرضاً عادياً تسليماً مباشراً', directB(A, 'dh2'));
+await t('v9-2: الموظف يحذف مثالاً', deleteDoc(doc(A, 'items/del1')));
+await t('v9-2: الموظف يحذف غرضاً عادياً سُجّل قبل ساعة (خطأ إدخال)', deleteDoc(doc(A, 'itemSecrets/del2')).then(() => deleteDoc(doc(A, 'items/del2'))));
+await t('v9-2: الموظف لا يحذف غرضاً سُجّل قبل 3 أيام', deleteDoc(doc(A, 'items/del3')), false);
+await t('v9-2: الموظف لا يحذف التفاصيل السرية لغرض لا يُحذف', deleteDoc(doc(A, 'itemSecrets/del3')), false);
+await t('v9-2: الموظف لا يحذف غرضاً ثميناً ولو كان جديداً', deleteDoc(doc(A, 'items/del4')), false);
+await t('v9-2: الإدارة تحذف غرضاً ثميناً قديماً', deleteDoc(doc(owner, 'itemSecrets/del5')).then(() => deleteDoc(doc(owner, 'items/del5'))));
+// 3) البطاقات والمحافظ ثمينة: موافقتان
+await t('v9-3: طلب على محفظة', mk(bob, 'claims/w1_bob', claim('w1', 'bob')));
+await t('v9-3: قبول محفظة بموافقة واحدة مرفوض', batch(A, (b, r) => {
+  b.update(r('claims/w1_bob'), {status: 'approved', approvals: ['staffA'], decidedAt: now, decidedBy: 'staffA', pickupBy: now});
+  b.update(r('items/w1'), {status: 'reserved', reservedFor: 'w1_bob', updatedAt: now}); }), false);
+await t('v9-3: قبول محفظة بموافقتين', updateDoc(doc(A, 'claims/w1_bob'), {approvals: ['staffA']}).then(() => batch(B, (b, r) => {
+  b.update(r('claims/w1_bob'), {status: 'approved', approvals: ['staffA', 'staffB'], decidedAt: now, decidedBy: 'staffB', pickupBy: now});
+  b.update(r('items/w1'), {status: 'reserved', reservedFor: 'w1_bob', updatedAt: now}); })));
+// 4) حماية الحجز
+await t('v9-4: فك حجز غرض لطلب ما زال مقبولاً مرفوض', updateDoc(doc(A, 'items/rs1'), {status: 'available', reservedFor: '', updatedAt: now}), false);
+await t('v9-4: تغيير reservedFor لطلب آخر مرفوض', updateDoc(doc(A, 'items/rs1'), {reservedFor: 'rs1_carol', updatedAt: now}), false);
+await t('v9-4: تعديل حقل آخر والغرض محجوز مسموح', updateDoc(doc(A, 'items/rs1'), {sub: 'حقيبة ظهر', updatedAt: now}));
+await t('v9-4: فك الحجز مع إنهاء الطلب في العملية نفسها', batch(A, (b, r) => {
+  b.update(r('claims/rs2_bob'), {status: 'expired', note: 'انتهت المهلة', decidedAt: now, decidedBy: 'staffA'});
+  b.update(r('items/rs2'), {status: 'available', reservedFor: '', updatedAt: now}); }));
+// 5) منع إعادة الطلب بعد سؤال الموظف
+await t('v9-5: طلب k3', mk(bob, 'claims/k3_bob', claim('k3', 'bob')));
+await t('v9-5: سؤال الموظف', updateDoc(doc(A, 'claims/k3_bob'), {question: 'ما لون السحاب؟', askedAt: now, askedBy: 'staffA'}));
+await t('v9-5: حذف الطلب بعد السؤال مرفوض', deleteDoc(doc(bob, 'claims/k3_bob')), false);
+await t('v9-5: الإلغاء بحقل آخر مرفوض', updateDoc(doc(bob, 'claims/k3_bob'), {status: 'cancelled', cancelledAt: now, proof: 'x'}), false);
+await t('v9-5: «إلغاء» الطلب + إزالته من الحصة في batch واحد', batch(bob, (b, r) => {
+  b.update(r('claims/k3_bob'), {status: 'cancelled', cancelledAt: Date.now()});
+  b.set(r('claimQuota/bob'), {open: arrayRemove('k3_bob')}, {merge: true}); }));
+await t('v9-5: طلب k4 بصورة إثبات، ثم موافقة أولى', mk(carol, 'claims/k4_carol', claim('k4', 'carol', {proofs: 1}))
+  .then(() => env.withSecurityRulesDisabled(async c => { await setDoc(doc(c.firestore(), 'claimProofs/k4_carol_0'), {claimId: 'k4_carol', officeId: O, uid: 'carol', data: IMG, createdAt: now}); await updateDoc(doc(c.firestore(), 'claims/k4_carol'), {approvals: ['staffA']}); })));
+await t('v9-5: حذف الطلب بعد موافقة أولى مرفوض', deleteDoc(doc(carol, 'claims/k4_carol')), false);
+await t('v9-5: «إلغاء» مع حذف صورة الإثبات والحصة', batch(carol, (b, r) => {
+  b.update(r('claims/k4_carol'), {status: 'cancelled', cancelledAt: Date.now()});
+  b.delete(r('claimProofs/k4_carol_0'));
+  b.set(r('claimQuota/carol'), {open: arrayRemove('k4_carol')}, {merge: true}); }));
+await t('v9-5: طلب بلا سؤال ولا موافقة يُحذف', mk(qu, 'claims/k2_qu', claim('k2', 'qu')).then(() => deleteDoc(doc(qu, 'claims/k2_qu'))));
+// 6) تقوية الحقول
+await t('v9-6: قيد سجل بوقت قديم مرفوض', setDoc(doc(A, 'logs/' + lid()), {...logDoc('staffA', 'edit', {itemId: 'k2'}), at: now - 5 * DAY}), false);
+await t('v9-6: قيد سجل بوقت «الآن»', setDoc(doc(A, 'logs/' + lid()), {...logDoc('staffA', 'edit', {itemId: 'k2'}), at: Date.now()}));
+await t('v9-6: ai بمفتاح غريب مرفوض', updateDoc(doc(alice, 'reports/rv9'), {ai: {at: now, matches: [], x: 1}}), false);
+await t('v9-6: ai بأكثر من 10 نتائج مرفوض', updateDoc(doc(alice, 'reports/rv9'), {ai: {at: now, matches: Array.from({length: 11}, (_, k) => ({id: 'i' + k}))}}), false);
+await t('v9-6: ai صحيح', updateDoc(doc(alice, 'reports/rv9'), {ai: {at: now, matches: [{id: 'i1', reason: 'x'}]}}));
+await t('v9-6: تغيير createdAt عند تعديل البلاغ مرفوض', updateDoc(doc(alice, 'reports/rv9'), {createdAt: Date.now(), title: 'حقيبة', editedAt: Date.now()}), false);
+await t('v9-6: تعديل البلاغ دون تغيير createdAt', updateDoc(doc(alice, 'reports/rv9'), {title: 'حقيبة', editedAt: Date.now()}));
+await t('v9-6: receivedBy باسم موظف آخر مرفوض', updateDoc(doc(A, 'foundReports/fv9'), {status: 'received', receivedAt: now, receivedBy: 'staffB', itemId: 'k2'}), false);
+await t('v9-6: receivedBy = الموظف نفسه', updateDoc(doc(A, 'foundReports/fv9'), {status: 'received', receivedAt: now, receivedBy: 'staffA', itemId: 'k2'}));
+// 7) تسليم مع 3 طلبات منافسة (لكل منها صورتا إثبات وحصة): هل تكفي حدود القراءات في batch واحد؟
+const closeRivals = (b, r) => { for (const u of ['bob', 'carol', 'qu']){
+  b.update(r(`claims/cp1_${u}`), {status: 'rejected', note: 'سُلّم لصاحبه', decidedAt: now, decidedBy: 'staffA', proofs: 0});
+  for (const k of [0, 1]) b.delete(r(`claimProofs/cp1_${u}_${k}`));
+  b.set(r('claimQuota/' + u), {open: arrayRemove(`cp1_${u}`)}, {merge: true}); } };
+const handCp = (b, r) => { b.update(r('claims/cp1_alice'), {status: 'done', doneAt: now, doneBy: 'staffA', handoverNote: 'أليس — 1234', handoverCode: CODE});
+  b.update(r('items/cp1'), {status: 'returned', returnedAt: now, updatedAt: now}); b.set(r('logs/' + lid()), {...logDoc('staffA', 'handover', {itemId: 'cp1', claimId: 'cp1_alice'}), at: Date.now()}); };
+// النتيجة: batch واحد يكفي (ضمن حد 20 قراءة للعملية)، فيبقى التسليم وإغلاق المنافسين معاً كما في workflow.js
+await t('v9-7: التسليم + إغلاق 3 منافسين (6 صور + 3 حصص) في batch واحد', batch(A, (b, r) => { handCp(b, r); closeRivals(b, r); }));
 
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

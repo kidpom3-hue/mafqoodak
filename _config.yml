@@ -1,10 +1,10 @@
 # H8: إعداد GitHub Pages (Jekyll). ملفات المطوّر لا تُنشر على الموقع العام:
-# أدوات الفحص، والوثائق والصور، وتعليمات Claude، والقواعد، وإعداد Firebase.
+# أدوات الفحص، والوثائق والصور، والقواعد، وإعداد Firebase.
 # (تبقى كلها في المستودع على GitHub كما هي.)
+# H12: تعليمات Claude في .claude/CLAUDE.md: Jekyll يتجاهل المجلدات التي تبدأ بنقطة تلقائياً
 exclude:
   - tools
   - docs
-  - CLAUDE.md
   - README.md
   - firestore.rules
   - firestore.indexes.json

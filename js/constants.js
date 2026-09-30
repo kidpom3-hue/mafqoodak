@@ -88,7 +88,8 @@ const CB = ['color', 'brand'];
 const q = (k, type = 'text', req = '', x = {}) => ({k, type, req, ...x});
 /* v7: تقوية إثبات الملكية */
 // الأغراض الثمينة: قبول طلبها يحتاج موافقتين من موظفين مختلفين (أو موظف ثم الإدارة). نفس القائمة highValue() في firestore.rules
-export const HIGH_VALUE = ['cash', 'phones', 'jewelry'];
+// v9: والبطاقات والمحافظ (هوية، بطاقات بنكية) = highValue() في firestore.rules
+export const HIGH_VALUE = ['cash', 'phones', 'jewelry', 'ids', 'wallets'];
 // فحوص التسليم حسب التصنيف (مفاتيح نصوص في القاموسين ho.*): يعلّمها الموظف كلها قبل «تحقق وسلّم»، وتُحفظ مفاتيحها في السجل
 const HANDOVER = {
   // «افتح الجهاز» أو «طابق IMEI» بديلان، فهما مربع واحد (كل المربعات إلزامية)
