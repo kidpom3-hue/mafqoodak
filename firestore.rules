@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v11 (H16: النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
+// قواعد حماية بيانات مفقودك — الإصدار v12 (H17: القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -225,7 +225,10 @@ service cloud.firestore {
       allow read: if isPublicItem(resource.data) || isStaffOf(resource.data.officeId) || claimantOf(itemId);
       allow create: if isStaffOf(request.resource.data.officeId)
         && !request.resource.data.keys().hasAny(secretKeys())
-        && request.resource.data.public == !(request.resource.data.cat in hiddenCats());
+        && request.resource.data.public == !(request.resource.data.cat in hiddenCats())
+        // v12 (H17): غرض نقود أُنشئ من بلاغ (القبول المباشر): رقم الطلب، نص قصير فقط
+        && (!('createdFrom' in request.resource.data)
+            || (request.resource.data.createdFrom is string && request.resource.data.createdFrom.size() <= 100));
       allow update: if isStaffOf(resource.data.officeId)
         && request.resource.data.officeId == resource.data.officeId
         && !request.resource.data.keys().hasAny(secretKeys())
@@ -484,7 +487,9 @@ service cloud.firestore {
         && request.resource.data.by == me()
         // v9: وقت القيد «الآن» (لا تاريخ مزوّر في سلسلة الحيازة)
         && fresh(request.resource.data, 'at')
-        && request.resource.data.keys().hasOnly(['officeId', 'itemId', 'claimId', 'reportId', 'action', 'by', 'at', 'note', 'checks'])
+        && request.resource.data.keys().hasOnly(['officeId', 'itemId', 'claimId', 'reportId', 'action', 'by', 'at', 'note', 'checks', 'direct'])
+        // v12 (H17): «قبول مباشر لبلاغ نقود» يعلَّم direct: true
+        && (!('direct' in request.resource.data) || request.resource.data.direct == true)
         // v7: فحوص التسليم التي علّمها الموظف (مفاتيح نصوص فقط، بلا بيانات شخصية)
         && (!('checks' in request.resource.data) || (request.resource.data.checks is list && request.resource.data.checks.size() <= 10))
         && request.resource.data.action is string && request.resource.data.action.size() <= 40

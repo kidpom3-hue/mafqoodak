@@ -738,5 +738,27 @@ await t('v11: نقود قديمة: تعديل دون public: false مرفوض', 
 await t('v11: الترحيل: إضافة public: false للنقود القديمة', updateDoc(doc(A, 'items/h3'), {public: false}));
 await t('v11: لا صورة عامة لغرض نقود', setDoc(doc(A, 'itemPhotos/h1'), {data: IMG}), false);
 
+// ── v12 (H17): قبول بلاغ النقود مباشرة: غرض نقود جديد (createdFrom) ← ربط ← قبول بقيد واحد direct ──
+await env.withSecurityRulesDisabled(async c => { await setDoc(doc(c.firestore(), 'claimQuota/gina'), {open: []}); });
+const gina = as('gina'); const GC = 'g_gina_cash_' + now;
+await t('v12: بلاغ نقود (طلب مجمّع) من صاحبه', mk(gina, 'claims/' + GC, {...claim('', 'gina'), grouped: true, cat: 'cash', details: {amount: '500', holder: 'envelope'}}));
+await t('v12: createdFrom ليس نصاً مرفوض', setDoc(doc(A, 'items/cd0'), {...pub('cd0', 'cash'), createdFrom: 5}), false);
+await t('v12: الموظف ينشئ غرض نقود من البلاغ (createdFrom)', setDoc(doc(A, 'items/cd1'), {...pub('cd1', 'cash'), createdFrom: GC}));
+await t('v12: ثم التفاصيل السرية (المبلغ من البلاغ)', setDoc(doc(A, 'itemSecrets/cd1'), {officeId: O, title: 'مبلغ 500 ريال', color: '', brand: '', desc: '', spot: '', bldg: '', room: '', storage: '', details: {amount: '500', holder: 'envelope'}}));
+await t('v12: الزائر لا يقرأ الغرض المنشأ', getDoc(doc(anon, 'items/cd1')), false);
+await t('v12: مستخدم آخر لا يقرأ الغرض المنشأ', getDoc(doc(carol, 'items/cd1')), false);
+await t('v12: الربط بالطلب', batch(A, (b, r) => b.set(r('claimLinks/' + GC), {officeId: O, itemId: 'cd1', by: 'staffA', at: Date.now()})));
+await t('v12: قيد direct بقيمة غير true مرفوض', setDoc(doc(A, 'logs/' + lid()), {...logDoc('staffA', 'approveCash', {itemId: 'cd1', claimId: GC}), at: Date.now(), direct: 'yes'}), false);
+await t('v12: القبول بموظف واحد + الحجز + قيد واحد direct: true', batch(A, (b, r) => {
+  b.update(r('claims/' + GC), {status: 'approved', itemId: 'cd1', decidedAt: now, decidedBy: 'staffA', pickupBy: now + 7 * DAY});
+  b.update(r('items/cd1'), {status: 'reserved', reservedFor: GC, updatedAt: now, public: false});
+  b.set(r('logs/' + lid()), {...logDoc('staffA', 'approveCash', {itemId: 'cd1', claimId: GC}), at: Date.now(), direct: true}); }));
+await t('v12: صاحب البلاغ يقرأ الغرض بعد القبول (محجوز له)', getDoc(doc(gina, 'items/cd1')));
+await t('v12: الزائر ما زال لا يقرؤه', getDoc(doc(anon, 'items/cd1')), false);
+await t('v12: التسليم بالرمز ← «سُلّم»', batch(A, (b, r) => {
+  b.update(r('claims/' + GC), {status: 'done', doneAt: now, doneBy: 'staffA', handoverNote: 'جينا — 1234', handoverCode: CODE});
+  b.update(r('items/cd1'), {status: 'returned', returnedAt: now, updatedAt: now, public: false}); }));
+await t('v12: عدّ الزائر للمُسلَّم العام لا يشمل النقود', getCountFromServer(query(collection(anon, 'items'), where('officeId', '==', O), where('status', '==', 'returned'), where('public', '==', true))));
+
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

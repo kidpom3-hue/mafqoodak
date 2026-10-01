@@ -53,7 +53,7 @@ export async function migrateItems(){
       const pub = {officeId: i.officeId, ref: i.ref, cat: i.cat, sub: i.sub || '', title: publicTitle(i.cat, i.sub),
         foundDate: i.foundDate, photo, status: i.status || 'available', createdBy: i.createdBy || '', createdAt: i.createdAt || Date.now(),
         updatedAt: Date.now(), sample: !!i.sample, public: pubFlag(i.cat)};
-      for (const k of ['fromReport', 'fromFound', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt']) if (i[k] !== undefined) pub[k] = i[k];
+      for (const k of ['fromReport', 'fromFound', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt', 'createdFrom']) if (i[k] !== undefined) pub[k] = i[k];
       try { await dbx.set('items/' + i.id, pub); n++; } catch (e){ console.warn(e); }
     }
     if (n) toast(t('migrate.done', {items: tp('n.itemGen', n)}));
