@@ -1,7 +1,7 @@
 // اختبارات قواعد Firestore على المحاكي (للمطوّر فقط؛ لا يحمّلها التطبيق)
 // التشغيل: cd tools && npm install && npm run test:rules   (يحتاج Java)
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, writeBatch, collection, query, where, deleteField, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, getCountFromServer, writeBatch, collection, query, where, deleteField, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
 import fs from 'fs';
 import { createHash } from 'crypto';
 
@@ -10,7 +10,8 @@ const env = await initializeTestEnvironment({projectId: 'demo-mafqoodak',
 const now = Date.now(), O = 'tc';
 // مكان العثور (spot) سري منذ المرحلة E5: في itemSecrets لا في items
 // v7: التصنيف الافتراضي «حقائب» (ليس ثميناً)؛ اختبارات الأغراض الثمينة تستخدم تصنيفها صراحة
-const pub = (x, cat = 'bags') => ({officeId: O, ref: 'TCA-' + x, cat, sub: '', title: 'جوال', foundDate: '2026-09-20', photo: false, status: 'available', createdBy: 'staffA', createdAt: now, updatedAt: now, sample: false});
+// v11 (H16): public = false للنقود (لا تظهر للزائر)، و true لغيرها
+const pub = (x, cat = 'bags') => ({officeId: O, ref: 'TCA-' + x, cat, sub: '', title: 'جوال', foundDate: '2026-09-20', photo: false, status: 'available', createdBy: 'staffA', createdAt: now, updatedAt: now, sample: false, public: cat !== 'cash'});
 const sec = {officeId: O, title: 'جوال أسود', color: 'black', brand: '', desc: 'غلاف أحمر', spot: 'المكتبة', bldg: '', room: '', storage: 'الخزانة 1'};
 await env.withSecurityRulesDisabled(async c => {
   const d = c.firestore();
@@ -602,7 +603,7 @@ await t('v9-1: التسليم دون handoverCode مرفوض', doneB(B, 'k1', 'k
 await t('v9-1: handoverCode في غير التسليم مرفوض', updateDoc(doc(B, 'claims/k1_alice'), {handoverCode: CODE}), false);
 await t('v9-1: التسليم بالرمز الصحيح (القواعد تحسب sha256)', doneB(B, 'k1', 'k1_alice', CODE));
 // 2) الأغراض الثمينة: التسليم المباشر والحذف للإدارة (v10: تغيير التصنيف حر)
-await t('v10: الموظف يغيّر التصنيف إلى ثمين', updateDoc(doc(A, 'items/c1'), {cat: 'cash', updatedAt: now}));
+await t('v10: الموظف يغيّر التصنيف إلى ثمين (v11: مع public: false للنقود)', updateDoc(doc(A, 'items/c1'), {cat: 'cash', public: false, updatedAt: now}));
 await t('v10: الموظف يغيّر التصنيف من ثمين', updateDoc(doc(A, 'items/c2'), {cat: 'bags', updatedAt: now}));
 await t('v9-2: الموظف يغيّر بين تصنيفين عاديين', updateDoc(doc(A, 'items/c2'), {cat: 'glasses', updatedAt: now}));
 const directB = (db, item) => batch(db, (b, r) => {
@@ -688,6 +689,54 @@ await t('H13a: قبول طلب غرضه محذوف مرفوض', batch(A, (b, r) 
 // الإغلاق من الخادم: الموظف يستعلم عن طلبات غرض بالمكتب والغرض والحالة (openClaimsFor)
 await t('H13a: الموظف يستعلم عن الطلبات المفتوحة على غرض في مكتبه', q(A, 'claims', ['officeId', '==', O], ['itemId', '==', 'gone2'], ['status', 'in', ['pending', 'approved']]));
 await t('H13a: الزائر لا يستعلم عن طلبات غرض', q(alice, 'claims', ['officeId', '==', O], ['itemId', '==', 'gone2'], ['status', 'in', ['pending', 'approved']]), false);
+
+// ── v11 (H16): النقود لا تُعرض للزائر بأي شكل (قراءة مباشرة، أو استعلام، أو عدّ) ──
+await env.withSecurityRulesDisabled(async c => {
+  const d = c.firestore();
+  await setDoc(doc(d, 'items/h1'), pub('h1', 'cash')); await setDoc(doc(d, 'itemSecrets/h1'), {...sec, details: {amount: '350'}});
+  await setDoc(doc(d, 'items/h2'), pub('h2'));                                                // عادي (public: true)
+  const {public: _p, ...noFlag} = pub('h3', 'cash');
+  await setDoc(doc(d, 'items/h3'), noFlag);                                                    // نقود قديمة بلا الحقل
+  await setDoc(doc(d, 'items/h4'), (({public: _x, ...r}) => r)(pub('h4')));                     // عادي قديم بلا الحقل
+  await setDoc(doc(d, 'items/h5'), {...pub('h5', 'cash'), status: 'reserved', reservedFor: 'g_eve_cash_1'});  // نقود محجوزة لطلب مجمّع
+  await setDoc(doc(d, 'claims/g_eve_cash_1'), {...claim('h5', 'eve'), grouped: true, cat: 'cash', status: 'approved'});
+  await setDoc(doc(d, 'claims/h1_frank'), claim('h1', 'frank'));                                 // طلب مباشر قديم على نقود
+  await setDoc(doc(d, 'offices/other'), {name: 'مطار', active: true, createdAt: 1});
+  await setDoc(doc(d, 'staff/staffX'), {offices: ['other']});
+});
+const eve = as('eve'), frank = as('frank'), X = as('staffX'), owner2 = as('owner');
+const VIS = [['officeId', '==', O], ['status', 'in', ['available', 'reserved']]];
+await t('v11: زائر غير مسجّل لا يقرأ غرض نقود بمعرّفه', getDoc(doc(anon, 'items/h1')), false);
+await t('v11: زائر مسجّل لا يقرأ غرض نقود بمعرّفه', getDoc(doc(carol, 'items/h1')), false);
+await t('v11: نقود قديمة بلا public لا يقرؤها الزائر', getDoc(doc(anon, 'items/h3')), false);
+await t('v11: غرض عادي قديم بلا public يقرؤه الزائر', getDoc(doc(anon, 'items/h4')));
+await t('v11: غرض عادي يقرؤه الزائر', getDoc(doc(anon, 'items/h2')));
+await t('v11: موظف مكتب آخر لا يقرأ نقود هذا المكتب', getDoc(doc(X, 'items/h1')), false);
+await t('v11: موظف المكتب يقرأ غرض النقود', getDoc(doc(A, 'items/h1')));
+await t('v11: الإدارة تقرأ غرض النقود', getDoc(doc(owner2, 'items/h1')));
+await t('v11: صاحب طلب مباشر قديم على النقود يقرؤها', getDoc(doc(frank, 'items/h1')));
+await t('v11: صاحب طلب مجمّع حُجزت له النقود يقرؤها', getDoc(doc(eve, 'items/h5')));
+await t('v11: استعلام الزائر بلا public == true مرفوض', q(anon, 'items', ...VIS), false);
+await t('v11: استعلام الزائر بـ public == true مسموح', q(anon, 'items', ...VIS, ['public', '==', true]));
+let visIds = [];
+try { visIds = (await getDocs(query(collection(anon, 'items'), ...[...VIS, ['public', '==', true]].map(w => where(...w))))).docs.map(x => x.data().cat); } catch {}
+await t('v11: استعلام الزائر العام لا يعيد أي نقود', Promise.resolve().then(() => { if (!visIds.length || visIds.includes('cash')) throw new Error(JSON.stringify(visIds)); }));
+await t('v11: عدّ الزائر للمُسلَّم بـ public == true مسموح', getCountFromServer(query(collection(anon, 'items'), where('officeId', '==', O), where('status', '==', 'returned'), where('public', '==', true))));
+await t('v11: عدّ الزائر بلا public مرفوض', getCountFromServer(query(collection(anon, 'items'), where('officeId', '==', O), where('status', '==', 'returned'))), false);
+let staffCats = [];
+try { staffCats = (await getDocs(query(collection(A, 'items'), ...VIS.map(w => where(...w))))).docs.map(x => x.data().cat); } catch {}
+await t('v11: استعلام الموظف لمكتبه يعيد النقود', Promise.resolve().then(() => { if (!staffCats.includes('cash')) throw new Error(JSON.stringify(staffCats)); }));
+// الكتابة: public يطابق التصنيف دائماً
+await t('v11: إنشاء نقود بـ public: true مرفوض', setDoc(doc(A, 'items/h6'), {...pub('h6', 'cash'), public: true}), false);
+await t('v11: إنشاء غرض بلا public مرفوض', setDoc(doc(A, 'items/h6'), (({public: _x, ...r}) => r)(pub('h6'))), false);
+await t('v11: إنشاء نقود بـ public: false', setDoc(doc(A, 'items/h6'), pub('h6', 'cash')));
+await t('v11: إنشاء غرض عادي بـ public: true', setDoc(doc(A, 'items/h7'), pub('h7')));
+await t('v11: جعل النقود عامة مرفوض', updateDoc(doc(A, 'items/h6'), {public: true, updatedAt: now}), false);
+await t('v11: تغيير التصنيف إلى نقود دون public: false مرفوض', updateDoc(doc(A, 'items/h7'), {cat: 'cash', updatedAt: now}), false);
+await t('v11: الترحيل: إضافة public: true لغرض عادي قديم', updateDoc(doc(A, 'items/h4'), {public: true}));
+await t('v11: نقود قديمة: تعديل دون public: false مرفوض', updateDoc(doc(A, 'items/h3'), {sub: 'عملات', updatedAt: now}), false);
+await t('v11: الترحيل: إضافة public: false للنقود القديمة', updateDoc(doc(A, 'items/h3'), {public: false}));
+await t('v11: لا صورة عامة لغرض نقود', setDoc(doc(A, 'itemPhotos/h1'), {data: IMG}), false);
 
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

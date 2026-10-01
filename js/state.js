@@ -482,11 +482,14 @@ function startAdmin(){
 let itemsKey = null, rcKey = null;
 export function ensureOfficeSubs(){
   if (!db) return;
-  if (itemsKey !== S.officeId){
-    itemsKey = S.officeId; clear('items'); S.items = []; S.itemsLoaded = false; S.counts = {}; S.extraItems = {}; S.claimHist = null; S.closedReps = null; S.logs = {};
+  /* H16: موظف المكتب والإدارة يشتركون في كل الأغراض النشطة (ومنها النقود)؛ الزائر في العامة فقط (public == true)،
+     وإلا رفضت القواعد v11 الاستعلام. يتغير الاشتراك حين تصل صلاحية الموظف */
+  const hid = isStaffHere();
+  if (itemsKey !== `${S.officeId}|${hid}`){
+    itemsKey = `${S.officeId}|${hid}`; clear('items'); S.items = []; S.itemsLoaded = false; S.counts = {}; S.extraItems = {}; S.claimHist = null; S.closedReps = null; S.logs = {};
     // الأغراض النشطة فقط (متاح ومحجوز): المُسلَّم القديم لا يُحمَّل لكل زائر
     if (S.officeId){
-      subs.items.push(dbx.watch('items', [['officeId', '==', S.officeId], ['status', 'in', ACTIVE]], l => { S.items = l; S.itemsLoaded = true; watchSecrets(); changed(); },
+      subs.items.push(dbx.watch('items', [['officeId', '==', S.officeId], ['status', 'in', ACTIVE], ...(hid ? [] : [['public', '==', true]])], l => { S.items = l; S.itemsLoaded = true; watchSecrets(); changed(); },
         e => { errH('items')(e); S.itemsLoaded = true; changed(); }));
       refreshCounts();
     }
@@ -526,7 +529,8 @@ export function watchSecrets(){
 // عدد المُسلَّم لأصحابه في المكتب (قراءة واحدة بدل تحميل كل الأغراض القديمة)
 export function refreshCounts(){
   const id = S.officeId; if (!id || !db) return;
-  dbx.count('items', [['officeId', '==', id], ['status', '==', 'returned']])
+  // H16: الزائر يعدّ العام فقط (القواعد ترفض غيره)
+  dbx.count('items', [['officeId', '==', id], ['status', '==', 'returned'], ...(isStaffHere() ? [] : [['public', '==', true]])])
     .then(n => { if (S.officeId === id){ S.counts.returned = n; changed(); } }).catch(errH('count'));
 }
 // للمالك: أعداد كل مكتب عند فتح «نظرة عامة» (4 استعلامات عدّ لكل مكتب بدل الاشتراك في كل الأغراض)

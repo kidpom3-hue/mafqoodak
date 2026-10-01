@@ -23,7 +23,7 @@ const PORT = server.address().port;
 // بيانات مثال: مكتب، وأغراض، وطلب مكتمل، وبلاغ
 const now = Date.now(), day = 864e5, O = 'tc-ahsa';
 const ds = n => new Date(now - n * day).toISOString().slice(0, 10);
-const item = (id, x = {}) => ({officeId: O, ref: 'TCA-' + id.toUpperCase(), cat: 'phones', sub: 'جوال', title: 'جوال', foundDate: ds(3), photo: false, status: 'available', createdBy: 'staffA', createdAt: now - day, updatedAt: now, sample: false, ...x});
+const item = (id, x = {}) => ({officeId: O, ref: 'TCA-' + id.toUpperCase(), cat: 'phones', sub: 'جوال', title: 'جوال', foundDate: ds(3), photo: false, status: 'available', createdBy: 'staffA', createdAt: now - day, updatedAt: now, sample: false, ...x, public: 'public' in x ? x.public : (x.cat ?? 'phones') !== 'cash'});   // H16: الغرض العام فيه public: true (والنقود false)
 const db = {
   'config/app': {ownerUid: 'owner'}, 'admins/owner': {role: 'owner'},
   'offices/tc-ahsa': {name: 'الكلية التقنية بالأحساء', short: 'تقنية الأحساء', type: 'college', city: 'الأحساء', place: 'المبنى الإداري', hours: 'الأحد – الخميس، 7:30 ص – 2:30 م', phone: '0135000000', retentionDays: 90, pickupDays: 7, reviewDays: 2, spots: ['المكتبة', 'الكافتيريا'], active: true, createdAt: 1, code: 'TCA'},

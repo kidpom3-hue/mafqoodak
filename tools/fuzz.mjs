@@ -30,7 +30,7 @@ const ROUTES = [...uiSrc.slice(uiSrc.indexOf('const ROUTES = {'), uiSrc.indexOf(
 const P = k => `'"><img src=x onerror=__x('${k}')><svg onload=__x('${k}')>`;
 const now = Date.now(), day = 864e5, O = 'tc-ahsa';
 const ds = n => new Date(now - n * day).toISOString().slice(0, 10);
-const item = (id, x = {}) => ({officeId: O, ref: P('ref'), cat: 'phones', sub: P('sub'), title: P('title'), foundDate: ds(3), photo: false, status: 'available', createdBy: 'staffA', createdAt: now - 3 * day, updatedAt: now, sample: false, ...x});
+const item = (id, x = {}) => ({officeId: O, ref: P('ref'), cat: 'phones', sub: P('sub'), title: P('title'), foundDate: ds(3), photo: false, status: 'available', createdBy: 'staffA', createdAt: now - 3 * day, updatedAt: now, sample: false, ...x, public: 'public' in x ? x.public : (x.cat ?? 'phones') !== 'cash'});   // H16: الغرض العام فيه public: true (والنقود false)
 const secret = x => ({officeId: O, title: P('secret.title'), color: P('secret.color'), brand: P('secret.brand'), desc: P('secret.desc'), spot: P('secret.spot'), bldg: P('secret.bldg'), room: P('secret.room'), storage: P('secret.storage'),
   finderNote: P('secret.finderNote'), handoverNote: P('secret.handoverNote'), disposalNote: P('secret.disposalNote'), details: {amount: P('d.amount'), model: P('d.model'), lockscreen: P('d.lockscreen')}, ...x});
 const claim = (id, uid, x = {}) => ({itemId: id, officeId: O, uid, no: P('no'), proof: P('proof'), color: P('claim.color'), brand: P('claim.brand'), lostSpot: P('lostSpot'), bldg: P('claim.bldg'), room: P('claim.room'),

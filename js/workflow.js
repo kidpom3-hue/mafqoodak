@@ -2,7 +2,7 @@
 // كل انتقال يُكتب في writeBatch واحد (الغرض + الطلبات + قيد في السجل logs)،
 // فإما ينجح كله أو لا يُكتب منه شيء، حتى لا تبقى البيانات ناقصة إذا انقطع الاتصال.
 import { dbx, deleteField, arrayRemove } from './firebase.js';
-import { isHighValue } from './constants.js';
+import { isHighValue, pubFlag } from './constants.js';
 import { S, full, item } from './state.js';
 import { SETTINGS } from './config.js';
 import { pubPhoto } from './views/common.js';
@@ -73,7 +73,8 @@ function itemUpdate(b, i, patch, secret = null){
     else b.set(dbx.ref('itemSecrets/' + i.id), {officeId: i.officeId, spot: keep}, {merge: true});
   }
   if (secret) b.set(dbx.ref('itemSecrets/' + i.id), secret);
-  b.update(dbx.ref('items/' + i.id), patch);
+  // H16: public يطابق التصنيف بعد كل تعديل (القواعد v11 تفرضه؛ ويرحّل الأغراض القديمة بلا الحقل)
+  b.update(dbx.ref('items/' + i.id), {...patch, public: pubFlag(patch.cat || i.cat)});
 }
 
 // الغرض بأحدث نسخة: من الاشتراك، أو من الخادم إن لم يكن محمّلاً (مثل المُسلَّم)

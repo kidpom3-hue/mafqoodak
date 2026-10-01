@@ -1,5 +1,5 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
-import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS } from './constants.js';
+import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat } from './constants.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
@@ -32,6 +32,8 @@ function formErr(form, msg, field){
 function busy(form, on){ const b = form.querySelector('button[type=submit]'); if (b) b.disabled = on; }
 
 export function onCatChange(form, catId, sub){
+  // H16: بلاغ جديد بتصنيف مخفي (النقود): يتحول إلى البلاغ بالتفاصيل (طلب مجمّع يطابقه الموظف)، فلا بلاغ عادي للنقود
+  if (form.dataset.form === 'report' && !form.dataset.id && isHiddenCat(catId)){ toast(t('rp.toHidden')); go('gclaim', {cat: catId}); return; }
   const sf = form.querySelector('#subs-field'), sc = form.querySelector('#subs');
   if (sc){ sc.innerHTML = subsPicker(catId, sub); sf.hidden = !cat(catId).subs.length; }
   // أسئلة التصنيف: تُعاد حسب التصنيف الجديد، مع الإبقاء على ما كُتب في الخانات ذات المفتاح نفسه.
@@ -195,7 +197,7 @@ async function aiFill(){
 }
 async function aiMatch(reportId){
   const r = S.myReports.find(x => x.id === reportId); const st = $('#ai-' + reportId); if (!r) return;
-  const pool = S.items.filter(i => i.status === 'available' || i.status === 'reserved')
+  const pool = S.items.filter(i => (i.status === 'available' || i.status === 'reserved') && !isHiddenCat(i.cat))   // H16: لا نقود
     .map(i => ({i, s: matchScore(r, {...i, spot: ''})})).sort((a, b) => b.s - a.s).slice(0, 40).map(x => x.i);   // بلا مكان العثور (سري)
   if (!pool.length){ if (st) st.textContent = t('a.aiNoPool'); return; }
   if (st) st.innerHTML = `<span class="spin" style="width:14px;height:14px"></span> ${t('a.aiComparing')}`;
@@ -289,7 +291,7 @@ async function submitForm(form){
       await dbx.set('offices/' + id, {...office, active: true, createdAt: Date.now()});
       if (fd.get('samples')){
         const rows = (await load('sample')).sampleItems(id, office.code);
-        const b2 = dbx.batch(); rows.forEach(s => b2.set(dbx.ref('items/' + s.id), s.data)); await b2.commit();
+        const b2 = dbx.batch(); rows.forEach(s => b2.set(dbx.ref('items/' + s.id), {...s.data, public: pubFlag(s.data.cat)})); await b2.commit();
         const b3 = dbx.batch(); rows.forEach(s => b3.set(dbx.ref('itemSecrets/' + s.id), s.secret)); await b3.commit();
       }
       S.mode = 'visitor'; LS.set('mode', 'visitor');
@@ -376,7 +378,7 @@ async function submitForm(form){
         ? t('a.claimDenied')
         : t('a.claimFail'));
     }
-    busy(form, false); toast(t(gcat ? 'gc.sent' : 'a.claimSent')); S.hist = []; go('mine', {}, false);
+    busy(form, false); toast(t(gcat ? (isHiddenCat(catId) ? 'gc.sentHidden' : 'gc.sent') : 'a.claimSent')); S.hist = []; go('mine', {}, false);
     return;
   }
 
@@ -392,6 +394,8 @@ async function submitForm(form){
     busy(form, true);
 
     if (kind === 'report'){
+      // H16: احتياط: لا بلاغ عادي لتصنيف مخفي (النقود)؛ بلاغه بالتفاصيل يطابقه الموظف
+      if (!form.dataset.id && isHiddenCat(catId)){ busy(form, false); go('gclaim', {cat: catId}); return; }
       if (!S.verified){ busy(form, false); return formErr(form, t('a.verifyFirst')); }
       if (form.dataset.id) return saveReportEdit(form, val, catId, sens, bldg, room);
       const id = dbx.newId('reports');
@@ -430,6 +434,7 @@ async function submitForm(form){
       foundDate: val('foundDate') || today(), photo: redo ? false : photo,
       status: existing?.status || 'available', createdBy: existing?.createdBy || S.uid, createdAt: existing?.createdAt || Date.now(), updatedAt: Date.now(),
       sample: !!existing?.sample,
+      public: pubFlag(catId),   // H16: false للنقود (لا يراها الزائر)، والقواعد ترفض غير ذلك
     };
     /* H10: اللون العام (pubColor) للاقتراح الآلي «قد يكون لك»: فقط حين تظهر الصورة للعامة (واضحة أو مموّهة، والتمويه يُبقي اللون)،
        فهو ظاهر أصلاً ولا يُعدّ دليل ملكية. بلا صورة عامة يبقى اللون سرياً في itemSecrets فقط.
