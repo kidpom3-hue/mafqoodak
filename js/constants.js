@@ -61,6 +61,7 @@ export const P = {
   swap:'<path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/>',
   sample:'<path d="M4 4h16v16H4z" stroke-dasharray="3 3"/>',
   cash:'<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.8"/><path d="M6 9.5v5M18 9.5v5"/>',
+  ext:'<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
   alert:'<path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4.5M12 17.2v.3"/>',
 };
 // أسهم الاتجاه (رجوع/تقدّم) تنقلب في الإنجليزية (من اليسار لليمين) عبر الصنف dir في CSS
@@ -247,6 +248,28 @@ export const oShort = o => (isEn() && (o?.shortEn || o?.nameEn)) || o?.short || 
 export const oPlace = o => (isEn() && o?.placeEn) || o?.place || '';
 export const oHours = o => (isEn() && o?.hoursEn) || o?.hours || '';
 export const oCity = o => (isEn() && o?.cityEn) || o?.city || '';
+/* هوية الجهة (H15): شعار الكلية وألوان المؤسسة العامة للتدريب التقني والمهني، بإذن من إدارة الكلية.
+   تظهر في مكتب الكلية التقنية بالأحساء فقط (المفتاح = معرّف المكتب)؛ أي مكتب آخر (مطار، مجمع…) يبقى بهوية مفقودك وحدها.
+   id: يوضع على <html data-brand="…"> فتتغير الألوان في css/styles.css
+   logo/logoWhite: الشعار الأفقي الرسمي (ملوّن للخلفية الفاتحة، وأبيض بأوراقه الملونة للداكنة) · mark/markWhite: النجمة وحدها
+   (للترويسة، حيث النص أصغر من أن يُقرأ). الملفات داخل المستودع (icons/college) لا روابط خارجية، لأن CSP لا يسمح إلا بـ 'self'
+   links: روابط الكلية المفيدة للمتدرب (نصوصها في القاموس: br.link.<k>) */
+export const BRANDS = {
+  'tc-ahsa': {
+    id: 'tvtc',
+    themeColor: '#00343A',   // الأخضر المزرق الداكن في هوية المؤسسة (لون شريط المتصفح في الجوال)
+    logo: 'icons/college/tvtc-logo.png', logoWhite: 'icons/college/tvtc-logo-white.png',
+    mark: 'icons/college/tvtc-mark.png', markWhite: 'icons/college/tvtc-mark-white.png',
+    site: 'https://tvtc.gov.sa/ar/Training-Units/Boys-Colleges/ALAHSATC/Pages/default.aspx',
+    links: [
+      {k: 'site', url: 'https://tvtc.gov.sa/ar/Training-Units/Boys-Colleges/ALAHSATC/Pages/default.aspx'},
+      {k: 'rayat', url: 'https://tvtc.gov.sa/ar/Departments/tvtcdepartments/Rayat/pages/E-Services.aspx'},
+      {k: 'lms', url: 'https://lms.elearning.edu.sa/'},
+      {k: 'x', url: 'https://x.com/tvtc_g_alahsa'},
+    ],
+  },
+};
+export const brandOf = o => (o && BRANDS[o.id]) || null;
 export function spotLabel(o, s){
   if (!isEn() || !s || !o) return s || '';
   const k = (o.spots || []).indexOf(s);

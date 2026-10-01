@@ -1,10 +1,10 @@
 // صفحات الطباعة: ملصقات QR للأغراض (للمستودع) وملصق المكتب (يُعلَّق في المبنى)
 // الرمز يُولَّد داخل التطبيق (js/qr.js) فيعمل دون اتصال، والطباعة من زر «اطبع» في المتصفح.
-import { icon, LOGO, cat, catName, subLabel, oName, oShort, oPlace, oHours } from '../constants.js';
+import { icon, LOGO, cat, catName, subLabel, oName, oShort, oPlace, oHours, brandOf } from '../constants.js';
 import { t, locale, isEn } from '../i18n.js';
 import { esc, fmtDate, isoDay, $, TZ } from '../utils.js';
 import { S, item, full, curOffice, ensureItem } from '../state.js';
-import { backBtn, officeUrl } from './common.js';
+import { backBtn, officeUrl, brandLogo } from './common.js';
 import { qrSvg } from '../qr.js';
 
 // رابط التطبيق الحالي (يعمل على GitHub Pages وعلى جهازك)
@@ -46,7 +46,7 @@ export function vPoster(){
   return `<div class="wrap print-page" data-view="poster">
     ${toolbar(t('po.pageTitle'), t('po.hint'))}
     <article class="poster">
-      <div class="po-brand">${LOGO}<b>${t('app.name')}</b></div>
+      <div class="po-brand">${LOGO}<b>${t('app.name')}</b>${brandOf(o) ? `<span class="po-sep" aria-hidden="true"></span>${brandLogo(o, 'light', 'po-logo')}` : ''}</div>
       <h1>${t('po.title')}</h1>
       <p class="po-sub">${t('po.sub', {office: esc(oName(o))})}</p>
       ${qrSvg(url, {label: t('po.qrAria')})}
@@ -59,7 +59,8 @@ export function vPoster(){
 }
 
 /* شهادة شكر الأمانة (route: thanks، param id = إشعار التسليم): للواجد الذي عاد ما سلّمه إلى صاحبه.
-   الاسم يُكتب قبل الطباعة (معبّأ من اسم الحساب) ولا يُحفظ. النوع العام فقط، بلا أي تفاصيل سرية، وبلا شعارات.
+   الاسم يُكتب قبل الطباعة (معبّأ من اسم الحساب) ولا يُحفظ. النوع العام فقط، بلا أي تفاصيل سرية.
+   H15: شعار الكلية أعلى الشهادة إن كان المكتب مكتبها (بإذن من إدارتها)، ولا شعارات غيره.
    A4 أفقي بلغة الواجهة (@page thanks في css/styles.css) */
 // تاريخ كامل بالسنة (الشهادة وثيقة تُحفظ)
 const fullDate = ms => { try { return new Intl.DateTimeFormat(locale(), {day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ}).format(new Date(ms)); } catch { return isoDay(ms); } };
@@ -77,6 +78,7 @@ export function vThanks(){
       <div class="btn-row"><button class="btn" data-act="print">${icon('print')}${t('lb.print')}</button></div>
     </div>
     <article class="cert" data-office="${esc(oName(o))}" data-type="${esc(type)}" data-date="${esc(fullDate(it.returnedAt || it.updatedAt))}">
+      ${brandOf(o) ? `<div class="cert-brand">${brandLogo(o, 'light', 'cert-logo')}</div>` : ''}
       <p class="cert-kicker">${t('app.name')}</p>
       <h2 class="cert-title">${t('ty.certTitle')}</h2>
       <p class="cert-body" id="ty-body"></p>

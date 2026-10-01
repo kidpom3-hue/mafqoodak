@@ -1,5 +1,5 @@
 // هيكل الواجهة: التنقل بين الصفحات، الشريط العلوي، الشريط السفلي، النوافذ المنبثقة
-import { icon, LOGO, statusLabel, MODE_LABEL } from './constants.js';
+import { icon, LOGO, statusLabel, MODE_LABEL, brandOf } from './constants.js';
 import { t } from './i18n.js';
 import { $, $$, esc, toast } from './utils.js';
 import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, SHARE_RE, OFFICE_RE } from './state.js';
@@ -7,7 +7,7 @@ import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vO
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
 import { vHome, updateHome, vFound, vHandin } from './views/home.js';
 import { vPrivacy } from './views/privacy.js';
-import { tabNum } from './views/common.js';   // H6: كل شارة رقمية تمرّ بها (رقم واحد: أحمر للجديد أو رمادي للعدد)
+import { tabNum, brandLogo } from './views/common.js';   // H6: كل شارة رقمية تمرّ بها (رقم واحد: أحمر للجديد أو رمادي للعدد)
 // H8: صفحات الموظف والإدارة والإحصاءات والسجل والطباعة والخدمات تُحمَّل عند أول فتح لها فقط (lazy.js)
 import { need, load, loadingHtml, setLazyHooks } from './lazy.js';
 import { SETTINGS } from './config.js';
@@ -166,9 +166,13 @@ function renderHeader(){
   const langBtn = `<button class="lang-btn" data-act="lang" lang="${t('lang.otherCode')}" aria-label="${t('lang.switch')}"><span class="lang-txt">${t('lang.other')}</span>${icon('globe')}</button>`;
   // H4: «Aa» يفتح نافذة العرض (المظهر وحجم الخط)
   const aaBtn = `<button class="aa-btn" data-act="displaySheet" aria-label="${t('ui.display')}"><span aria-hidden="true">Aa</span></button>`;
+  // H15: هوية الكلية (ألوانها وشعارها) في مكتبها فقط، وليس في لوحة الإدارة التي تدير كل المواقع
+  const bo = S.mode !== 'admin' ? o : null;
+  applyBrand(bo);
   // H5: الترتيب: الشعار + «مفقودك» | Aa | اللغة | الحساب. أُزيل زر اسم المكتب (تغيير المكان في صفحة المكتب)
+  // H15: بجانب «مفقودك» نجمة شعار المؤسسة بعد خط فاصل (تظهر في كل المقاسات؛ الشعار الكامل في الواجهة الرئيسية)
   $('#hdr').innerHTML = `<div class="top-row">
-      <button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="${t('app.name')} — ${t('nav.home')}">${LOGO}<span class="wordmark">${t('app.name')}</span></button>
+      <div class="brand-wrap"><button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="${t('app.name')} — ${t('nav.home')}">${LOGO}<span class="wordmark">${t('app.name')}</span></button>${brandLogo(bo, 'light', 'hdr-logo', 'mark')}</div>
       ${S.config && (o || S.mode === 'admin') ? `<nav class="top-links" aria-label="${t('ui.navigation')}">${navItems().map(n => {
         const on = S.route.name === n.r && (!n.tab || (n.r === 'staff' ? S.staffTab : S.adminTab) === n.tab);
         return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}">${n.l}${tabNum(n.b, 0)}</button>`;
@@ -181,6 +185,14 @@ function renderHeader(){
       <button class="btn sm" data-act="checkVerified">${t('c.verified')}</button><button class="btn sm ghost" data-act="resendVerify">${t('ui.resend')}</button></div>` : ''}
     ${ms.length > 1 ? `<div class="seg modes" role="tablist" aria-label="${t('ui.viewMode')}">${ms.map(m => `<button class="${S.mode === m ? 'on' : ''}" data-act="mode" data-v="${m}" role="tab" aria-selected="${S.mode === m}">${statusLabel(MODE_LABEL[m])}</button>`).join('')}</div>` : ''}`;
   syncHeader();
+}
+/* H15: data-brand على <html> يبدّل ألوان CSS إلى ألوان المؤسسة، ولون شريط المتصفح (theme-color) معها */
+function applyBrand(o){
+  const b = brandOf(o), h = document.documentElement;
+  if ((h.dataset.brand || '') === (b?.id || '')) return;
+  if (b) h.dataset.brand = b.id; else delete h.dataset.brand;
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.content = b?.themeColor || '#0A6A5D';   // '#0A6A5D' = لون مفقودك في index.html
 }
 function navItems(){
   if (S.mode === 'staff'){
