@@ -1,5 +1,5 @@
 // عناصر واجهة مشتركة بين الصفحات
-import { icon, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf, statusLabel, ITEM_STATUS } from '../constants.js';
+import { icon, brandOf, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf, statusLabel, ITEM_STATUS } from '../constants.js';
 import { t, hasKey } from '../i18n.js';
 import { LS, esc, relDay, colorDot, isBuilding, roomWord, spotText, showTitle, when, fmtDate, isoDay } from '../utils.js';
 import { aiReady } from '../firebase.js';   // H8: ai.js يُحمَّل عند الحاجة فقط
@@ -18,6 +18,22 @@ export function resetForm(hadPhoto = false, copyFrom = null){ Object.assign(FORM
 export const addPrefs = () => LS.get('addPrefs:' + S.uid, {}) || {};
 export const saveAddPrefs = p => LS.set('addPrefs:' + S.uid, {cat: String(p.cat || ''), spot: String(p.spot || '')});
 export const AGAIN = {v: null};
+
+/* ---------- هوية الكلية (H15) ----------
+   brandLogo(o, on, cls, kind): شعار الجهة صوراً من المستودع (img-src 'self' في CSP).
+   on: 'dark' = فوق خلفية داكنة دائماً (الواجهة الرئيسية والتذييل) → النسخة البيضاء الرسمية.
+   on: 'light' = فوق سطح الصفحة → صورتان: الملوّنة تظهر في الوضع الفاتح والبيضاء في الداكن (CSS: .lg-l/.lg-d)،
+   والمخفية بـ display:none لا يقرؤها قارئ الشاشة. kind: 'logo' (أفقي بالاسم) أو 'mark' (النجمة وحدها) */
+export function brandLogo(o, on = 'light', cls = '', kind = 'logo'){
+  const b = brandOf(o); if (!b) return '';
+  const img = (src, k) => `<img class="br-logo ${k} ${cls}" src="${esc(src)}" alt="${t('br.logoAlt')}" decoding="async">`;
+  const color = kind === 'mark' ? b.mark : b.logo, white = kind === 'mark' ? b.markWhite : b.logoWhite;
+  return on === 'dark' ? img(white, 'on-dark') : img(color, 'lg-l') + img(white, 'lg-d');
+}
+export function collegeLinks(o, cls = ''){
+  const b = brandOf(o); if (!b?.links?.length) return '';
+  return `<ul class="br-links ${cls}">${b.links.map(l => `<li><a class="link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${icon(l.k === 'x' ? 'share' : l.k === 'lms' ? 'book' : l.k === 'rayat' ? 'idcard' : 'college')}<span>${t('br.link.' + l.k)}</span>${icon('ext', 'ext')}<span class="sr-only">${t('br.newTab')}</span></a></li>`).join('')}</ul>`;
+}
 
 // H13a: حالة غرض طلبٍ لم يعد متاحاً، بنص واضح: حُذف من المستودع، أو حالته الفعلية (سُلّم، مؤرشف، تُصرّف فيه)
 export const orphanText = i => !i ? t('st.orphanGone') : t('st.orphanState', {status: esc(statusLabel(ITEM_STATUS[i.status] || ITEM_STATUS.archived))});

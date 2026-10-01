@@ -1,12 +1,12 @@
 // الصفحة الرئيسية للمكان المختار + صفحة «وجدت غرضاً»
-import { icon, LOGO, otype, otypeName, oName, oPlace, oHours, oCity } from '../constants.js';
+import { icon, LOGO, otype, otypeName, oName, oPlace, oHours, oCity, brandOf } from '../constants.js';
 import { $, esc, today } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, curOffice } from '../state.js';
 import { card, skelCards, groupCard, groupEntries, groupedHere } from './visitor.js';
 import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt } from './common.js';
 import { APP_VERSION } from '../config.js';
-import { officeUrl } from './common.js';
+import { officeUrl, brandLogo, collegeLinks } from './common.js';
 import { load } from '../lazy.js';   // H8: رمز QR في التذييل يُحمَّل بعد الرسم
 import { hydrate } from '../ui.js';
 
@@ -28,7 +28,10 @@ export function vHome(){
   return `<div class="wrap home" data-view="home">
     <section class="hero-home">
       <div class="hh-text">
-        <span class="hh-kicker">${icon(otype(o.type).icon)}${esc(otypeName(o.type))}${oCity(o) ? ' · ' + esc(oCity(o)) : ''}</span>
+        ${brandOf(o)
+          // H15: مكتب الكلية: شعارها (أبيض فوق الأخضر الداكن) وبجانبه «مكتب المفقودات» بدل سطر نوع المكان
+          ? `<div class="hh-brand">${brandLogo(o, 'dark')}<span class="hh-brand-txt">${t('br.office')}</span></div>`
+          : `<span class="hh-kicker">${icon(otype(o.type).icon)}${esc(otypeName(o.type))}${oCity(o) ? ' · ' + esc(oCity(o)) : ''}</span>`}
         <h1>${t('home.lostIn', {name: esc(oName(o))})}</h1>
         <p>${t('home.lead')}</p>
         <form class="hero-search" data-form="homeSearch" role="search">
@@ -101,7 +104,9 @@ export function updateHome(){
 
 /* التذييل (H4): شريط بعرض الصفحة بالأخضر الداكن نفسه لبطاقة الرئيسية (--hero-bg) ونص أبيض.
    الهوية (الشعار، ووصف سطر واحد، ورمز QR صغير للمكتب بخلفية بيضاء) · مجموعة «المكتب» (روابطه ومكانه وأوقاته وهاتفه)
-   · شريط أخير: «© السنة مفقودك» وتحته «الخصوصية والشروط | إمكانية الوصول». بلا أي شعار حكومي أو شعار للمؤسسة.
+   · شريط أخير: «© السنة مفقودك» وتحته «الخصوصية والشروط | إمكانية الوصول».
+   H15: في مكتب الكلية فقط عمود ثالث «روابط الكلية» (شعارها وموقعها ورايات والبلاك بورد وحسابها على X)
+   وسطر «الاسم والشعار بإذن من إدارة الكلية». بلا شعار رؤية 2030 أو أي شعار حكومي آخر.
    المظهر وحجم الخط انتقلا إلى زر «Aa» في الشريط العلوي، واللغة إلى زرها هناك */
 function footer(o){
   return `<footer class="site-foot">
@@ -123,9 +128,15 @@ function footer(o){
           ${o.phone ? `<li>${icon('phone')}<span dir="ltr">${esc(o.phone)}</span></li>` : ''}
         </ul>
       </nav>
+      ${brandOf(o) ? `<nav class="sf-col sf-college" aria-labelledby="sf-college">
+        <h2 class="sf-h" id="sf-college">${t('br.links')}</h2>
+        ${brandLogo(o, 'dark', 'sf-logo')}
+        ${collegeLinks(o)}
+      </nav>` : ''}
     </div>
     <div class="sf-bottom">
       <small class="sf-copy">© ${today().slice(0, 4)} ${t('app.name')}</small>
+      ${brandOf(o) ? `<small class="sf-perm">${t('br.permission')}</small>` : ''}
       <small class="sf-ver">${t('ui.version', {v: APP_VERSION})}</small>
       <div class="sf-legal"><button class="link" data-act="nav" data-r="privacy">${t('foot.legal')}</button><span aria-hidden="true">|</span><button class="link" data-act="nav" data-r="a11y">${t('foot.a11y')}</button></div>
     </div>

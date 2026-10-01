@@ -1,7 +1,7 @@
 // Service Worker: يحفظ ملفات التطبيق ليفتح بسرعة ويعمل عند ضعف الاتصال.
 // الاستراتيجية: الشبكة أولاً (لتظهر تعديلاتك فوراً)، ثم النسخة المحفوظة إذا انقطع الاتصال.
 // عند تغيير أسماء الملفات غيّر رقم الإصدار هنا.
-const CACHE = 'mafqoodak-v33';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
+const CACHE = 'mafqoodak-v34';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
 // ملفات التطبيق نفسه فقط: ملفات Firebase من gstatic (ومنها firebase-app-check.js) لا يتعامل معها هذا العامل (مصدر آخر)
 // H8: تبقى هنا كل الملفات، ومنها ما يُحمَّل عند الحاجة فقط (lazy.js)، ليعمل التطبيق كاملاً دون اتصال بعد أول زيارة
 const SHELL = [
@@ -12,6 +12,8 @@ const SHELL = [
   './js/views/print.js', './js/views/stats.js', './js/views/audit.js', './js/views/gov.js',
   './js/views/common.js', './js/views/home.js', './js/views/visitor.js', './js/views/staff.js', './js/views/admin.js', './js/views/auth.js', './js/views/privacy.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
+  // H15: شعار المؤسسة لمكتب الكلية (ملوّن وأبيض، والنجمة وحدها للترويسة)
+  './icons/college/tvtc-logo.png', './icons/college/tvtc-logo-white.png', './icons/college/tvtc-mark.png', './icons/college/tvtc-mark-white.png',
 ];
 
 self.addEventListener('install', e => {

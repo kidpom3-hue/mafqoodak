@@ -1045,3 +1045,77 @@ html{scroll-padding-top:calc(var(--hdr-vh,64px) + 8px)}
 /* H13a: تنبيه الطلبات على أغراض غير متاحة أعلى «قراري» */
 .note.orphans{flex-wrap:wrap;align-items:center}
 .note.orphans .btn{margin-inline-start:auto}
+
+/* ---------- H15: هوية الكلية التقنية بالأحساء (مكتبها فقط: <html data-brand="tvtc">، يضعه applyBrand في ui.js) ----------
+   ألوان المؤسسة العامة للتدريب التقني والمهني: الأخضر المزرق الداكن #00343A والفيروزي #14A2A3.
+   --primary أغمق قليلاً من الفيروزي ليبقى تباين النص 4.5:1 على الأبيض والخلفية. اللون الذهبي (--tag/--hero-accent)
+   باقٍ لأنه لون شعار مفقودك نفسه. كتلتا الوضع الداكن أعلى أولوية (data-brand + data-theme) فلا تغلبهما كتلة الفاتح */
+:root[data-brand="tvtc"]{
+  --bg:#EEF4F4; --surface-2:#E2ECEC; --ink:#0B1F21; --muted:#4E6567; --line:#D0DEDE;
+  --primary:#0B7173; --primary-ink:#FFFFFF; --primary-soft:#D5ECEB; --primary-line:#93CFCE; --primary-faint:#EDF7F7;
+  --hero-bg:#00343A; --hero-ink:#F1F8F8; --hero-muted:#A9CFCF; --hero-line:rgba(255,255,255,.16); --hero-card:rgba(255,255,255,.07);
+}
+@media (prefers-color-scheme: dark){
+  :root[data-brand="tvtc"]:not([data-theme="light"]){
+    --bg:#081315; --surface:#101C1E; --surface-2:#172729; --ink:#E2EEEE; --muted:#8DA5A6; --line:#213336;
+    --primary:#45BFBF; --primary-ink:#032326; --primary-soft:#0F3A3C; --primary-line:#246A6B; --primary-faint:#0C1F21;
+    --hero-bg:#05292E; --hero-ink:#E6F0F0; --hero-muted:#9DBFC0; --hero-line:rgba(255,255,255,.12); --hero-card:rgba(255,255,255,.05);
+  }
+}
+:root[data-brand="tvtc"][data-theme="dark"]{
+  --bg:#081315; --surface:#101C1E; --surface-2:#172729; --ink:#E2EEEE; --muted:#8DA5A6; --line:#213336;
+  --primary:#45BFBF; --primary-ink:#032326; --primary-soft:#0F3A3C; --primary-line:#246A6B; --primary-faint:#0C1F21;
+  --hero-bg:#05292E; --hero-ink:#E6F0F0; --hero-muted:#9DBFC0; --hero-line:rgba(255,255,255,.12); --hero-card:rgba(255,255,255,.05);
+}
+/* لمعة فيروزية خفيفة في زاوية الواجهة الرئيسية بدل الذهبية */
+:root[data-brand="tvtc"] .hero-home::before{background:radial-gradient(circle at 8% 0%,rgba(20,162,163,.28),transparent 48%)}
+
+/* الشعار: نسخة ملوّنة للخلفية الفاتحة (.lg-l) وبيضاء رسمية للداكنة (.lg-d، و.on-dark فوق الأخضر الداكن دائماً) */
+.br-logo{display:block;width:auto;max-width:100%;object-fit:contain}
+.br-logo.lg-d{display:none}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .br-logo.lg-l{display:none}
+  :root:not([data-theme="light"]) .br-logo.lg-d{display:block}
+}
+:root[data-theme="dark"] .br-logo.lg-l{display:none}
+:root[data-theme="dark"] .br-logo.lg-d{display:block}
+
+/* الترويسة: «مفقودك» | نجمة المؤسسة */
+.brand-wrap{display:flex;align-items:center;gap:10px;min-width:0}
+.hdr-logo{height:30px;padding-inline-start:10px;border-inline-start:1px solid var(--line);box-sizing:content-box}
+@media (max-width:400px){ .brand-wrap{gap:8px} .hdr-logo{height:26px;padding-inline-start:8px} }
+/* 320: لا مكان؛ الشعار الكامل في الواجهة الرئيسية. المحدِّد أقوى من قاعدة إظهار النسخة البيضاء في الوضع الداكن (.lg-d) */
+@media (max-width:359px){ :root .brand-wrap .br-logo.hdr-logo{display:none} }
+
+/* الواجهة الرئيسية: الشعار و«مكتب المفقودات» بدل سطر نوع المكان */
+.hh-brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.hh-brand .br-logo{height:50px;max-width:210px}
+@media (min-width:720px){ .hh-brand .br-logo{height:60px;max-width:260px} }
+.hh-brand-txt{padding-inline-start:12px;border-inline-start:1px solid var(--hero-line);font-size:13.5px;font-weight:600;color:var(--hero-accent);line-height:1.4}
+/* الجوال: الشعار ثم «مكتب المفقودات» تحته دون الخط الفاصل (لا يتعلق الخط وحده في سطر) */
+@media (max-width:479px){ .hh-brand{flex-direction:column;align-items:flex-start;gap:6px} .hh-brand-txt{padding-inline-start:0;border-inline-start:0} }
+
+/* صفحة المكتب: الشعار فوق العنوان، ولوحة «عن الكلية» بروابطها */
+.ofc-logo{height:60px;max-width:250px;margin-bottom:8px}
+.br-links{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.br-links .link{display:inline-flex;align-items:center;gap:8px;min-height:36px;text-align:start}
+.br-links svg.ext{width:14px;height:14px;opacity:.75}
+.br-links.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:8px}
+.br-links.grid .link{width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);text-decoration:none;font-weight:600}
+.br-links.grid .link:hover{border-color:var(--primary-line);background:var(--primary-faint)}
+.br-links.grid .link span:not(.sr-only){flex:1}
+.br-links.grid svg:first-child{color:var(--primary)}
+.college-panel p{font-size:14px}
+
+/* التذييل: عمود «روابط الكلية» */
+.sf-logo{height:54px;max-width:230px;margin-block:2px 4px}
+.site-foot .br-links svg:first-child{width:16px;height:16px;color:var(--hero-accent)}
+.sf-perm{font-size:11.5px;color:var(--hero-muted);max-width:52ch}
+
+/* الطباعة: ملصق المكتب وشهادة الشكر (ألوان فاتحة دائماً، فالشعار بألوانه الأصلية) */
+.poster .po-brand{flex-wrap:wrap;justify-content:center;row-gap:8px}
+.po-sep{width:1px;height:38px;background:var(--line);margin-inline:6px}
+.po-logo{height:46px;max-width:170px}
+.cert-brand{display:flex;justify-content:center}
+.cert-logo{height:68px;max-width:240px}
+@media print{ .br-logo.lg-l{display:block!important} .br-logo.lg-d{display:none!important} }
