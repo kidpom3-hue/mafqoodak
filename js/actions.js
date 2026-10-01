@@ -14,7 +14,7 @@ import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor
 // (أزرار لوحة الموظف لا تظهر إلا بعد تحميلها، فهي موجودة عند النقر)
 import { mod, load } from './lazy.js';
 const SM = () => mod('staff');
-import { FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, detailReq } from './views/common.js';
+import { FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, dfOpt, detailReq } from './views/common.js';
 import { setTheme, setTextSize } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
 import { aiReady } from './firebase.js';
@@ -652,6 +652,18 @@ async function submitForm(form){
     return;
   }
   // قبول طلب فيه تضارب مصالح: السبب إلزامي، ويُحفظ في note والسجل
+  // H17: قبول بلاغ النقود مباشرة: المبلغ المؤكَّد وتاريخ العثور والإقرار، ثم غرض جديد مربوط ومقبول (workflow.approveCashDirect)
+  if (kind === 'cashApprove'){
+    const c = S.claims.find(x => x.id === form.dataset.id); if (!c) return;
+    const amount = detailValue({type: 'num'}, val('amount'));
+    if (!amount || Number(amount) <= 0) return formErr(form, t('wf.cashAmount'), 'amount');
+    if (!fd.get('matched')) return formErr(form, t('ca.needPledge'));
+    busy(form, true);
+    const ok = await write(() => wf.approveCashDirect(c, {amount, foundDate: val('foundDate')}), t('a.approved'));
+    busy(form, false);
+    if (ok){ closeSheet(); emailUser(c.uid); }
+    return;
+  }
   if (kind === 'approveWhy'){
     const c = S.claims.find(x => x.id === form.dataset.id); if (!c) return;
     if (val('reason').length < 10) return formErr(form, t('a.needReason'));
@@ -1134,6 +1146,26 @@ const ACT = {
           <span class="hint">${t('qa.answerHint')}</span></div>
         <div class="form-err" hidden></div>
         <div class="btn-row"><button class="btn" type="submit">${icon('check')}${t('qa.sendAnswer')}</button><button type="button" class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>
+      </form>`);
+  },
+  // H17: «قبول» بلاغ نقود غير مربوط بغرض: نافذة قصيرة (المبلغ المسلَّم، وتاريخ العثور، والإقرار)
+  approveCash(el){
+    const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return;
+    const d = c.details || {};
+    const facts = [d.denoms ? `<dt>${dfLabel(c.cat, 'denoms')}</dt><dd>${esc(d.denoms)}</dd>` : '',
+      d.holder ? `<dt>${dfLabel(c.cat, 'holder')}</dt><dd>${esc(dfOpt('holder', d.holder))}</dd>` : ''].join('');
+    openSheet(`<h2>${icon('cash')} ${t('ca.title')}</h2>
+      <p class="muted">${t('ca.sub', {no: `<b dir="ltr">${esc(claimNo(c))}</b>`})}</p>
+      ${facts ? `<dl class="facts">${facts}</dl>` : ''}
+      <form data-form="cashApprove" data-id="${esc(c.id)}" data-allcheck="1" novalidate>
+        <div class="field"><label for="ca-amt">${t('ca.amount')}</label>
+          <input id="ca-amt" name="amount" class="input num-in" inputmode="numeric" dir="ltr" maxlength="9" autocomplete="off" required value="${esc(d.amount || '')}">
+          <span class="hint">${t('ca.amountHint')}</span></div>
+        <div class="field"><label for="ca-date">${t('ca.foundDate')} <span class="hint">${t('c.optional')}</span></label>
+          <input id="ca-date" name="foundDate" type="date" class="input" max="${today()}" value="${today()}"></div>
+        <label class="check"><input type="checkbox" name="matched" required><span><b>${t('ca.pledge')}</b></span></label>
+        <div class="form-err" hidden></div>
+        <div class="btn-row"><button class="btn" type="submit" disabled>${icon('check')}${t('ca.confirm')}</button><button type="button" class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>
       </form>`);
   },
   verify(el){

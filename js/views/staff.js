@@ -1,5 +1,5 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
-import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, GROUP_EXPIRE_DAYS } from '../constants.js';
+import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, GROUP_EXPIRE_DAYS, isHiddenCat } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist } from '../state.js';
@@ -285,6 +285,8 @@ export const orphanClaims = () => S.claims.filter(c => c.uid !== S.uid && isOrph
 export function claimCardStaff(c, opts){
   // H11: الطلب المجمّع: الغرض المربوط (claimLinks) قبل القبول، ورقمه في الطلب بعده
   const lk = c.grouped && !c.itemId ? linkOf(c) : null, unlinked = !!c.grouped && !c.itemId && !lk;
+  // H17: بلاغ النقود: «قبول» دائماً، حتى بلا مرشّح أو ربط (المكتب يحتفظ بالمبلغ وقد لا يكون مسجّلاً)؛ الربط بمرشّح يبقى اختيارياً
+  const cashDirect = unlinked && isHiddenCat(c.cat);
   // H13a: الغرض غير محمّل (S.items فيها النشطة فقط): نجلبه مرة واحدة ونعرض «جارٍ التحميل». بعد الجلب، إن كان
   // محذوفاً أو غير نشط والطلب مفتوح = طلب يتيم: عنوان «غرض غير متاح»، وحالته، وزر واحد «إغلاق الطلب»
   const iid = claimItemId(c), i = item(iid);
@@ -305,7 +307,8 @@ export function claimCardStaff(c, opts){
     : loadingIt && ['pending', 'approved'].includes(c.status) ? ''
     : orphan ? `<div class="btn-row"><button class="btn sm" data-act="closeOrphan" data-id="${esc(c.id)}">${icon('x')}${t('st.orphanClose')}</button></div>`
     : c.status === 'pending' ? `<div class="btn-row">
-      ${unlinked ? '' : `<button class="btn sm" data-act="approve" data-id="${esc(c.id)}">${icon('check')}${t('st.approve')}</button>`}
+      ${cashDirect ? `<button class="btn sm" data-act="approveCash" data-id="${esc(c.id)}">${icon('check')}${t('st.approve')}</button>`
+        : unlinked ? '' : `<button class="btn sm" data-act="approve" data-id="${esc(c.id)}">${icon('check')}${t('st.approve')}</button>`}
       <button class="btn sm ghost" data-act="ask" data-id="${esc(c.id)}">${icon('question')}${t(c.question ? 'qa.askAgain' : 'qa.ask')}</button>
       <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}${t('c.reject')}</button></div>`
     : c.status === 'approved' ? `<div class="btn-row">
@@ -327,7 +330,9 @@ export function claimCardStaff(c, opts){
       ${i && ['clear', 'blur', 'none'].includes(i.photo) ? `<figure><div class="row-thumb">${icon('camera')}<img data-photo="p_${esc(i.id)}" alt="" hidden></div><figcaption>${t('st.itemPhoto')}</figcaption></figure>` : ''}
       ${Array.from({length: nProofs}, (_, k) => `<figure><div class="row-thumb">${icon('camera')}<img data-photo="cp_${esc(c.id)}_${k}" alt="" hidden></div><figcaption>${t('st.proofPhoto', {n: k + 1})}</figcaption></figure>`).join('')}
     </div>` : '';
-  return mcard({key: 's:' + c.id, open: opts?.open, fresh: opts?.fresh, muted: !['pending', 'approved'].includes(c.status), tone: warn ? 'warn' : '', pillHtml: pill(CLAIM_STATUS, c.status), next,
+  return mcard({key: 's:' + c.id, open: opts?.open, fresh: opts?.fresh, muted: !['pending', 'approved'].includes(c.status), tone: warn ? 'warn' : '',
+    // H17: بلاغ النقود قبل القبول = «قيد المطابقة» عند الموظف كما عند صاحبه
+    pillHtml: c.status === 'pending' && c.grouped && isHiddenCat(c.cat) ? `<span class="pill info">${t('gc.matching')}</span>` : pill(CLAIM_STATUS, c.status), next,
     head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${orphan ? t('st.orphanTitle') : i ? esc(showTitle(i)) : c.grouped && !iid ? t('grp.' + c.cat + '.title') : t('c.loadingDots')}</h3>${c.grouped ? `<span class="pill info">${t('gc.pill')}</span>` : ''}${person(c.uid)}${prior ? `<span class="pill ok prior">${icon('bell')}${t('st.priorReport')}</span>` : ''}`,
     body: `<div class="box-head"><div class="claim-who">${whenLine('c.sentAt', c.createdAt)}${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div></div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}

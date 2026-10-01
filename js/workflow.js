@@ -2,7 +2,8 @@
 // كل انتقال يُكتب في writeBatch واحد (الغرض + الطلبات + قيد في السجل logs)،
 // فإما ينجح كله أو لا يُكتب منه شيء، حتى لا تبقى البيانات ناقصة إذا انقطع الاتصال.
 import { dbx, deleteField, arrayRemove } from './firebase.js';
-import { isHighValue, pubFlag } from './constants.js';
+import { isHighValue, pubFlag, isHiddenCat, detailValue, claimOf, cat } from './constants.js';
+import { makeRef, publicTitle, today } from './utils.js';
 import { S, full, item } from './state.js';
 import { SETTINGS } from './config.js';
 import { pubPhoto } from './views/common.js';
@@ -23,7 +24,7 @@ const PENDING_LOGS = new WeakMap();
 function log(b, officeId, action, x = {}){
   const id = dbx.newId('logs');
   const e = {officeId, itemId: x.itemId || '', claimId: x.claimId || '', reportId: x.reportId || '',
-    action, by: S.uid, at: Date.now(), note: String(x.note || '').slice(0, 600), ...(x.checks?.length ? {checks: x.checks} : {})};
+    action, by: S.uid, at: Date.now(), note: String(x.note || '').slice(0, 600), ...(x.checks?.length ? {checks: x.checks} : {}), ...(x.direct ? {direct: true} : {})};
   b.set(dbx.ref('logs/' + id), e);
   PENDING_LOGS.set(b, [...(PENDING_LOGS.get(b) || []), {id, ...e}]);
 }
@@ -126,7 +127,7 @@ async function closeOthers(b, i, exceptId, status, note){
    reason: سبب القبول، إلزامي إذا كان صاحب الطلب هو من سلّم الغرض أو سجّله (تضارب مصالح)؛ يُحفظ في note والسجل */
 /* H11: ربط طلب مجمّع (بالوصف) بغرض: موظف المكتب يختاره من المرشّحين، مرة واحدة (claimLinks، لا يراه صاحب الطلب).
    الغرض متاح ومن المكتب والتصنيف نفسيهما (القواعد تفرض ذلك). بعده يكمل الطلب التدفق العادي: سؤال، قبول، رمز، تسليم */
-export async function linkClaim(c, itemId){
+export async function linkClaim(c, itemId, {silent = false} = {}){
   notMine(c);
   if (!c?.grouped || c.itemId || c.status !== 'pending') fail(t('wf.notPending'));
   if (S.links[c.id]) fail(t('wf.alreadyLinked'));
@@ -134,9 +135,53 @@ export async function linkClaim(c, itemId){
   if (i.status !== 'available' || i.officeId !== c.officeId || i.cat !== c.cat) fail(t('wf.notAvailable'));
   const b = dbx.batch(), link = {officeId: c.officeId, itemId: i.id, by: S.uid, at: Date.now()};
   b.set(dbx.ref('claimLinks/' + c.id), link);
-  log(b, c.officeId, 'link', {itemId: i.id, claimId: c.id});
+  if (!silent) log(b, c.officeId, 'link', {itemId: i.id, claimId: c.id});   // H17: القبول المباشر للنقود يكتب قيداً واحداً
   await commit(b, true);
   S.links = {...S.links, [c.id]: {id: c.id, ...link}};
+}
+/* H17: قبول بلاغ النقود مباشرة دون غرض مسجّل في المستودع (النقود فقط: hiddenPublic).
+   المكتب يحتفظ بالمبلغ فعلاً وقد لا يكون مسجّلاً في التطبيق؛ الموظف يطابق البلاغ بما لديه ويؤكد المبلغ.
+   الخطوات (القواعد كما هي: الغرض يُنشأ ويُربط قبل القبول):
+   1) غرض نقود جديد (items ثم itemSecrets، بالترتيب المعتاد) متاح وغير عام (public: false)، فيه createdFrom = رقم الطلب،
+      والمبلغ المؤكَّد والفئات والحاوية من البلاغ. يُنشأ «متاحاً» لا «محجوزاً»: القواعد تشترط غرضاً متاحاً للربط
+      (claimLinks) وقبل القبول (approveOk)، والقبول نفسه يحجزه له. الزائر لا يراه في أي حال (H16).
+   2) الربط بالطلب (claimLinks) دون قيد، ثم 3) القبول بالتدفق العادي (رمز الاستلام، ومهلة الحضور) بقيد واحد
+      «قبول مباشر لبلاغ نقود» (approveCash، direct: true).
+   إن فشل 1 أو 2 بعد إنشاء الغرض: يُحذف (للإدارة) أو يُؤرشف (للموظف؛ حذف النقود للإدارة فقط)، فلا يبقى غرض يتيم.
+   إن فشل 3 بعد الربط: يبقى الغرض مربوطاً بالطلب، وزر «قبول» العادي يكمله */
+export async function approveCashDirect(c, {amount, foundDate = ''} = {}){
+  notMine(c);
+  if (!c?.grouped || !isHiddenCat(c.cat) || c.itemId || c.status !== 'pending') fail(t('wf.notPending'));
+  if (S.links[c.id]) return approveClaim(c);   // مربوط من قبل: القبول العادي
+  const amt = detailValue({type: 'num'}, amount);
+  if (!amt || Number(amt) <= 0) fail(t('wf.cashAmount'));
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(foundDate) && foundDate <= today() ? foundDate : today();
+  const o = S.offices.find(x => x.id === c.officeId);
+  // الفئات والحاوية كما في البلاغ (المفاتيح المعروفة للتصنيف فقط)، والمبلغ المؤكَّد
+  const keys = claimOf(c.cat).details.map(d => d.k), det = {};
+  for (const k of keys) if (c.details?.[k]) det[k] = String(c.details[k]);
+  det.amount = amt;
+  // النوع: «ظرف نقود» إن كانت الحاوية ظرفاً، وإلا «نقود ورقية» (القيم المخزّنة من قائمة التصنيف في constants.js)
+  const subs = cat(c.cat).subs, sub = (det.holder === 'envelope' ? subs[2] : subs[0]) || subs[0] || '';
+  const id = dbx.newId('items'), now = Date.now();
+  await dbx.set('items/' + id, {officeId: c.officeId, ref: makeRef(o), cat: c.cat, sub, title: publicTitle(c.cat, sub), foundDate: day,
+    photo: false, status: 'available', createdBy: S.uid, createdAt: now, updatedAt: now, sample: false, public: pubFlag(c.cat), createdFrom: c.id});
+  let secret = false;
+  try {
+    await dbx.set('itemSecrets/' + id, {officeId: c.officeId, title: tAr('sys.cashTitle', {n: amt}), color: '', brand: '',
+      desc: tAr('sys.cashFrom', {no: c.no || ''}), spot: '', bldg: '', room: '', storage: '', details: det});
+    secret = true;
+    await linkClaim(c, id, {silent: true});
+  } catch (e){
+    // لا غرض يتيم: حذف (الإدارة)، وإلا أرشفة مع قيد يشرح السبب
+    try { if (secret) await dbx.del('itemSecrets/' + id); await dbx.del('items/' + id); }
+    catch {
+      try { const b = dbx.batch(); b.update(dbx.ref('items/' + id), {status: 'archived', updatedAt: Date.now(), public: pubFlag(c.cat)});
+        log(b, c.officeId, 'status:archived', {itemId: id, claimId: c.id, note: tAr('sys.cashUndo')}); await b.commit(); } catch (e2){ console.warn(e2); }
+    }
+    throw e;
+  }
+  return approveClaim(c, {action: 'approveCash', direct: true});
 }
 /* H11: طلب مجمّع بلا مطابقة بعد 30 يوماً: يُغلق «منتهياً» (عند فتح لوحة الموظف)، ويُبلَّغ صاحبه */
 export async function expireGroupClaim(c){
@@ -148,7 +193,7 @@ export async function expireGroupClaim(c){
   return true;
 }
 
-export async function approveClaim(c, {reason = ''} = {}){
+export async function approveClaim(c, {reason = '', action = 'approve', direct = false} = {}){
   notMine(c);
   if (c.status !== 'pending') fail(t('wf.notPending'));
   // H11: الطلب المجمّع يُقبل بعد ربطه بغرض فقط؛ ويُكتب رقم الغرض في الطلب عند القبول النهائي (لا قبله)
@@ -171,7 +216,7 @@ export async function approveClaim(c, {reason = ''} = {}){
   b.update(dbx.ref('claims/' + c.id), {status: 'approved', decidedAt: Date.now(), decidedBy: S.uid, pickupBy, ...(note ? {note} : {}),
     ...(linked ? {itemId: linked} : {})});
   itemUpdate(b, i, {status: 'reserved', reservedFor: c.id, updatedAt: Date.now()});
-  log(b, i.officeId, 'approve', {itemId: i.id, claimId: c.id, note});
+  log(b, i.officeId, action, {itemId: i.id, claimId: c.id, note, direct});
   await commit(b, true);
   return 'approved';
 }
