@@ -1119,3 +1119,7 @@ html{scroll-padding-top:calc(var(--hdr-vh,64px) + 8px)}
 .cert-brand{display:flex;justify-content:center}
 .cert-logo{height:68px;max-width:240px}
 @media print{ .br-logo.lg-l{display:block!important} .br-logo.lg-d{display:none!important} }
+
+/* H16: رسالة تصنيف النقود في التصفح (لا تُعرض المبالغ للزائر): النص ثم زر «بلّغ عن مبلغ مفقود» */
+.cash-note{align-items:flex-start}
+.cash-note p{margin:0 0 10px;line-height:1.7}

@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v10 (H14: موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
+// قواعد حماية بيانات مفقودك — الإصدار v11 (H16: النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -73,6 +73,19 @@ service cloud.firestore {
     // (نفس القائمة GROUP_CATS في js/constants.js — عدّلهما معاً)
     function groupCats() { return ['cash', 'ids', 'wallets', 'keys']; }
     function linkDoc(id) { return /databases/$(database)/documents/claimLinks/$(id); }
+    // ── v11 (H16): تصنيفات لا تُعرض للزائر أبداً (نفس القائمة HIDDEN_CATS في js/constants.js — عدّلهما معاً)
+    // كل غرض فيه حقل public: true للعادي، و false لهذه التصنيفات (القواعد تفرضه عند الكتابة).
+    // الغرض القديم بلا الحقل: عام إلا إن كان من هذه التصنيفات. الزائر يستعلم بـ public == true فقط
+    function hiddenCats() { return ['cash']; }
+    // (الفرع الأول وحده يثبته استعلام الزائر public == true؛ والثاني للقراءة المباشرة لغرض قديم لم يُرحَّل بعد)
+    function isPublicItem(d) { return d.public == true || (!('public' in d) && !(d.cat in hiddenCats())); }
+    function publicOk(d) { return d.get('public', true) == !(d.cat in hiddenCats()); }
+    // صاحب طلب على الغرض: طلب مباشر بمعرّف {itemId}_{uid}، أو طلب مجمّع حُجز له الغرض (reservedFor)
+    function claimantOf(itemId) {
+      return signedIn() && (exists(claimDoc(itemId + '_' + me()))
+        || (resource.data.get('reservedFor', '') != '' && exists(claimDoc(resource.data.reservedFor))
+            && get(claimDoc(resource.data.reservedFor)).data.uid == me()));
+    }
     // ── v9 (H12): رمز الاستلام يُفحص على الخادم ──
     // بصمة الرمز في claimCodes/{claimId} (لا يقرؤها أحد)، والموظف يكتب الرمز الذي قدّمه المستلم في handoverCode
     // عند التسليم؛ القواعد تحسب sha256(رقم الطلب:الرمز) وتقارنها. الطلبات القديمة (قبل v9): البصمة في codeHash بالطلب نفسه
@@ -207,13 +220,17 @@ service cloud.firestore {
     }
 
     // المفقودات: يراها الجميع، ويعدّلها موظفو المكتب نفسه فقط
+    // v11 (H16): إلا النقود: لموظف المكتب والإدارة، ولصاحب طلب عليها فقط (لا تظهر في أي قائمة أو رابط للزائر)
     match /items/{itemId} {
-      allow read: if true;
+      allow read: if isPublicItem(resource.data) || isStaffOf(resource.data.officeId) || claimantOf(itemId);
       allow create: if isStaffOf(request.resource.data.officeId)
-        && !request.resource.data.keys().hasAny(secretKeys());
+        && !request.resource.data.keys().hasAny(secretKeys())
+        && request.resource.data.public == !(request.resource.data.cat in hiddenCats());
       allow update: if isStaffOf(resource.data.officeId)
         && request.resource.data.officeId == resource.data.officeId
         && !request.resource.data.keys().hasAny(secretKeys())
+        // v11: public يطابق التصنيف بعد كل تعديل (تغيير التصنيف إلى نقود يجعله خاصاً في العملية نفسها)
+        && publicOk(request.resource.data)
         // «محجوز» فقط لطلب مقبول في العملية نفسها
         && (request.resource.data.status != 'reserved' || resource.data.status == 'reserved'
             || getAfter(/databases/$(database)/documents/claims/$(request.resource.data.reservedFor)).data.status == 'approved')
@@ -259,7 +276,9 @@ service cloud.firestore {
     match /itemPhotos/{itemId} {
       function itemOffice() { return get(/databases/$(database)/documents/items/$(itemId)).data.officeId; }
       allow read: if true;
-      allow create, update: if photoDoc() && isStaffOf(itemOffice());
+      // v11: لا صورة عامة لغرض من التصنيفات المخفية
+      allow create, update: if photoDoc() && isStaffOf(itemOffice())
+        && !(get(/databases/$(database)/documents/items/$(itemId)).data.cat in hiddenCats());
       // موظف المكتب يحذف صور مفقودات مكتبه فقط
       allow delete: if isAdmin() || isStaffOf(itemOffice());
     }

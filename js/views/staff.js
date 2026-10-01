@@ -6,7 +6,7 @@ import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, s
 import { backBtn, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
-import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry } from '../migrate.js';
+import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry, migratePublic } from '../migrate.js';
 import { MS_NOTE, expireGroupClaim, OPEN } from '../workflow.js';
 import { emailUser } from '../notify.js';   // H9: ملاحظة مدة الإضافة لا تُعرض في السجل
 
@@ -80,6 +80,7 @@ export function updateStaff(){
   hydrate();
   migrateItems();   // نقل تفاصيل الأغراض القديمة إلى الملف السري (مرة واحدة)
   migrateSpots();   // نقل مكان العثور من الإعلان العام إلى الملف السري (المرحلة E5)
+  migratePublic();  // H16: حقل public لكل غرض قديم (مرة واحدة لكل جهاز ومكتب)
 }
 // تنبيه مدة الحفظ: قائمة ما تجاوزها مع إجراء جماعي «تصرّف»، وما سينتهي خلال 7 أيام
 function retentionBox(){

@@ -3,7 +3,7 @@ import { icon, LOGO, otype, otypeName, oName, oPlace, oHours, oCity, brandOf } f
 import { $, esc, today } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, curOffice } from '../state.js';
-import { card, skelCards, groupCard, groupEntries, groupedHere } from './visitor.js';
+import { card, skelCards, groupCard, groupEntries, groupedHere, pubActive } from './visitor.js';
 import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt } from './common.js';
 import { APP_VERSION } from '../config.js';
 import { officeUrl, brandLogo, collegeLinks } from './common.js';
@@ -82,7 +82,7 @@ export function vHome(){
 
 export function updateHome(){
   const o = curOffice(); if (!o) return;
-  const avail = S.items.filter(i => i.status === 'available' || i.status === 'reserved');
+  const avail = pubActive();   // H16: بلا النقود (لا تظهر للزائر)
   const cc = $('#cta-count'); if (cc && S.itemsLoaded) cc.textContent = avail.length ? t('home.availNow', {items: tp('n.item', avail.length)}) : t('home.ctaBrowseSub');
   const latest = $('#home-latest');
   if (latest){

@@ -20,7 +20,7 @@ const PORT = server.address().port;
 
 const now = Date.now(), day = 864e5, O = 'tc-ahsa';
 const ds = n => new Date(now - n * day).toISOString().slice(0, 10);
-const item = (id, x = {}) => ({officeId: O, ref: 'TCA-' + id.toUpperCase(), cat: 'bags', sub: 'حقيبة ظهر', title: 'حقيبة ظهر', foundDate: ds(2), photo: 'blur', status: 'available', createdBy: 'staffA', createdAt: now - 3600e3, updatedAt: now, sample: false, ...x});
+const item = (id, x = {}) => ({officeId: O, ref: 'TCA-' + id.toUpperCase(), cat: 'bags', sub: 'حقيبة ظهر', title: 'حقيبة ظهر', foundDate: ds(2), photo: 'blur', status: 'available', createdBy: 'staffA', createdAt: now - 3600e3, updatedAt: now, sample: false, ...x, public: 'public' in x ? x.public : (x.cat ?? 'bags') !== 'cash'});   // H16: الغرض العام فيه public: true (والنقود false)
 const secret = (x = {}) => ({officeId: O, title: 'غرض', color: '', brand: '', desc: '', spot: 'المكتبة', bldg: '', room: '', storage: '', ...x});
 const base = () => ({
   'config/app': {ownerUid: 'owner'},
@@ -152,17 +152,46 @@ const gclaim = (id, x = {}) => ({[`claims/${id}`]: {itemId: '', cat: 'cash', gro
 const staffCard = (p, id) => p.evaluate(id => { const c = document.querySelector(`details[data-card="s:${id}"]`); if (!c) return null; if (!c.open) c.querySelector('summary').click();
   return {strong: !!c.querySelector('.hit-line'), links: [...c.querySelectorAll('[data-act=linkClaim]')].map(b => b.dataset.i), q: c.querySelector('[data-act=askSugg]')?.dataset.q || '',
     none: !!c.querySelector('.note') && c.textContent.includes('لا يوجد في المستودع ما يطابق'), approve: !!c.querySelector('[data-act=approve]')}; }, id);
-// 5) زائر: 5 مبالغ = بطاقة مجمّعة واحدة، ولا بطاقة مبلغ منفردة، والرابط القديم للغرض يحوّل إلى الطلب بالوصف
-{
+// 5) H16: النقود لا تظهر للزائر بأي شكل (ولا للموظف في «وضع الزائر»): لا بطاقة مجمّعة ولا منفردة ولا عدّاد ولا رابط ولا بحث؛
+//    تصنيف «نقود» يعرض الرسالة وزر البلاغ. والتصنيفات المجمّعة الأخرى (المحافظ) باقية كما في H11
+const walletIt = id => ({[`items/${id}`]: item(id, {cat: 'wallets', sub: 'محفظة رجالية', title: 'محفظة رجالية', photo: false, foundDate: ds(1)}), [`itemSecrets/${id}`]: secret({spot: 'المكتبة'})});
+for (const [who, mode] of [[amy, 'visitor'], [staff, 'visitor']]){
   const five = {...cashIt('m1', '150', 'المكتبة'), ...cashIt('m2', '500', 'الكافتيريا'), ...cashIt('m3', '50', 'المكتبة'), ...cashIt('m4', '1000', 'المكتبة'), ...cashIt('m5', '220', 'المكتبة')};
-  const {p, ctx, errs} = await open(amy, 'visitor', {...base(), ...five, ...bag('b1', 'blue')});
+  const tag = who === amy ? 'زائر' : 'موظف بوضع الزائر';
+  const {p, ctx, errs} = await open(who, mode, {...base(), ...five, ...walletIt('w1'), ...walletIt('w2'), ...bag('b1', 'blue')});
+  await go(p, 'home');
+  const h = await p.evaluate(() => ({n: document.querySelectorAll('#home-latest .card').length, cash: [...document.querySelectorAll('#home-latest .card')].filter(c => c.dataset.cat === 'cash' || /نقود|مبلغ/.test(c.textContent)).length}));
+  expect(h.n === 2 && h.cash === 0, `${tag}: «أحدث المفقودات» = بطاقة المحافظ والحقيبة فقط، بلا نقود ${JSON.stringify(h)}`);
   await go(p, 'browse');
-  const r = await p.evaluate(() => ({groups: document.querySelectorAll('#results .group-card').length, single: [...document.querySelectorAll('#results .card:not(.group-card)')].map(c => c.textContent).filter(x => x.includes('نقود')).length}));
-  expect(r.groups === 1 && r.single === 0, `مجمّع: المتوقع بطاقة مجمّعة واحدة بلا مبالغ منفردة ${JSON.stringify(r)}`);
+  const r = await p.evaluate(() => ({groups: [...document.querySelectorAll('#results .group-card')].map(c => c.dataset.cat),
+    cash: [...document.querySelectorAll('#results .card')].filter(c => c.dataset.cat === 'cash' || /نقود|مبلغ/.test(c.textContent)).length,
+    avail: document.querySelector('#br-stats b')?.textContent}));
+  expect(r.groups.join() === 'wallets' && r.cash === 0 && r.avail === '3', `${tag}: المتوقع بطاقة المحافظ فقط ولا نقود، والعدّاد 3 ${JSON.stringify(r)}`);
+  await p.evaluate(() => document.querySelector('#cat-chips [data-id=cash]').click()); await p.waitForTimeout(300);
+  const c = await p.evaluate(() => ({note: !!document.querySelector('#results .cash-note [data-act=gclaim][data-cat=cash]'), cards: document.querySelectorAll('#results .card').length}));
+  expect(c.note && c.cards === 0, `${tag}: تصنيف «نقود» يعرض الرسالة وزر البلاغ فقط ${JSON.stringify(c)}`);
+  await p.evaluate(() => document.querySelector('#cat-chips [data-id=all]').click());
+  await p.evaluate(async () => { const {S} = await import('./js/state.js'); S.filter.q = 'نقود'; (await import('./js/views/visitor.js')).updateBrowse(); }); await p.waitForTimeout(200);
+  const sq = await p.evaluate(() => ({note: !!document.querySelector('#results .cash-note'), cash: [...document.querySelectorAll('#results .card')].filter(c => /نقود|مبلغ/.test(c.textContent)).length}));
+  expect(sq.note && sq.cash === 0, `${tag}: البحث عن «نقود» يعرض الرسالة بلا نتائج نقود ${JSON.stringify(sq)}`);
+  await p.evaluate(async () => { (await import('./js/state.js')).S.filter.q = ''; });
   await p.evaluate(async () => (await import('./js/ui.js')).go('item', {id: 'm2'})); await p.waitForTimeout(700);
-  const rt = await p.evaluate(async () => (await import('./js/state.js')).S.route);
-  expect(rt.name === 'gclaim' && rt.params.cat === 'cash', `مجمّع: رابط الغرض القديم لم يحوّل إلى الطلب بالوصف ${JSON.stringify(rt)}`);
-  expect(!errs.length, 'مجمّع (زائر): ' + errs.join(' | '));
+  const rt = await p.evaluate(async () => ({name: (await import('./js/state.js')).S.route.name, txt: document.querySelector('#main').textContent}));
+  expect(rt.name === 'item' && rt.txt.includes('غير متاح') && !/500|الكافتيريا/.test(rt.txt), `${tag}: رابط غرض النقود يعرض «غير متاح» ${JSON.stringify(rt.name)}`);
+  await p.evaluate(async () => (await import('./js/ui.js')).go('item', {id: 'w1'})); await p.waitForTimeout(700);
+  const rw = await p.evaluate(async () => (await import('./js/state.js')).S.route);
+  expect(rw.name === 'gclaim' && rw.params.cat === 'wallets', `${tag}: رابط المحفظة القديم يحوّل إلى الطلب بالوصف ${JSON.stringify(rw)}`);
+  expect(!errs.length, `${tag} (H16): ` + errs.join(' | '));
+  await ctx.close();
+}
+// H16: «بلّغ» مع تصنيف النقود يتحول إلى البلاغ بالتفاصيل (الطلب المجمّع)
+{
+  const {p, ctx, errs} = await open(amy, 'visitor', base());
+  await go(p, 'report');
+  await p.evaluate(() => { const el = document.querySelector('form[data-form=report] input[name=cat][value=cash]'); el.checked = true; el.dispatchEvent(new Event('change', {bubbles: true})); }); await p.waitForTimeout(500);
+  const rt = await p.evaluate(async () => ({r: (await import('./js/state.js')).S.route, gcat: document.querySelector('form[data-gcat]')?.dataset.gcat}));
+  expect(rt.r.name === 'gclaim' && rt.gcat === 'cash', `H16: بلاغ النقود لم يتحول إلى البلاغ بالتفاصيل ${JSON.stringify(rt)}`);
+  expect(!errs.length, 'H16 (بلاغ): ' + errs.join(' | '));
   await ctx.close();
 }
 // 6) موظف: مبلغ مطابق تماماً + المكان نفسه ولا منافس قريب = «مطابقة مؤكدة» (مرشّح واحد)، وبلا زر قبول قبل الربط

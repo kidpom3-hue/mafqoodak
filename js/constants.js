@@ -112,6 +112,13 @@ export const autoSuggestOk = id => cat(id).autoSuggest !== false;
    GROUP_CATS = groupCats() في firestore.rules (عدّلهما معاً) */
 export const isGrouped = id => !!CATS.find(c => c.id === id)?.groupPublic;
 export const GROUP_CATS = ['ids', 'cash', 'wallets', 'keys'];
+/* H16: hiddenPublic:true (النقود فقط) = لا تظهر للزائر بأي شكل: لا قائمة ولا بحث ولا بطاقة مجمّعة ولا عدّاد ولا رابط.
+   صاحبها يقدّم بلاغاً بالتفاصيل (طلب مجمّع بالوصف، H11)، والموظف يطابقه مع المبالغ المسجّلة.
+   كل غرض يُكتب فيه public = !isHiddenCat(cat)، والزائر يستعلم بـ public == true فقط.
+   HIDDEN_CATS = hiddenCats() في firestore.rules (عدّلهما معاً) */
+export const isHiddenCat = id => !!CATS.find(c => c.id === id)?.hiddenPublic;
+export const HIDDEN_CATS = ['cash'];
+export const pubFlag = catId => !isHiddenCat(catId);
 // المطابقة عند الموظف: الأيام بعد تاريخ الفقد، وهامش المبلغ، والمهلة قبل إغلاق الطلب المجمّع دون مطابقة
 export const GROUP_DAYS = 14, AMOUNT_TOL = 0.1, GROUP_EXPIRE_DAYS = 30;
 // كلمات عامة لا تُعدّ «كلمة مميزة» عند مقارنة عنوان البلاغ ووصفه بالعنوان العام للغرض (بعد التطبيع: بلا همزات وتاء مربوطة)
@@ -122,7 +129,7 @@ export const CATS = [
   {id:'ids', autoSuggest:false, groupPublic:true, name:'بطاقات ووثائق', en:'Cards & documents', icon:'idcard', sensitive:true, subs:['هوية وطنية','هوية مقيم','بطاقة متدرب','رخصة قيادة','بطاقة بنكية','جواز سفر','وثيقة أخرى'], subsEn:['National ID','Resident ID (Iqama)','Trainee card','Driving licence','Bank card','Passport','Other document'],
     claim:{fields: [], details: [q('docName', 'text', 'staff', {as: 'claimantName'}), q('docLast4', 'last4', 'staff', {as: 'idLast4'}), q('issuer')], hint: 'cl.h.ids'},
     staffCheck: 'sc.ids', retentionDays: 30, disposal: 'authority'},
-  {id:'cash', autoSuggest:false, groupPublic:true, name:'نقود', en:'Cash', icon:'cash', sensitive:true, publicName:'مبلغ مالي', publicEn:'Sum of money', subs:['نقود ورقية','عملات','ظرف نقود'], subsEn:['Banknotes','Coins','Envelope of money'],
+  {id:'cash', autoSuggest:false, groupPublic:true, hiddenPublic:true, name:'نقود', en:'Cash', icon:'cash', sensitive:true, publicName:'مبلغ مالي', publicEn:'Sum of money', subs:['نقود ورقية','عملات','ظرف نقود'], subsEn:['Banknotes','Coins','Envelope of money'],
     claim:{fields: [], details: [q('amount', 'num', 'both'), q('denoms'), q('holder', 'pick', '', {opts: ['envelope', 'wallet', 'clip', 'none']})], hint: 'cl.h.cash'}, staffCheck: 'sc.cash'},
   {id:'wallets', autoSuggest:false, groupPublic:true, name:'محافظ', en:'Wallets', icon:'wallet', subs:['محفظة رجالية','محفظة نسائية','حافظة بطاقات','محفظة جوال'], subsEn:["Men's wallet","Women's wallet",'Card holder','Phone wallet'],
     claim:{fields: CB, details: [q('cardName'), q('cashInside', 'approx')], hint: 'cl.h.wallets'}},

@@ -1,5 +1,5 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
-import { icon, LOGO, brandOf, CATS, cat, catName, isGrouped, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
+import { icon, LOGO, brandOf, CATS, cat, catName, isGrouped, isHiddenCat, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
 import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, tAr, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard } from '../state.js';
@@ -60,10 +60,18 @@ export function vBrowse(){
 /* H11: التصنيفات المجمّعة (نقود، بطاقات، محافظ، مفاتيح): لا تظهر أغراضها للزائر منفردة، بل بطاقة واحدة لكل تصنيف
    فيها عدد المتاح وآخر تاريخ تسجيل، وزر «أثبت أنه لك» (طلب بالوصف). الموظف يراها منفردة كالمعتاد */
 export const groupedHere = catId => isGrouped(catId) && !staffView();
+/* H16: النقود (hiddenPublic) لا تظهر للزائر بأي شكل. القواعد تمنع الزائر من قراءتها أصلاً؛ وهذا للموظف في «وضع الزائر»
+   (اشتراكه فيه النقود) حتى يرى ما يراه الزائر تماماً */
+export const hiddenHere = catId => isHiddenCat(catId) && !staffView();
+// الأغراض النشطة التي يراها الزائر (تُستخدم في التصفح والبحث والعدّاد والرئيسية)
+export const pubActive = () => S.items.filter(i => ACTIVE.includes(i.status) && !hiddenHere(i.cat));
+// رسالة تصنيف مخفي (النقود): بدل القائمة عند اختيار التصنيف، وفوق النتائج إن بحث الزائر عنه
+const hiddenNote = catId => `<div class="note info cash-note">${icon(cat(catId).icon)}<div class="grow"><p>${t('br.hidden.' + catId)}</p>
+  <button class="btn sm" data-act="gclaim" data-cat="${esc(catId)}">${icon('plus')}${t('grp.' + catId + '.cta')}</button></div></div>`;
 // {group, n, last} لكل تصنيف مجمّع فيه غرض متاح واحد على الأقل (من القائمة المعطاة)
 export function groupEntries(items){
   const m = {};
-  for (const i of items){ if (i.status !== 'available' || !groupedHere(i.cat)) continue; const g = m[i.cat] ||= {group: i.cat, n: 0, last: 0}; g.n++; g.last = Math.max(g.last, i.createdAt || 0); }
+  for (const i of items){ if (i.status !== 'available' || !groupedHere(i.cat) || hiddenHere(i.cat)) continue; const g = m[i.cat] ||= {group: i.cat, n: 0, last: 0}; g.n++; g.last = Math.max(g.last, i.createdAt || 0); }
   return Object.values(m);
 }
 // البحث في البطاقة المجمّعة: باسم التصنيف وعنوانها وأنواعه
@@ -81,7 +89,7 @@ export function groupCard(g){
 }
 // التصفح العام: الأغراض النشطة فقط (المتاح والمحجوز)، والمُسلَّم يظهر كعدد في العنوان
 export function visibleItems(){
-  let arr = S.items.filter(i => ACTIVE.includes(i.status));
+  let arr = pubActive();
   if (S.filter.cat !== 'all') arr = arr.filter(i => i.cat === S.filter.cat);
   if (S.filter.range !== 'all'){ const lim = +S.filter.range; arr = arr.filter(i => daysAgo(i.foundDate) <= lim); }
   const q = tokens(S.filter.q);
@@ -108,7 +116,7 @@ export function updateBrowse(){
   // H4: شريط الأرقام الثلاثة (كان في الرئيسية): أرقام المكتب كله، لا تتغير مع التصفية.
   // «متاح للاستلام» = النشط كله (المتاح والمحجوز)، و«أُعيد لأصحابه» عدد من الخادم (getCountFromServer)
   const o = curOffice(), keep = o?.retentionDays || 90;
-  const avail = S.items.filter(i => ACTIVE.includes(i.status)).length;
+  const avail = pubActive().length;   // H16: بلا النقود
   const st = $('#br-stats');
   if (st) st.innerHTML = !S.itemsLoaded ? '' : `
     <div><b>${avail}</b><span>${t('home.statAvail')}</span></div>
@@ -122,12 +130,17 @@ export function updateBrowse(){
   if (!S.itemsLoaded){ res.innerHTML = `<div class="grid" aria-busy="true" aria-label="${t('c.loading')}">${skelCards()}</div>`; return; }
   // H11: أغراض التصنيفات المجمّعة تظهر بطاقة واحدة لكل تصنيف (تحترم فلتر التصنيف والمدة والبحث)، في أول القائمة
   const vis = visibleItems(), q = tokens(S.filter.q);
-  const pool = S.items.filter(i => ACTIVE.includes(i.status) && (S.filter.cat === 'all' || i.cat === S.filter.cat)
+  // H16: تصنيف مخفي (النقود) مختار: الرسالة وزر البلاغ بدل القائمة
+  if (hiddenHere(S.filter.cat)){ res.innerHTML = hiddenNote(S.filter.cat); hydrate(); return; }
+  const pool = pubActive().filter(i => (S.filter.cat === 'all' || i.cat === S.filter.cat)
     && (S.filter.range === 'all' || daysAgo(i.foundDate) <= +S.filter.range));
   const groups = groupEntries(pool).filter(g => !q.length || groupHit(q, g.group));
   const arr = [...groups.map(groupCard), ...vis.filter(i => !groupedHere(i.cat)).map(card)];
-  res.innerHTML = arr.length ? `<div class="grid">${arr.join('')}</div>`
-    : `<div class="empty">${icon('search')}<b>${t(S.items.length ? 'br.noResults' : 'home.empty')}</b><span>${t(S.items.length ? 'br.noResultsSub' : 'home.emptySub')}</span></div>`;
+  // بحث عن «نقود/مبلغ…»: الرسالة نفسها فوق النتائج (لا نتيجة نقود أبداً)
+  const hint = S.filter.cat === 'all' && q.length ? CATS.filter(c => hiddenHere(c.id) && groupHit(q, c.id)).map(c => hiddenNote(c.id)).join('') : '';
+  const any = pubActive().length;
+  res.innerHTML = hint + (arr.length ? `<div class="grid">${arr.join('')}</div>`
+    : hint ? '' : `<div class="empty">${icon('search')}<b>${t(any ? 'br.noResults' : 'home.empty')}</b><span>${t(any ? 'br.noResultsSub' : 'home.emptySub')}</span></div>`);
   hydrate();
 }
 
@@ -136,7 +149,8 @@ export function vItem(){
   const id = S.route.params.id; const i = item(id);
   // الغرض غير محمّل (مُسلَّم أو من رابط مشاركة): نجلبه مرة واحدة
   if (!i){ ensureItem(id); if (itemLoading(id)) return `<div class="loading"><span class="spin"></span></div>`; }
-  if (!i) return `<div class="wrap">${backBtn()}<div class="empty">${icon('box')}<b>${t('it.gone')}</b></div></div>`;
+  // H16: رابط مشاركة لغرض نقود: «غير متاح» (الزائر لا يقرؤه أصلاً؛ وهذا للموظف في وضع الزائر)
+  if (!i || hiddenHere(i.cat)) return `<div class="wrap">${backBtn()}<div class="empty">${icon('box')}<b>${t('it.unavailable')}</b></div></div>`;
   // H11: غرض من تصنيف مجمّع: لا صفحة منفردة للزائر (ولا للروابط القديمة #item/…)، بل نموذج الطلب بالوصف
   if (groupedHere(i.cat)){ setTimeout(() => { if (S.route.name === 'item' && S.route.params.id === id) go('gclaim', {cat: i.cat}, false); }); return loadingHtml(); }
   const c = cat(i.cat); const o = S.offices.find(x => x.id === i.officeId) || curOffice();
@@ -264,7 +278,8 @@ function claimForm(p){
   const moreOpen = !!ed || !!pre || optVals.some(Boolean);
   // v7: مكتب يشترط بريد الكلية لطلب الاستلام: رسالة واضحة وزر للدخول بالبريد الصحيح بدل النموذج
   // H11: المجمّع بلا غرض محدد: شرح قصير بدل بطاقة الغرض
-  const head = i ? miniItem(i) : `<div class="note info grp-intro">${icon(cat(catId).icon)}<span>${t('gc.intro', {title: t('grp.' + catId + '.title')})}</span></div>`;
+  // H16: النقود: شرح أنها لا تُعرض، وأن البلاغ يطابقه الموظف مع المبالغ المسجّلة
+  const head = i ? miniItem(i) : `<div class="note info grp-intro">${icon(cat(catId).icon)}<span>${isHiddenCat(catId) ? t('gc.introHidden') : t('gc.intro', {title: t('grp.' + catId + '.title')})}</span></div>`;
   if (!ed && !claimEmailOk(o, S.me?.email)) return `<div class="wrap" data-view="claim">${backBtn()}${head}
     <div class="note warn domain-need">${icon('idcard')}<span>${t('cl.domainNeedLong', {domains: claimDomainsOf(o).map(d => `<b dir="ltr">@${esc(d)}</b>`).join(t('c.listSep'))})}</span></div>
     <button class="btn" data-act="collegeLogin">${icon('users')}${t('cl.domainLogin')}</button></div>`;
@@ -292,7 +307,7 @@ function claimForm(p){
           ${spotExtra({spot: v.spot, bldg: v.bldg, room: v.room})}
           <div class="field"><label for="c-date">${t('cl.when')} <span class="hint">${t('c.optional')}</span></label><input id="c-date" name="lostDate" type="date" class="input" max="${today()}" value="${esc(v.date || '')}">
             <span class="hint date-hint" ${v.date ? 'hidden' : ''}>${t('cl.dateHint')}</span></div>
-          ${ed ? '' : `<div class="field"><label for="proof-in">${t('cl.proofImg')} <span class="hint">${t('c.optional')}</span></label>
+          ${ed ? '' : `<div class="field"><label for="proof-in">${t(isHiddenCat(catId) ? 'cl.proofImg.' + catId : 'cl.proofImg')} <span class="hint">${t('c.optional')}</span></label>
             <input id="proof-in" type="file" accept="image/*" multiple class="input">
             <span class="hint">${icon('lock')}${t('cl.proofImgHint')}</span><div id="proof-pv" class="proof-pv"></div></div>`}
         </div>
