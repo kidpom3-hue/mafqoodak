@@ -1084,7 +1084,8 @@ html{scroll-padding-top:calc(var(--hdr-vh,64px) + 8px)}
 .brand-wrap{display:flex;align-items:center;gap:10px;min-width:0}
 .hdr-logo{height:30px;padding-inline-start:10px;border-inline-start:1px solid var(--line);box-sizing:content-box}
 @media (max-width:400px){ .brand-wrap{gap:8px} .hdr-logo{height:26px;padding-inline-start:8px} }
-@media (max-width:359px){ .hdr-logo{display:none} }   /* 320: لا مكان؛ الشعار الكامل في الواجهة الرئيسية */
+/* 320: لا مكان؛ الشعار الكامل في الواجهة الرئيسية. المحدِّد أقوى من قاعدة إظهار النسخة البيضاء في الوضع الداكن (.lg-d) */
+@media (max-width:359px){ :root .brand-wrap .br-logo.hdr-logo{display:none} }
 
 /* الواجهة الرئيسية: الشعار و«مكتب المفقودات» بدل سطر نوع المكان */
 .hh-brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
