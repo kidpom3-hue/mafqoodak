@@ -119,3 +119,25 @@ export async function migratePublic(){
   } catch (e){ console.warn(e); }
   finally { pubRunning = false; }
 }
+
+/* H18: بريد المستخدمين كان في users/{uid} (يقرؤه كل موظف). صار في users/{uid}/private/profile (صاحبه والإدارة فقط).
+   كل مستخدم ينقله بنفسه عند دخوله (saveProfile في state.js)؛ وهذا للإدارة: من لم يدخل بعد ما زال بريده في الوثيقة العامة،
+   فتنقله الإدارة عند فتح لوحتها (مرة لكل جهاز، LS emailMig): batch لكل مستخدم = private/profile + حذف email من users.
+   القواعد تقبل من الإدارة هذا النقل فقط (البريد نفسه، وحذف الحقل دون تغيير غيره) */
+let emailRunning = false;
+export async function migrateEmails(){
+  if (emailRunning || !S.isAdmin || LS.get('emailMig', false)) return;
+  emailRunning = true;
+  try {
+    const users = await dbx.list('users', []);
+    let failed = 0;
+    for (const u of users.filter(x => typeof x.email === 'string' && x.email)){
+      const b = dbx.batch();
+      b.set(dbx.ref(`users/${u.id}/private/profile`), {email: u.email});
+      b.update(dbx.ref('users/' + u.id), {email: deleteField()});
+      try { await b.commit(); } catch (e){ console.warn(e); failed++; }
+    }
+    if (!failed) LS.set('emailMig', true);
+  } catch (e){ console.warn(e); }
+  finally { emailRunning = false; }
+}

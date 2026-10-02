@@ -4,7 +4,7 @@
 import { dbx, deleteField, arrayRemove } from './firebase.js';
 import { isHighValue, pubFlag, isHiddenCat, detailValue, claimOf, cat } from './constants.js';
 import { makeRef, publicTitle, today } from './utils.js';
-import { S, full, item } from './state.js';
+import { S, full, item, isOwner } from './state.js';
 import { SETTINGS } from './config.js';
 import { pubPhoto } from './views/common.js';
 import { t, tAr } from './i18n.js';
@@ -24,7 +24,7 @@ const PENDING_LOGS = new WeakMap();
 function log(b, officeId, action, x = {}){
   const id = dbx.newId('logs');
   const e = {officeId, itemId: x.itemId || '', claimId: x.claimId || '', reportId: x.reportId || '',
-    action, by: S.uid, at: Date.now(), note: String(x.note || '').slice(0, 600), ...(x.checks?.length ? {checks: x.checks} : {}), ...(x.direct ? {direct: true} : {})};
+    action, by: S.uid, at: Date.now(), note: String(x.note || '').slice(0, 600), ...(x.checks?.length ? {checks: x.checks} : {}), ...(x.direct ? {direct: true} : {}), ...(x.claimId && SELF.has(x.claimId) ? {self: true} : {})};
   b.set(dbx.ref('logs/' + id), e);
   PENDING_LOGS.set(b, [...(PENDING_LOGS.get(b) || []), {id, ...e}]);
 }
@@ -84,7 +84,9 @@ async function freshItem(id){
   if (!i) fail(t('wf.gone'));
   return i;
 }
-const notMine = c => { if (c.uid === S.uid) fail(t('wf.own')); };
+// فصل المهام: لا يقرر الموظف في طلب أرسله هو. H18: إلا المالك، وكل قيد لقراره في طلبه يُعلَّم self: true
+const SELF = new Set();
+const notMine = c => { if (c.uid !== S.uid) return; if (!isOwner()) fail(t('wf.own')); SELF.add(c.id); };
 /* H13a: الغرض كما هو على الخادم (أو null إن حُذف فعلاً)، لا من S.items (النشطة فقط) */
 export async function fetchItem(id){
   if (!id) return null;

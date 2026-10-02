@@ -142,6 +142,34 @@ const reds = p => p.evaluate(() => [...document.querySelectorAll('#main .count, 
   await ctx.close();
 }
 
+// ---------- H18: الترتيب بآخر حدث، الأحدث في الأعلى («قراري» و«الحضور» عند الموظف، و«طلباتي» عند الزائر) ----------
+{
+  const amy = {uid: 'amy', displayName: 'Amy', email: 'amy@example.com'};
+  const seed = p => p.evaluate(async ([now, day, O]) => { const fs = await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js');
+    const c = (it, no, x) => ({itemId: it, officeId: O, uid: 'amy', no, proof: 'x', status: 'pending', codeHash: 'x', ...x});
+    await fs.setDoc({path: 'claims/i2_old'}, c('i2', 'REQ-OLD1', {createdAt: now - 3 * day}));                        // أقدم طلب
+    await fs.setDoc({path: 'claims/i1_new'}, c('i1', 'REQ-NEW1', {createdAt: now - 60e3}));                          // أُرسل قبل دقيقة
+    await fs.setDoc({path: 'claims/i2_ans'}, c('i2', 'REQ-ANS1', {createdAt: now - 4 * day, question: 'q', askedAt: now - 3 * day, answer: 'a', answeredAt: now - 20e3}));   // قديم لكن أُجيب الآن
+    await fs.setDoc({path: 'claims/i1_ap1'}, c('i1', 'REQ-AP01', {status: 'approved', createdAt: now - 5 * day, decidedAt: now - 2 * day, pickupBy: now + day}));
+    await fs.setDoc({path: 'claims/i2_ap2'}, c('i2', 'REQ-AP02', {status: 'approved', createdAt: now - 5 * day, decidedAt: now - 3600e3, pickupBy: now + 5 * day}));
+  }, [now, day, O]).then(() => p.waitForTimeout(600));
+  const order = (p, sel) => p.evaluate(sel => [...document.querySelectorAll(sel)].map(d => d.dataset.card.split(':')[1]), sel);
+  const {p, ctx} = await open(staff, 'staff'); await seed(p);
+  await go(p, 'staff', {}, {staffTab: 'claims', staffSub: {claims: 'decide'}});
+  let o = await order(p, 'details[data-card^="s:"]');
+  expect(o.join() === 'i2_ans,i1_new,i1_zed,i2_old', `H18: «قراري» بآخر حدث (الأحدث أولاً)، والموجود: ${o.join()}`);
+  expect(await p.evaluate(() => [...document.querySelectorAll('details[data-card^="s:"] summary')].every(s => /ينتظر قرارك/.test(s.textContent))), 'H18: مدة الانتظار يجب أن تبقى ظاهرة على كل بطاقة في «قراري»');
+  await go(p, 'staff', {}, {staffTab: 'claims', staffSub: {claims: 'come'}});
+  o = await order(p, 'details[data-card^="s:"]');
+  expect(o.join() === 'i2_ap2,i1_ap1', `H18: «الحضور» بآخر حدث (آخر قبول أولاً)، والموجود: ${o.join()}`);
+  await ctx.close();
+  const v = await open(amy, 'visitor'); await seed(v.p);
+  await go(v.p, 'mine');
+  o = await order(v.p, 'details[data-card^="c:"]');
+  expect(o.slice(0, 3).join() === 'i2_ans,i1_new,i2_ap2', `H18: «طلباتي» بآخر حدث (الأحدث أولاً)، والموجود: ${o.join()}`);
+  await v.ctx.close();
+}
+
 await browser.close(); server.close();
 if (fails.length){
   console.log(`✘ فشل ${fails.length} من ${checks} فحصاً للشارات:`);

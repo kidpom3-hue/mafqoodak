@@ -1,5 +1,5 @@
 // حالة التطبيق والاشتراك في البيانات من Firestore
-import { auth, db, dbx, configured, onAuthStateChanged, getRedirectResult } from './firebase.js';
+import { auth, db, dbx, configured, onAuthStateChanged, getRedirectResult, deleteField } from './firebase.js';
 import { LS, matchScore, toast, dayNum, subKey, setSpotHook, tokens, norm } from './utils.js';
 import { t, LANG, saved, setLang } from './i18n.js';
 import { oName, spotLabel, cat, catName, COLORS, autoSuggestOk, SUGG_STOP, claimOf, GROUP_DAYS, AMOUNT_TOL } from './constants.js';
@@ -80,6 +80,8 @@ export const itemLoading = id => !item(id) && (!S.itemsLoaded || fetching.has(id
 // الغرض كاملاً للموظف: البيانات العامة + التفاصيل السرية (تُستخدم في كل شاشات الموظف)
 export const full = i => i ? {...i, ...(S.secrets[i.id] || {})} : i;
 export const staffOffices = () => S.isAdmin ? S.offices.map(o => o.id) : (S.staffDoc?.offices || []);
+// H18: المالك (config/app.ownerUid) وحده يقرر في طلبه هو (استثناء من فصل المهام)
+export const isOwner = () => !!S.uid && S.config?.ownerUid === S.uid;
 export const isStaffHere = () => !!S.officeId && staffOffices().includes(S.officeId);
 export function modes(){ const m = ['visitor']; if (isStaffHere()) m.push('staff'); if (S.isAdmin) m.push('admin'); return m; }
 export const homeRoute = () => S.mode === 'staff' ? 'staff' : S.mode === 'admin' ? 'admin' : 'home';
@@ -420,7 +422,7 @@ function onUser(user){
   clear('mine'); S.myReports = []; S.myClaims = []; S.myFound = [];
   S.authReady = true;
   if (user){
-    dbx.set('users/' + user.uid, {name: S.me.name, email: S.me.email, photo: S.me.photo, lastSeen: Date.now(), ...(saved() ? {lang: LANG} : {})}, {merge: true}).catch(errH('users'));
+    saveProfile(user.uid, {name: S.me.name, photo: S.me.photo, lastSeen: Date.now(), ...(saved() ? {lang: LANG} : {})}, S.me.email);
     // لغة المستخدم المحفوظة في حسابه تُطبَّق إن لم يختر لغة على هذا الجهاز
     if (!saved()) dbx.get('users/' + user.uid).then(async d => { if (d?.lang && d.lang !== LANG){ await setLang(d.lang); if (auth) auth.languageCode = d.lang; reset(); } }).catch(() => {});
     subs.user.push(dbx.watchDoc('admins/' + user.uid, d => {
@@ -625,6 +627,20 @@ export function getPhoto(key){
   p.then(v => { if (!v) PHOTO.delete(key); });   // لا نحفظ النتيجة الفارغة؛ قد تُرفع الصورة بعد لحظات
   return p;
 }
+/* H18: البريد خاص: users/{uid}/private/profile {email} يقرؤه صاحبه والإدارة فقط؛ users/{uid} العام (الاسم والصورة واللغة
+   وآخر دخول) يقرؤه الموظفون. كل دخول يكتب الاثنين في batch واحد ويحذف email القديم من الوثيقة العامة (ترحيل تلقائي) */
+export function saveProfile(uid, pub, email){
+  const b = dbx.batch();
+  if (email) b.set(dbx.ref(`users/${uid}/private/profile`), {email});
+  b.set(dbx.ref('users/' + uid), {...pub, email: deleteField()}, {merge: true});
+  return b.commit().catch(errH('users'));
+}
+// بريد مستخدم (للإدارة فقط؛ لغيرها يرفض الخادم فيعود فارغاً)
+const EMAILS = new Map();
+export function getEmail(uid){
+  if (!EMAILS.has(uid)) EMAILS.set(uid, dbx.get(`users/${uid}/private/profile`).then(d => typeof d?.email === 'string' ? d.email : '').catch(() => ''));
+  return EMAILS.get(uid);
+}
 export const cachePhoto = (key, dataUrl) => { if (dataUrl) PHOTO.set(key, Promise.resolve(dataUrl)); else PHOTO.delete(key); };
 const NAMES = new Map();
 export function getName(uid){
@@ -632,8 +648,8 @@ export function getName(uid){
   if (NAMES.has(uid)) return NAMES.get(uid);
   // صورة الحساب تُقبل من صور حسابات Google فقط (لا روابط تتبّع)
   const okPhoto = v => typeof v === 'string' && /^https:\/\/[a-z0-9.-]+\.googleusercontent\.com\//.test(v);
-  // البريد يُقرأ للإدارة فقط (بطاقة طلب الصلاحية)
-  const p = dbx.get('users/' + uid).then(d => ({name: d?.name || t('user.anon'), photo: okPhoto(d?.photo) ? d.photo : '', email: typeof d?.email === 'string' ? d.email : ''})).catch(() => ({name: t('user.anon'), photo: '', email: ''}));
+  // H18: البريد ليس هنا (في private/profile، للإدارة فقط عبر getEmail)
+  const p = dbx.get('users/' + uid).then(d => ({name: d?.name || t('user.anon'), photo: okPhoto(d?.photo) ? d.photo : ''})).catch(() => ({name: t('user.anon'), photo: ''}));
   NAMES.set(uid, p); return p;
 }
 

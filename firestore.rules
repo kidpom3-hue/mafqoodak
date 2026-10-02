@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v12 (H17: القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
+// قواعد حماية بيانات مفقودك — الإصدار v13 (H18: حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -15,6 +15,8 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function me() { return request.auth.uid; }
     function isAdmin() { return signedIn() && exists(/databases/$(database)/documents/admins/$(me())); }
+    // v13 (H18): المالك وحده (config/app.ownerUid، لا المديرون ولا الموظفون) مستثنى من «فصل المهام» في طلبه هو
+    function isOwner() { return signedIn() && get(/databases/$(database)/documents/config/app).data.ownerUid == me(); }
     function isStaffAny() { return isAdmin() || (signedIn() && exists(/databases/$(database)/documents/staff/$(me()))); }
     function isStaffOf(officeId) {
       return isAdmin() || (
@@ -46,6 +48,16 @@ service cloud.firestore {
     // ── H7 (v6): أنواع الحقول، حتى لا تُعطِّل بيانات تالفة صفحات الموظف ──
     // تاريخ يوم: غير موجود، أو فارغ، أو بصيغة YYYY-MM-DD فقط
     function isDay(d, k) { return !(k in d) || d[k] == '' || (d[k] is string && d[k].matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')); }
+    // v13 (H18): تاريخ يوم ليس في المستقبل (≤ الآن + يوم واحد هامشاً لفرق التوقيت). الصيغة يتحقق منها isDay
+    function notFuture(d, k) {
+      return !(k in d) || d[k] == '' || !(d[k] is string) || !d[k].matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        || timestamp.date(int(d[k][0:4]), int(d[k][5:7]), int(d[k][8:10])) <= request.time + duration.value(1, 'd');
+    }
+    // عند الكتابة فقط: الإنشاء دائماً، والتحديث إذا تغيّر الحقل (البيانات القديمة لا تُرفض بسببه)
+    function dayOk(k) {
+      return (resource != null && request.resource.data.get(k, '') == resource.data.get(k, ''))
+        || notFuture(request.resource.data, k);
+    }
     // وقت بالمللي ثانية: غير موجود، أو رقم
     function ts(d, k) { return !(k in d) || d[k] is number; }
     // وقت يُكتب في هذه العملية: رقم قريب من وقت الخادم (±يوم واحد)، فلا يُكتب وقت مستقبلي بعيد مثل 9e15
@@ -143,10 +155,9 @@ service cloud.firestore {
     }
 
     function validUser(d) {
-      return d.keys().hasOnly(['name', 'email', 'photo', 'lastSeen', 'lang'])
-        && strMax(d, 'name', 200) && strMax(d, 'email', 320)
-        // H7: البريد (يراه الموظف ويثق به) = بريد الحساب نفسه فقط
-        && (!('email' in d) || d.email == request.auth.token.email)
+      // v13 (H18): لا بريد في الوثيقة العامة (صار في private/profile)
+      return d.keys().hasOnly(['name', 'photo', 'lastSeen', 'lang'])
+        && strMax(d, 'name', 200)
         && (!('lang' in d) || d.lang in ['ar', 'en'])
         // صورة الملف الشخصي: فارغة أو من صور حسابات Google فقط (تمنع روابط التتبّع)
         && (!('photo' in d) || d.photo == ''
@@ -205,12 +216,26 @@ service cloud.firestore {
       // عرض قائمة كل المستخدمين (وفيها البريد) للإدارة فقط
       allow list: if isAdmin();
       allow create, update: if signedIn() && userId == me() && validUser(request.resource.data);
+      // v13 (H18): الإدارة تنقل البريد القديم إلى private/profile: تحذف الحقل email فقط، دون تغيير أي حقل آخر
+      allow update: if isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email'])
+        && !('email' in request.resource.data);
       // «حذف حسابي»: يحذف المستخدم ملفه بنفسه
       allow delete: if signedIn() && userId == me();
 
-      // رموز الاستلام الخاصة: لا يراها أحد غير صاحبها
+      // رموز الاستلام الخاصة (codes)، والبريد (profile، v13): لا يراها أحد غير صاحبها، إلا البريد تقرؤه الإدارة
       match /private/{docId} {
-        allow read, write: if signedIn() && userId == me();
+        function profileOk() {
+          return request.resource.data.keys().hasOnly(['email']) && request.resource.data.email is string
+            && request.resource.data.email.size() <= 320;
+        }
+        allow read: if signedIn() && (userId == me() || (docId == 'profile' && isAdmin()));
+        // صاحب الحساب: البريد = بريد رمز الدخول نفسه فقط (لا يدّعي بريداً آخر)
+        allow create, update: if signedIn() && userId == me()
+            && (docId != 'profile' || (profileOk() && request.resource.data.email == request.auth.token.email))
+          // الإدارة (الترحيل): البريد نفسه الموجود في الوثيقة العامة القديمة
+          || (docId == 'profile' && isAdmin() && profileOk()
+            && request.resource.data.email == get(/databases/$(database)/documents/users/$(userId)).data.get('email', ''));
+        allow delete: if signedIn() && userId == me();
       }
     }
 
@@ -228,12 +253,16 @@ service cloud.firestore {
         && request.resource.data.public == !(request.resource.data.cat in hiddenCats())
         // v12 (H17): غرض نقود أُنشئ من بلاغ (القبول المباشر): رقم الطلب، نص قصير فقط
         && (!('createdFrom' in request.resource.data)
-            || (request.resource.data.createdFrom is string && request.resource.data.createdFrom.size() <= 100));
+            || (request.resource.data.createdFrom is string && request.resource.data.createdFrom.size() <= 100))
+        // v13 (H18): تاريخ العثور ليس في المستقبل
+        && dayOk('foundDate');
       allow update: if isStaffOf(resource.data.officeId)
         && request.resource.data.officeId == resource.data.officeId
         && !request.resource.data.keys().hasAny(secretKeys())
         // v11: public يطابق التصنيف بعد كل تعديل (تغيير التصنيف إلى نقود يجعله خاصاً في العملية نفسها)
         && publicOk(request.resource.data)
+        // v13 (H18): تاريخ العثور ليس في المستقبل (إن تغيّر)
+        && dayOk('foundDate')
         // «محجوز» فقط لطلب مقبول في العملية نفسها
         && (request.resource.data.status != 'reserved' || resource.data.status == 'reserved'
             || getAfter(/databases/$(database)/documents/claims/$(request.resource.data.reservedFor)).data.status == 'approved')
@@ -292,7 +321,7 @@ service cloud.firestore {
       allow create: if verified()
         && request.resource.data.uid == me()
         && request.resource.data.status == 'open'
-        && validReport(request.resource.data)
+        && validReport(request.resource.data) && dayOk('lostDate')
         // H7: المكتب موجود، والتصنيف نص قصير، ووقت الإنشاء «الآن»، وحدّ الإغراق
         && officeExists(request.resource.data.officeId) && catOk(request.resource.data)
         && fresh(request.resource.data, 'createdAt') && rateOk()
@@ -314,7 +343,7 @@ service cloud.firestore {
           && request.resource.data.get('rejected', []).hasAll(resource.data.get('rejected', []))
           // H7: أوقات التعديل والتجديد والإغلاق تُكتب بوقت «الآن» فقط
           && freshIfChanged('editedAt') && freshIfChanged('renewedAt') && freshIfChanged('closedAt')
-          && validReport(request.resource.data))
+          && validReport(request.resource.data) && dayOk('lostDate'))
         || (isStaffOf(resource.data.officeId) && onlyChanges(['staffPick', 'pickedAt']))
       );
       allow delete: if signedIn() && (resource.data.uid == me() || isAdmin());
@@ -350,7 +379,7 @@ service cloud.firestore {
         && strMax(request.resource.data, 'lostSpot', 400)
         && strMax(request.resource.data, 'color', 60) && strMax(request.resource.data, 'brand', 200)
         && strMax(request.resource.data, 'bldg', 40) && strMax(request.resource.data, 'room', 60)
-        && isDay(request.resource.data, 'lostDate') && strMax(request.resource.data, 'reportId', 100)
+        && isDay(request.resource.data, 'lostDate') && dayOk('lostDate') && strMax(request.resource.data, 'reportId', 100)
         // H7: البلاغ المرتبط (إن وُجد) بلاغ صاحب الطلب نفسه، ووقت الإنشاء «الآن»، وحدّ الإغراق
         && (!('reportId' in request.resource.data) || request.resource.data.reportId == ''
             || get(/databases/$(database)/documents/reports/$(request.resource.data.reportId)).data.uid == me())
@@ -370,8 +399,8 @@ service cloud.firestore {
             && officeExists(request.resource.data.officeId))
         );
       allow update: if (isStaffOf(resource.data.officeId)
-          // فصل المهام: الموظف لا يقرر في طلب أرسله هو
-          && resource.data.uid != me()
+          // فصل المهام: الموظف لا يقرر في طلب أرسله هو (v13: إلا المالك، وقراره يُسجَّل بـ self: true)
+          && (resource.data.uid != me() || isOwner())
           && onlyChanges(['status', 'note', 'decidedAt', 'decidedBy', 'doneAt', 'doneBy', 'pickupBy', 'question', 'askedAt', 'askedBy', 'handoverNote', 'answer', 'answeredAt', 'proofs', 'itemId', 'handoverCode'])
           // v9: handoverCode يُكتب فقط في الانتقال إلى «مكتمل» (ولا يتغير غير ذلك)
           && (request.resource.data.get('handoverCode', '') == resource.data.get('handoverCode', '')
@@ -409,7 +438,7 @@ service cloud.firestore {
           && strMax(request.resource.data, 'proof', 5000) && strMax(request.resource.data, 'lostSpot', 400)
           && strMax(request.resource.data, 'color', 60) && strMax(request.resource.data, 'brand', 200)
           && strMax(request.resource.data, 'bldg', 40) && strMax(request.resource.data, 'room', 60)
-          && isDay(request.resource.data, 'lostDate') && strMax(request.resource.data, 'claimantName', 120)
+          && isDay(request.resource.data, 'lostDate') && dayOk('lostDate') && strMax(request.resource.data, 'claimantName', 120)
           && (!('idLast4' in request.resource.data) || request.resource.data.idLast4.matches('[0-9]{4}')))
         // قياس الرضا: صاحب الطلب المكتمل يقيّمه مرة واحدة (1–5 وتعليق اختياري)
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'done' && !('rating' in resource.data)
@@ -438,7 +467,7 @@ service cloud.firestore {
         && request.resource.data.officeId is string
         // H7: المكتب موجود، والتصنيف نص قصير، وتاريخ العثور يوم صالح، ووقت الإنشاء «الآن»، وحدّ الإغراق
         && officeExists(request.resource.data.officeId) && catOk(request.resource.data)
-        && isDay(request.resource.data, 'foundDate') && fresh(request.resource.data, 'createdAt') && rateOk()
+        && isDay(request.resource.data, 'foundDate') && dayOk('foundDate') && fresh(request.resource.data, 'createdAt') && rateOk()
         && strMax(request.resource.data, 'cat', 40) && strMax(request.resource.data, 'sub', 200)
         && strMax(request.resource.data, 'spot', 400) && strMax(request.resource.data, 'bldg', 40)
         && strMax(request.resource.data, 'room', 60)
@@ -487,7 +516,9 @@ service cloud.firestore {
         && request.resource.data.by == me()
         // v9: وقت القيد «الآن» (لا تاريخ مزوّر في سلسلة الحيازة)
         && fresh(request.resource.data, 'at')
-        && request.resource.data.keys().hasOnly(['officeId', 'itemId', 'claimId', 'reportId', 'action', 'by', 'at', 'note', 'checks', 'direct'])
+        && request.resource.data.keys().hasOnly(['officeId', 'itemId', 'claimId', 'reportId', 'action', 'by', 'at', 'note', 'checks', 'direct', 'self'])
+        // v13 (H18): قرار المالك في طلبه هو يعلَّم self: true
+        && (!('self' in request.resource.data) || request.resource.data.self == true)
         // v12 (H17): «قبول مباشر لبلاغ نقود» يعلَّم direct: true
         && (!('direct' in request.resource.data) || request.resource.data.direct == true)
         // v7: فحوص التسليم التي علّمها الموظف (مفاتيح نصوص فقط، بلا بيانات شخصية)
@@ -566,7 +597,7 @@ service cloud.firestore {
         && request.resource.data.by == me() && fresh(request.resource.data, 'at')
         && request.resource.data.itemId is string && request.resource.data.itemId.size() > 0 && request.resource.data.itemId.size() <= 100
         && cl().get('grouped', false) == true && cl().itemId == '' && cl().status == 'pending'
-        && cl().officeId == request.resource.data.officeId && cl().uid != me()
+        && cl().officeId == request.resource.data.officeId && (cl().uid != me() || isOwner())
         && it().officeId == request.resource.data.officeId && it().cat == cl().cat && it().status == 'available';
       allow update: if false;
       allow delete: if isAdmin();

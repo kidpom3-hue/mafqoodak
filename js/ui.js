@@ -2,7 +2,7 @@
 import { icon, LOGO, statusLabel, MODE_LABEL, brandOf } from './constants.js';
 import { t } from './i18n.js';
 import { $, $$, esc, toast } from './utils.js';
-import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, SHARE_RE, OFFICE_RE } from './state.js';
+import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, getEmail, SHARE_RE, OFFICE_RE } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice } from './views/visitor.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
 import { vHome, updateHome, vFound, vHandin } from './views/home.js';
@@ -290,11 +290,11 @@ export function hydrate(){
   // بريد صاحب الحساب (للإدارة)، وتحذير إن كان خارج نطاق الموظفين المضبوط في config.js
   $$('[data-uemail]').forEach(async el => {
     if (el.dataset.loaded) return; el.dataset.loaded = '1';
-    const p = await getName(el.dataset.uemail);
-    if (!el.isConnected || !p.email) return;
-    el.textContent = p.email;
+    const email = await getEmail(el.dataset.uemail);   // H18: من private/profile (للإدارة فقط)
+    if (!el.isConnected || !email) return;
+    el.textContent = email;
     const dom = String(SETTINGS.staffEmailDomain || '').trim().toLowerCase().replace(/^@/, '');
-    const host = p.email.toLowerCase().split('@')[1] || '';
+    const host = email.toLowerCase().split('@')[1] || '';
     if (dom && host !== dom && !host.endsWith('.' + dom)){
       const w = document.createElement('span'); w.className = 'pill bad';
       w.textContent = t('adm.outDomain', {domain: dom});

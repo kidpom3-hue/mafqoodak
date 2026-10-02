@@ -4,9 +4,11 @@ import { esc } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, loadAdminCounts } from '../state.js';
 import { backBtn, person, whenLine, tabNum } from './common.js';
+import { migrateEmails } from '../migrate.js';   // H18: نقل البريد القديم إلى private/profile
 
 /* ---------- admin ---------- */
 export function vAdmin(){
+  migrateEmails();   // H18: مرة لكل جهاز (لا يعيد الرسم)
   if (S.route.params.tab) S.adminTab = S.route.params.tab;
   const tab = S.adminTab;
   const body = tab === 'offices' ? adminOffices() : tab === 'people' ? adminPeople() : adminOverview();

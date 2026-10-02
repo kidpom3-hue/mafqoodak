@@ -76,14 +76,16 @@ export const emailReady = () => { const e = SETTINGS.emailNotify || {}; return !
 export async function emailUser(uid){
   if (!emailReady() || !uid || uid === 'deleted') return;
   try {
-    const u = await dbx.get('users/' + uid);   // الموظف يقرأ ملف صاحب الطلب (القواعد تسمح بذلك)
-    if (!u?.email) return;
-    const lang = u.lang === 'en' ? 'en' : 'ar', e = SETTINGS.emailNotify;
+    // H18: الاسم واللغة من users/{uid}، والبريد من users/{uid}/private/profile (تقرؤه الإدارة وصاحبه فقط؛
+    // قرار موظف غير إداري لا يقرأ البريد فلا تُرسل له رسالة)
+    const [u, p] = await Promise.all([dbx.get('users/' + uid), dbx.get(`users/${uid}/private/profile`).catch(() => null)]);
+    if (!p?.email) return;
+    const lang = u?.lang === 'en' ? 'en' : 'ar', e = SETTINGS.emailNotify;
     const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({service_id: e.serviceId, template_id: templateFor(e, lang), user_id: e.publicKey,
         // المتغيران الوحيدان: البريد والاسم. رابط التطبيق ونص الرسالة مكتوبان في القالب نفسه على EmailJS
-        template_params: {to_email: u.email, to_name: u.name || ''}}),
+        template_params: {to_email: p.email, to_name: u?.name || ''}}),
     });
     if (!res.ok) console.warn('[emailjs]', res.status);
   } catch (err){ console.warn('[emailjs]', err); }

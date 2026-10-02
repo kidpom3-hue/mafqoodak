@@ -570,6 +570,9 @@ export const EN = {
   "a.needPledge": "Please confirm that the information is true.",
   "a.claimDenied": "Couldn't send the claim: the item may no longer be available, or you've already claimed it.",
   "a.claimFail": "Couldn't send the claim right now. Check your connection and try again.",
+  // H18: لا تاريخ في المستقبل
+  "a.futureLost": "The date it was lost can't be after today.",
+  "a.futureFound": "The date it was found can't be after today.",
   "a.claimSent": "Your claim has been sent to the lost property office",
   "a.needCat": "Choose a category.",
   "a.needTitle": "Give the item a short name.",
