@@ -176,7 +176,7 @@ await t('C: سجل حيازة غرض للموظف (استعلام)', q(A, 'logs'
 await t('C: الزائر لا يستعلم عن السجل', q(alice, 'logs', ['officeId', '==', O], ['itemId', '==', 'i6']), false);
 await t('C: الموظف يقرأ التفاصيل السرية لمكتبه (تصدير CSV)', q(A, 'itemSecrets', ['officeId', '==', O]));
 await t('C: الزائر لا يقرأ التفاصيل السرية', q(alice, 'itemSecrets', ['officeId', '==', O]), false);
-await t('C: الموظف يقرأ بريد صاحب الطلب (EmailJS)', getDoc(doc(A, 'users/alice')));
+await t('C: الموظف يقرأ اسم صاحب الطلب ولغته (users العامة)', getDoc(doc(A, 'users/alice')));
 await t('C: رفض طلب i6 بعد الإجابة', updateDoc(doc(B, 'claims/i6_alice'), {status: 'rejected', note: 'لا يطابق', decidedAt: now, decidedBy: 'staffB'}));
 await t('C: «حذف حسابي» يمسح الإجابة مع بيانات الطلب المنتهي', updateDoc(doc(alice, 'claims/i6_alice'), {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', answer: '', anonymizedAt: now}));
 
@@ -246,7 +246,7 @@ await t('D: قيد صلاحية في السجل (itemId فارغ)', setDoc(doc(o
 await t('D: المالك يزيل الإدارة', deleteDoc(doc(owner, 'admins/staffA')));
 await t('D: لا يمكن إزالة المالك', deleteDoc(doc(owner, 'admins/owner')), false);
 await t('D: سجل العمليات للمالك (officeId + action in)', q(owner, 'logs', ['officeId', '==', O], ['action', 'in', ['status:returned', 'delete', 'dispose', 'perm:grant', 'perm:revoke', 'perm:admin', 'perm:unadmin']]));
-await t('D: المالك يقرأ بريد صاحب طلب الصلاحية', getDoc(doc(owner, 'users/alice')));
+await t('D: المالك يقرأ ملف صاحب طلب الصلاحية', getDoc(doc(owner, 'users/alice')));
 
 // ── المرحلة E: إجابات أسئلة التصنيف (details)، وإغلاق البلاغ ──
 await t('E: itemSecrets مع details: {amount: "300"}', updateDoc(doc(A, 'itemSecrets/i11'), {details: {amount: '300', holder: 'envelope'}}));
@@ -376,7 +376,7 @@ await t('INV: المالك يلغي دعوة', batch(owner, (b, r) => { b.set(r(
 await t('INV: المالك يقرأ طلبات الصلاحية القديمة ويحذفها', getDocs(collection(owner, 'staffRequests')));
 
 // ── لغة المستخدم (للجزء B) ──
-await t('lang = en مسموح', setDoc(doc(alice, 'users/alice'), {name: 'A', email: 'alice@x.com', photo: '', lastSeen: now, lang: 'en'}));
+await t('lang = en مسموح', setDoc(doc(alice, 'users/alice'), {name: 'A', photo: '', lastSeen: now, lang: 'en'}));
 await t('lang غير معروفة مرفوضة', setDoc(doc(alice, 'users/alice'), {name: 'A', lang: 'fr'}), false);
 await t('الزائر غير المسجّل يقرأ المفقودات العامة', getDoc(doc(anon, 'items/i2')));
 
@@ -412,8 +412,10 @@ await t('H7-4: إشعار تسليم لمكتب غير موجود مرفوض', m
 await t('H7-4: إشعار تسليم بتصنيف رقمي مرفوض', mk(bob, 'foundReports/h7f2', {officeId: O, uid: 'bob', cat: 5, status: 'pending', createdAt: now}), false);
 await t('H7-4: إشعار تسليم صحيح مقبول', mk(bob, 'foundReports/h7f3', {officeId: O, uid: 'bob', cat: 'keys', foundDate: '2026-09-27', status: 'pending', createdAt: now}));
 // 5) users.email = بريد الحساب
-await t('H7-5: بريد مختلف عن بريد الحساب مرفوض', setDoc(doc(bob, 'users/bob'), {name: 'Bob', email: 'admin@college.edu', lastSeen: now}), false);
-await t('H7-5: بريد الحساب نفسه مقبول', setDoc(doc(bob, 'users/bob'), {name: 'Bob', email: 'bob@x.com', lastSeen: now}));
+await t('H7-5/v13: بريد مختلف عن بريد الحساب مرفوض (private/profile)', setDoc(doc(bob, 'users/bob/private/profile'), {email: 'admin@college.edu'}), false);
+await t('H7-5/v13: بريد الحساب نفسه مقبول (private/profile)', setDoc(doc(bob, 'users/bob/private/profile'), {email: 'bob@x.com'}));
+await t('v13: البريد في الوثيقة العامة users مرفوض', setDoc(doc(bob, 'users/bob'), {name: 'Bob', email: 'bob@x.com', lastSeen: now}), false);
+await t('v13: الوثيقة العامة بلا بريد', setDoc(doc(bob, 'users/bob'), {name: 'Bob', lastSeen: now}));
 // 6) سجل الحيازة لا يُحذف
 await t('H7-6: المالك لا يحذف قيداً من السجل', deleteDoc(doc(owner, 'logs/log1')), false);
 await t('H7-6: الموظف يضيف قيداً للسجل', setDoc(doc(A, 'logs/' + lid()), logDoc('staffA', 'edit', {itemId: 'h1'})));
@@ -759,6 +761,64 @@ await t('v12: التسليم بالرمز ← «سُلّم»', batch(A, (b, r) =
   b.update(r('claims/' + GC), {status: 'done', doneAt: now, doneBy: 'staffA', handoverNote: 'جينا — 1234', handoverCode: CODE});
   b.update(r('items/cd1'), {status: 'returned', returnedAt: now, updatedAt: now, public: false}); }));
 await t('v12: عدّ الزائر للمُسلَّم العام لا يشمل النقود', getCountFromServer(query(collection(anon, 'items'), where('officeId', '==', O), where('status', '==', 'returned'), where('public', '==', true))));
+
+// ── v13 (H18) ──
+// 2) حرية المالك: يقرر في طلبه هو (القبول، الربط)، ومديرٌ غيره أو موظف لا
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  await setDoc(doc(d, 'admins/adm2'), {role: 'admin'});
+  for (const k of ['o1', 'o2', 'o3']){ await setDoc(doc(d, 'items/' + k), pub(k)); await setDoc(doc(d, 'itemSecrets/' + k), sec); }
+  await setDoc(doc(d, 'items/o4'), pub('o4', 'cash'));
+  for (const u of ['owner', 'adm2', 'staffA']) await setDoc(doc(d, 'claimQuota/' + u), {open: []});
+});
+const adm2 = as('adm2'), own = as('owner');
+await t('v13: المالك يرسل طلباً على غرض', mk(own, 'claims/o1_owner', claim('o1', 'owner')));
+await t('v13: المالك يقبل طلبه هو (مع قيد self: true)', batch(own, (b, r) => {
+  b.update(r('claims/o1_owner'), {status: 'approved', decidedAt: now, decidedBy: 'owner', pickupBy: now + DAY});
+  b.update(r('items/o1'), {status: 'reserved', reservedFor: 'o1_owner', updatedAt: now});
+  b.set(r('logs/' + lid()), {...logDoc('owner', 'approve', {itemId: 'o1', claimId: 'o1_owner'}), at: Date.now(), self: true}); }));
+await t('v13: self بقيمة غير true مرفوض', setDoc(doc(own, 'logs/' + lid()), {...logDoc('owner', 'ask', {itemId: 'o1', claimId: 'o1_owner'}), at: Date.now(), self: 'x'}), false);
+await t('v13: مدير (غير المالك) يرسل طلباً', mk(adm2, 'claims/o2_adm2', claim('o2', 'adm2')));
+await t('v13: المدير لا يقبل طلبه هو', batch(adm2, (b, r) => {
+  b.update(r('claims/o2_adm2'), {status: 'approved', decidedAt: now, decidedBy: 'adm2', pickupBy: now + DAY});
+  b.update(r('items/o2'), {status: 'reserved', reservedFor: 'o2_adm2', updatedAt: now}); }), false);
+await t('v13: الموظف يرسل طلباً', mk(A, 'claims/o3_staffA', claim('o3', 'staffA')));
+await t('v13: الموظف لا يقبل طلبه هو', batch(A, (b, r) => {
+  b.update(r('claims/o3_staffA'), {status: 'approved', decidedAt: now, decidedBy: 'staffA', pickupBy: now + DAY});
+  b.update(r('items/o3'), {status: 'reserved', reservedFor: 'o3_staffA', updatedAt: now}); }), false);
+const OG = 'g_owner_cash_' + (now + 1);
+await t('v13: المالك يرسل بلاغ نقود (مجمّع)', mk(own, 'claims/' + OG, {...claim('', 'owner'), grouped: true, cat: 'cash', createdAt: now + 1}));
+await t('v13: المالك يربط طلبه المجمّع بغرض', setDoc(doc(own, 'claimLinks/' + OG), {officeId: O, itemId: 'o4', by: 'owner', at: Date.now()}));
+// 3) لا تاريخ في المستقبل (غد+2 مرفوض، واليوم مقبول، وتعديل حقل آخر في وثيقة قديمة بتاريخ مستقبلي مقبول)
+const dayStr = n => new Date(Date.now() + n * DAY).toISOString().slice(0, 10);
+await t('v13: بلاغ بتاريخ فقد بعد غد+1 (غد+2) مرفوض', mk(alice, 'reports/f1', {officeId: O, uid: 'alice', cat: 'bags', title: 'حقيبة', status: 'open', lostDate: dayStr(3), createdAt: now}), false);
+await t('v13: بلاغ بتاريخ اليوم مقبول', mk(alice, 'reports/f2', {officeId: O, uid: 'alice', cat: 'bags', title: 'حقيبة', status: 'open', lostDate: dayStr(0), createdAt: now}));
+await t('v13: طلب بتاريخ فقد غد+2 مرفوض', mk(carol, 'claims/i9_carol', claim('i9', 'carol', {lostDate: dayStr(3)})), false);
+await t('v13: طلب بتاريخ اليوم مقبول', mk(carol, 'claims/i9_carol', claim('i9', 'carol', {lostDate: dayStr(0)})));
+await t('v13: غرض بتاريخ عثور غد+2 مرفوض', setDoc(doc(A, 'items/fd1'), {...pub('fd1'), foundDate: dayStr(3)}), false);
+await t('v13: غرض بتاريخ عثور اليوم مقبول', setDoc(doc(A, 'items/fd1'), {...pub('fd1'), foundDate: dayStr(0)}));
+await t('v13: تغيير تاريخ العثور إلى غد+2 مرفوض', updateDoc(doc(A, 'items/fd1'), {foundDate: dayStr(3), updatedAt: now}), false);
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  await setDoc(doc(d, 'reports/fold'), {officeId: O, uid: 'alice', cat: 'bags', title: 'حقيبة قديمة', status: 'open', lostDate: dayStr(10), createdAt: now});
+  await setDoc(doc(d, 'items/fold'), {...pub('fold'), foundDate: dayStr(10)}); });
+await t('v13: وثيقة قديمة بتاريخ مستقبلي: تعديل حقل آخر في البلاغ مقبول', updateDoc(doc(alice, 'reports/fold'), {title: 'حقيبة زرقاء', editedAt: Date.now()}));
+await t('v13: وثيقة قديمة بتاريخ مستقبلي: تعديل حقل آخر في الغرض مقبول', updateDoc(doc(A, 'items/fold'), {sub: 'حقيبة ظهر', updatedAt: now}));
+// 4) البريد الخاص: users/{uid}/private/profile لصاحبه والإدارة فقط
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  await setDoc(doc(d, 'users/alice/private/profile'), {email: 'alice@x.com'});
+  await setDoc(doc(d, 'users/olduser'), {name: 'قديم', email: 'old@x.com', lastSeen: 1}); });
+await t('v13: الموظف لا يقرأ بريد مستخدم', getDoc(doc(A, 'users/alice/private/profile')), false);
+await t('v13: مستخدم آخر لا يقرأ البريد', getDoc(doc(bob, 'users/alice/private/profile')), false);
+await t('v13: الإدارة تقرأ البريد', getDoc(doc(owner, 'users/alice/private/profile')));
+await t('v13: المستخدم يقرأ بريده', getDoc(doc(alice, 'users/alice/private/profile')));
+await t('v13: الموظف ما زال يقرأ الاسم (users العامة)', getDoc(doc(A, 'users/alice')));
+await t('v13: الترحيل الذاتي: البريد إلى private وحذفه من العامة في batch واحد', batch(alice, (b, r) => {
+  b.set(r('users/alice/private/profile'), {email: 'alice@x.com'}); b.set(r('users/alice'), {name: 'A', email: deleteField(), lastSeen: now}, {merge: true}); }));
+await t('v13: الإدارة لا تنقل بريداً غير الموجود', batch(owner, (b, r) => {
+  b.set(r('users/olduser/private/profile'), {email: 'evil@x.com'}); b.update(r('users/olduser'), {email: deleteField()}); }), false);
+await t('v13: الإدارة لا تغيّر غير البريد في الوثيقة العامة', updateDoc(doc(owner, 'users/olduser'), {email: deleteField(), name: 'x'}), false);
+await t('v13: ترحيل الإدارة: البريد نفسه إلى private وحذفه من العامة', batch(owner, (b, r) => {
+  b.set(r('users/olduser/private/profile'), {email: 'old@x.com'}); b.update(r('users/olduser'), {email: deleteField()}); }));
+await t('v13: الموظف لا يكتب بريد غيره', setDoc(doc(A, 'users/alice/private/profile'), {email: 'staff@x.com'}), false);
 
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

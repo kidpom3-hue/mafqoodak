@@ -2,7 +2,7 @@
 import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, GROUP_EXPIRE_DAYS, isHiddenCat } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
-import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist } from '../state.js';
+import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist, isOwner } from '../state.js';
 import { backBtn, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
@@ -105,7 +105,8 @@ export function staffItems(){
   arr = arr.map(full);   // الموظف يبحث ويرى التفاصيل السرية أيضاً
   const q = tokens(S.staffQ);
   if (q.length) arr = arr.filter(i => textScore(q, i) > 0 || norm(i.ref).includes(norm(S.staffQ)));
-  arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+  // H18: الأحدث أولاً بآخر حدث على الغرض (تسجيله أو آخر تعديل/تغيير حالة)
+  arr.sort((a, b) => Math.max(b.updatedAt || 0, b.createdAt || 0) - Math.max(a.updatedAt || 0, a.createdAt || 0));
   const head = st === 'active' ? retentionBox() : '';
   if (!arr.length) return head + `<div class="empty">${icon('box')}<b>${t('st.noItems')}</b>${st === 'active' ? `<button class="btn soft" data-act="nav" data-r="add">${icon('plus')}${t('st.firstItem')}</button>` : ''}</div>`;
   return head + `<div class="list">${arr.map(i => { const left = keepLeft(i), rv = rivals(i).length; return `
@@ -266,7 +267,7 @@ function groupBox(c, own){
 const EXPIRING = new Set();
 function expireOld(){
   for (const c of S.claims){
-    if (!c.grouped || c.itemId || c.status !== 'pending' || linkOf(c) || c.uid === S.uid || EXPIRING.has(c.id)) continue;
+    if (!c.grouped || c.itemId || c.status !== 'pending' || linkOf(c) || (c.uid === S.uid && !isOwner()) || EXPIRING.has(c.id)) continue;
     if (Date.now() - (c.createdAt || 0) < GROUP_EXPIRE_DAYS * 864e5) continue;
     EXPIRING.add(c.id);
     expireGroupClaim(c).then(ok => { if (ok) emailUser(c.uid); }).catch(e => console.warn(e));
@@ -281,7 +282,7 @@ function isOrphan(c){
   return !ACTIVE.includes(i.status);
 }
 // الطلبات اليتيمة التي يستطيع الموظف إغلاقها (لا طلبه هو): للتنبيه أعلى «الاستلام» وزر «إغلاقها كلها»
-export const orphanClaims = () => S.claims.filter(c => c.uid !== S.uid && isOrphan(c));
+export const orphanClaims = () => S.claims.filter(c => (c.uid !== S.uid || isOwner()) && isOrphan(c));
 export function claimCardStaff(c, opts){
   // H11: الطلب المجمّع: الغرض المربوط (claimLinks) قبل القبول، ورقمه في الطلب بعده
   const lk = c.grouped && !c.itemId ? linkOf(c) : null, unlinked = !!c.grouped && !c.itemId && !lk;
@@ -296,7 +297,7 @@ export function claimCardStaff(c, opts){
   // تحذير: طلبات كثيرة من المستخدم نفسه في هذا المكتب خلال 30 يوماً
   const all = [...S.claims, ...(S.claimHist || []).filter(h => !S.claims.some(x => x.id === h.id))];
   const month = c.uid === 'deleted' ? 0 : all.filter(x => x.uid === c.uid && x.createdAt >= Date.now() - 30 * 864e5).length;
-  const own = c.uid === S.uid;   // فصل المهام: لا يقرر الموظف في طلب أرسله هو
+  const own = c.uid === S.uid && !isOwner();   // فصل المهام: لا يقرر الموظف في طلب أرسله هو (H18: إلا المالك)
   const late = pickupOver(c);
   const rv = c.status === 'approved' && i ? rivals(i).length : 0;
   const kind = i && ['pending', 'approved'].includes(c.status) ? conflictOf(c, full(i)) : '';
@@ -367,9 +368,10 @@ export function staffClaims(){
       ${S.claimHist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}${t('st.showHist')}</button>` : ''}`;
   }
   // H4: تبويبات فرعية تظهر دائماً: قراري | الحضور | قادمة | منتهية. الرقم الرمادي = عدد العناصر، والأحمر = الجديد غير المقروء
-  const pend = S.claims.filter(c => c.status === 'pending').sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  const appr = S.claims.filter(c => c.status === 'approved').sort((a, b) => (a.pickupBy || Infinity) - (b.pickupBy || Infinity));
-  const fs = S.found.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  // H18: كل القوائم بآخر حدث، الأحدث في الأعلى (مدة الانتظار والمهلة تبقيان ظاهرتين على كل بطاقة)
+  const pend = S.claims.filter(c => c.status === 'pending').sort(byLast);
+  const appr = S.claims.filter(c => c.status === 'approved').sort(byLast);
+  const fs = S.found.slice().sort(byLast);
   const hist = S.claimHist ? S.claimHist.slice().sort(byLast).slice(0, 50) : null;
   const fresh = new Set(staffKeys().map(x => x.card));
   const defs = [['decide', pend.length], ['come', appr.length], ['incoming', fs.length], ['ended', hist ? hist.length : null]];

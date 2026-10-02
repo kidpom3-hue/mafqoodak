@@ -3,7 +3,7 @@ import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, 
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
-import { S, curOffice, item, full, modes, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId } from './state.js';
+import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
@@ -245,6 +245,12 @@ async function saveReportEdit(form, val, catId, sens, bldg, room){
 async function submitForm(form){
   const kind = form.dataset.form; const fd = new FormData(form); formErr(form, '');
   const val = k => String(fd.get(k) || '').trim();
+  /* H18: لا تاريخ فقد أو عثور بعد اليوم (بتوقيت الرياض: today() في utils.js) في أي نموذج: البلاغ وتعديله، والطلب والمجمّع وتعديله،
+     والغرض، وإشعار التسليم، والقبول المباشر للنقود. لا نعتمد على max في الحقل لأن Safari يتجاهله، والقواعد ترفضه أيضاً (notFuture) */
+  for (const k of ['lostDate', 'foundDate']){
+    const v = val(k);
+    if (v && /^\d{4}-\d{2}-\d{2}$/.test(v) && v > today()) return formErr(form, t(k === 'lostDate' ? 'a.futureLost' : 'a.futureFound'), k);
+  }
   // رقم المبنى ورقم القاعة يُحفظان فقط إذا كان المكان داخل مبنى
   const inBldg = isBuilding(val('spot'));
   const bldg = inBldg ? val('bldg').slice(0, 6) : '', room = inBldg ? val('room').slice(0, 10) : '';
@@ -266,8 +272,8 @@ async function submitForm(form){
         const name = val('name') || email.split('@')[0];
         await updateProfile(cred.user, {displayName: name});
         S.me = {...(S.me || {}), name};
-        // H7: البريد كما في رمز الدخول (القواعد تقبل users.email مساوياً لبريد الحساب فقط)
-        await dbx.set('users/' + cred.user.uid, {name, email: cred.user.email || '', photo: '', lastSeen: Date.now()}, {merge: true}).catch(() => {});
+        // H18: البريد في users/{uid}/private/profile (خاص)، والقواعد تقبله مساوياً لبريد الحساب فقط
+        await saveProfile(cred.user.uid, {name, photo: '', lastSeen: Date.now()}, cred.user.email || '');
         // توثيق البريد: البلاغات وطلبات الاستلام تشترطه
         await sendEmailVerification(cred.user).catch(e => console.warn(e));
         toast(t('a.welcome', {name}));
@@ -612,6 +618,7 @@ async function submitForm(form){
         else await dbx.del('foundReports/' + f.id);
       }
       await dbx.del('users/' + user.uid + '/private/codes');
+      await dbx.del('users/' + user.uid + '/private/profile').catch(() => {});   // H18: البريد الخاص
       await dbx.del('rate/' + user.uid).catch(() => {});   // H7: وقت آخر إنشاء (تسمح القواعد بحذفه بعد 20 ثانية)
       await dbx.del('staffRequests/' + user.uid).catch(() => {});
       await dbx.del('users/' + user.uid);
