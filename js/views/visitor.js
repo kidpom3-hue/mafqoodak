@@ -242,8 +242,9 @@ function claimForm(p){
   const edc = p.edit ? S.myClaims.find(cl => cl.id === p.edit) : null;
   const gcat = p.cat || (edc?.grouped ? edc.cat : '');
   const i = gcat ? null : item(p.id);
-  // غرض من تصنيف مجمّع: الطلب بالوصف، إلا طلب الغرض الذي رشّحه الموظف لبلاغك («هذا غرضي — اطلب استلامه»)
-  if (i && !p.edit && groupedHere(i.cat) && !(p.report && myReports().some(r => r.id === p.report && r.staffPick === i.id))) return claimForm({cat: i.cat});
+  // غرض من تصنيف مجمّع: الطلب بالوصف دائماً (v14: القواعد ترفض الطلب المباشر على غرض منها)،
+  // ومن ترشيح الموظف لبلاغك يُعبّأ من البلاغ (report)، ويربطه الموظف بالغرض
+  if (i && !p.edit && isGrouped(i.cat)) return claimForm({cat: i.cat, report: p.report});
   const o = (i && S.offices.find(x => x.id === i.officeId)) || (edc && S.offices.find(x => x.id === edc.officeId)) || curOffice();
   const catId = gcat || i?.cat || '';
   if (gcat ? !isGrouped(gcat) : (!i || !ACTIVE.includes(i.status))) return `<div class="wrap">${backBtn()}<div class="empty">${icon('box')}<b>${t('cl.unavailable')}</b></div></div>`;

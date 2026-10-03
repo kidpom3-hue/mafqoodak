@@ -2,7 +2,7 @@
 import { icon, OFFICE_TYPES, otype, otypeName, oName, oCity } from '../constants.js';
 import { esc } from '../utils.js';
 import { t, tp } from '../i18n.js';
-import { S, loadAdminCounts } from '../state.js';
+import { S, loadAdminCounts, isOwner } from '../state.js';
 import { backBtn, person, whenLine, tabNum } from './common.js';
 import { migrateEmails } from '../migrate.js';   // H18: نقل البريد القديم إلى private/profile
 
@@ -30,6 +30,9 @@ export function adminOverview(){
       <button class="btn sm" data-act="editOffice" data-id="${esc(o.id)}" data-en="1">${icon('edit')}${t('adm.enFix')}</button></div>`).join('')}
     ${samples ? `<div class="note warn">${icon('sample')}<span>${t('adm.samples', {n: samples})}</span></div>
       <button class="btn sm danger" data-act="delSamples" style="align-self:flex-start">${icon('trash')}${t('adm.delSamples')}</button>` : ''}
+    ${/* v14 (H19): بعد حذف الأمثلة: إيقافها نهائياً (config/app.samplesOff)، فترفض القواعد أي غرض توضيحي جديد */ ''}
+    ${!samples && S.counts.admin && S.config && S.config.samplesOff !== true ? `<div class="note info">${icon('sample')}<span>${t('adm.samplesOffHint')}</span></div>
+      <button class="btn sm ghost" data-act="samplesOff" style="align-self:flex-start">${icon('lock')}${t('adm.samplesOff')}</button>` : ''}
     <div class="stats">
       <div class="stat"><b>${S.offices.filter(o => o.active !== false).length}</b><span>${t('adm.sActive')}</span></div>
       <div class="stat"><b>${C ? sum('available') + sum('reserved') : '…'}</b><span>${t('adm.sStored')}</span></div>
@@ -70,7 +73,9 @@ export function adminPeople(){
   const owner = S.config?.ownerUid, isAdm = uid => S.adminList.some(a => a.id === uid);
   // بريد صاحب الحساب (يقرؤه المالك من users)، مع تحذير إن كان خارج نطاق الموظفين (SETTINGS.staffEmailDomain)
   const email = uid => `<span class="meta" dir="ltr" data-uemail="${esc(uid)}"></span>`;
+  // v14 (H19): المالك وحده يضيف المديرين ويزيلهم (القواعد تفرضه)؛ غيره يرى الصفة فقط
   const adminBtn = uid => uid === owner ? `<span class="pill info">${t('adm.owner')}</span>`
+    : !isOwner() ? (isAdm(uid) ? `<span class="pill ok">${t('adm.isAdmin')}</span>` : '')
     : isAdm(uid) ? `<button class="btn sm ghost" data-act="unAdmin" data-id="${esc(uid)}">${icon('x')}${t('adm.unAdmin')}</button>`
     : `<button class="btn sm ghost" data-act="makeAdmin" data-id="${esc(uid)}">${icon('shield')}${t('adm.makeAdmin')}</button>`;
   // مديرون ليست لهم صلاحية موظف في مكتب محدد

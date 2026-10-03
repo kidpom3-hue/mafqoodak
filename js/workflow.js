@@ -2,7 +2,7 @@
 // كل انتقال يُكتب في writeBatch واحد (الغرض + الطلبات + قيد في السجل logs)،
 // فإما ينجح كله أو لا يُكتب منه شيء، حتى لا تبقى البيانات ناقصة إذا انقطع الاتصال.
 import { dbx, deleteField, arrayRemove } from './firebase.js';
-import { isHighValue, pubFlag, isHiddenCat, detailValue, claimOf, cat } from './constants.js';
+import { isHighValue, pubFlag, isHiddenCat, detailValue, claimOf, cat, keepUntilOf } from './constants.js';
 import { makeRef, publicTitle, today } from './utils.js';
 import { S, full, item, isOwner } from './state.js';
 import { SETTINGS } from './config.js';
@@ -21,8 +21,14 @@ export const openClaimsOf = itemId => S.claims.filter(c => c.itemId === itemId &
 
 // قيد في سجل العمليات (سلسلة الحيازة). القيود تُحفظ مع كل batch لتُضاف للسجل المعروض بعد نجاحه
 const PENDING_LOGS = new WeakMap();
+/* v14 (H19): كل تغيير في حالة الغرض أو تصنيفه، وكل حذف له، يحتاج قيداً جديداً في الـ batch نفسه (القواعد تفرضه):
+   itemUpdate يحجز رقم قيد للغرض ويكتبه في lastLog؛ أول log() لهذا الغرض في الـ batch يستخدم الرقم المحجوز،
+   وإن لم يُكتب قيد له يكتب commit قيداً عاماً «status:…» بالرقم نفسه. الحذف بالرقم الثابت del_{itemId} */
+const RESERVED = new WeakMap();   // b -> Map(itemId -> {id, officeId, action})
 function log(b, officeId, action, x = {}){
-  const id = dbx.newId('logs');
+  const r = x.itemId && RESERVED.get(b)?.get(x.itemId);
+  if (r) RESERVED.get(b).delete(x.itemId);
+  const id = x.id || r?.id || dbx.newId('logs');
   const e = {officeId, itemId: x.itemId || '', claimId: x.claimId || '', reportId: x.reportId || '',
     action, by: S.uid, at: Date.now(), note: String(x.note || '').slice(0, 600), ...(x.checks?.length ? {checks: x.checks} : {}), ...(x.direct ? {direct: true} : {}), ...(x.claimId && SELF.has(x.claimId) ? {self: true} : {})};
   b.set(dbx.ref('logs/' + id), e);
@@ -33,6 +39,8 @@ function log(b, officeId, action, x = {}){
 // يعني أن موظفاً آخر سبق بقرار على الغرض نفسه، فنعرض ذلك بوضوح بدل «ليست لديك صلاحية».
 async function commit(b, guarded = false){
   flushQuota(b);
+  for (const [itemId, r] of RESERVED.get(b) || []) log(b, r.officeId, r.action, {itemId});   // قيد عام لتغيير بلا قيد مكتوب
+  RESERVED.delete(b);
   try { await b.commit(); }
   catch (e){ if (guarded && String(e?.code || '').includes('permission-denied')) fail(t('wf.race')); throw e; }
   for (const e of PENDING_LOGS.get(b) || []) if (Array.isArray(S.logs[e.itemId])) S.logs[e.itemId] = [...S.logs[e.itemId], e];
@@ -55,7 +63,6 @@ function flushQuota(b){
   QUOTA.delete(b);
 }
 // التفاصيل السرية كما هي في itemSecrets (دون حقل id الذي يضيفه الاشتراك)
-function secretOf(i){ const {id, ...s} = S.secrets[i.id] || {}; return {...s, officeId: i.officeId}; }
 
 /* مكان العثور سري منذ المرحلة E5: مكانه itemSecrets، والقواعد ترفض أي تعديل على غرض ما زال spot في مستنده العام.
    احتياط للأغراض القديمة التي لم تنقلها migrate.js بعد: كل تعديل على الغرض هنا يمر عبر itemUpdate،
@@ -66,6 +73,23 @@ function publicSpot(i){
   return p && Object.prototype.hasOwnProperty.call(p, 'spot') ? String(p.spot ?? '') : null;
 }
 function itemUpdate(b, i, patch, secret = null){
+  const base = item(i.id) || i;   // المستند العام كما وصل من Firestore
+  // v14: تغيّرت الحالة أو التصنيف: رقم قيد في lastLog (قيد موجود لهذا الغرض في الـ batch، أو رقم محجوز)
+  const changed = (patch.status !== undefined && patch.status !== base.status) || (patch.cat !== undefined && patch.cat !== base.cat);
+  if (changed){
+    const had = (PENDING_LOGS.get(b) || []).find(e => e.itemId === i.id);
+    if (had) patch = {...patch, lastLog: had.id};
+    else {
+      const m = RESERVED.get(b) || new Map(); RESERVED.set(b, m);
+      if (!m.has(i.id)) m.set(i.id, {id: dbx.newId('logs'), officeId: i.officeId, action: patch.status !== undefined && patch.status !== base.status ? 'status:' + patch.status : 'edit'});
+      patch = {...patch, lastLog: m.get(i.id).id};
+    }
+  }
+  // v14: مدة الحفظ (keepUntil) لغرض قديم ليس فيه: تُحسب من تاريخ العثور ومدة التصنيف (الموظف يضيفها مرة، ولا يغيّرها)
+  if (base.keepUntil === undefined && (patch.foundDate || base.foundDate)){
+    const k = keepUntilOf(patch.cat || base.cat, S.offices.find(o => o.id === i.officeId), patch.foundDate || base.foundDate);
+    if (k) patch = {...patch, keepUntil: k};
+  }
   const sp = publicSpot(i);
   if (sp !== null){
     patch = {...patch, spot: deleteField()};
@@ -167,7 +191,8 @@ export async function approveCashDirect(c, {amount, foundDate = ''} = {}){
   const subs = cat(c.cat).subs, sub = (det.holder === 'envelope' ? subs[2] : subs[0]) || subs[0] || '';
   const id = dbx.newId('items'), now = Date.now();
   await dbx.set('items/' + id, {officeId: c.officeId, ref: makeRef(o), cat: c.cat, sub, title: publicTitle(c.cat, sub), foundDate: day,
-    photo: false, status: 'available', createdBy: S.uid, createdAt: now, updatedAt: now, sample: false, public: pubFlag(c.cat), createdFrom: c.id});
+    photo: false, status: 'available', createdBy: S.uid, createdAt: now, updatedAt: now, sample: false, public: pubFlag(c.cat), createdFrom: c.id,
+    keepUntil: keepUntilOf(c.cat, o, day)});   // v14: مدة الحفظ تُكتب عند الإنشاء
   let secret = false;
   try {
     await dbx.set('itemSecrets/' + id, {officeId: c.officeId, title: tAr('sys.cashTitle', {n: amt}), color: '', brand: '',
@@ -176,10 +201,16 @@ export async function approveCashDirect(c, {amount, foundDate = ''} = {}){
     await linkClaim(c, id, {silent: true});
   } catch (e){
     // لا غرض يتيم: حذف (الإدارة)، وإلا أرشفة مع قيد يشرح السبب
-    try { if (secret) await dbx.del('itemSecrets/' + id); await dbx.del('items/' + id); }
-    catch {
-      try { const b = dbx.batch(); b.update(dbx.ref('items/' + id), {status: 'archived', updatedAt: Date.now(), public: pubFlag(c.cat)});
-        log(b, c.officeId, 'status:archived', {itemId: id, claimId: c.id, note: tAr('sys.cashUndo')}); await b.commit(); } catch (e2){ console.warn(e2); }
+    // v14: الحذف (للمدير) في batch واحد مع قيد del_{id}. الموظف لا يحذف النقود ولا يؤرشفها قبل مدة الحفظ:
+    // يبقى الغرض «متاحاً» مُعلَّماً (createdFrom) مع قيد يشرح السبب، فيربطه الموظف لاحقاً أو يحذفه المدير
+    try {
+      const b = dbx.batch();
+      if (secret) b.delete(dbx.ref('itemSecrets/' + id));
+      b.delete(dbx.ref('items/' + id));
+      log(b, c.officeId, 'delete', {itemId: id, id: 'del_' + id, claimId: c.id, note: tAr('sys.cashUndo')});
+      await b.commit();
+    } catch {
+      try { const b = dbx.batch(); log(b, c.officeId, 'cashUndo', {itemId: id, claimId: c.id, note: tAr('sys.cashUndo')}); await b.commit(); } catch (e2){ console.warn(e2); }
     }
     throw e;
   }
@@ -276,10 +307,15 @@ export async function askQuestion(c, q){
    checks (v7): مفاتيح فحوص التسليم حسب التصنيف التي علّمها الموظف كلها؛ تُحفظ في قيد السجل بلا أي بيانات شخصية */
 export async function verifyHandover(c, receiver = {}, checks = [], code = ''){
   notMine(c);
-  // v9: الرمز يُفحص على الخادم (القواعد تحسب بصمته وتقارنها بـ claimCodes)، فلا مقارنة هنا
+  /* H19: سبب الرفض محدد: صلاحية، أو الطلب ليس مقبولاً، أو الغرض محجوز لغيره، أو رمز خاطئ.
+     الرمز نفسه يُفحص على الخادم (القواعد تحسب بصمته وتقارنها بـ claimCodes)، فلا مقارنة هنا */
+  if (!S.isAdmin && !(S.staffDoc?.offices || []).includes(c.officeId)) fail(t('wf.hoPerm'));
+  if (c.codeHash && !S.isAdmin) fail(t('st.legacyAdmin'));   // v14: الرموز القديمة (6 أرقام) للمدير فقط
   if (!/^[A-Z0-9]{6,8}$/.test(code)) fail(t('a.codeWrong'));
+  if (c.status !== 'approved') fail(t('wf.hoNotApproved'));
   const i = await freshItem(c.itemId);
-  if (c.status !== 'approved' || i.status !== 'reserved' || i.reservedFor !== c.id) fail(t('wf.notReserved'));
+  if (i.status === 'reserved' && i.reservedFor !== c.id) fail(t('wf.hoOther'));
+  if (i.status !== 'reserved' || i.reservedFor !== c.id) fail(t('wf.notReserved'));
   const name = String(receiver.name || '').trim().slice(0, 120), last4 = String(receiver.last4 || '').trim();
   if (name.length < 3 || !/^\d{4}$/.test(last4)) fail(t('wf.needReceiver'));
   const b = dbx.batch();
@@ -288,8 +324,14 @@ export async function verifyHandover(c, receiver = {}, checks = [], code = ''){
   // اختُبر في المحاكي: التسليم + إغلاق 3 منافسين (بصورهم وحصصهم) يبقى ضمن حد القراءات في batch واحد
   const skippedOwn = await closeOthers(b, i, c.id, 'rejected', tAr('sys.handedVerified'));
   log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id, note: tAr('sys.receivedBy', {name, last4}), checks: checks.map(String).slice(0, 10)});
-  // رفض القواعد هنا = الرمز لا يطابق البصمة (أو سبق موظف آخر بالتسليم): نعرض «الرمز غير صحيح»
-  await commit(b, true).catch(e => { if (e instanceof FlowError) fail(t('a.codeWrong')); throw e; });
+  // رفض القواعد: نقرأ الطلب والغرض من جديد لنعرف السبب؛ إن لم يتغيرا فالرمز لا يطابق البصمة
+  await commit(b, true).catch(async e => {
+    if (!(e instanceof FlowError)) throw e;
+    const [c2, i2] = await Promise.all([dbx.get('claims/' + c.id).catch(() => null), dbx.get('items/' + i.id).catch(() => null)]);
+    if (c2 && c2.status !== 'approved') fail(t('wf.hoNotApproved'));
+    if (i2 && i2.reservedFor !== c.id) fail(t('wf.hoOther'));
+    fail(t('a.codeWrong'));
+  });
   return {skippedOwn};
 }
 
@@ -310,13 +352,25 @@ export async function withdrawClaim(c){
    التسليم المباشر لغرض ثمين (بلا رمز استلام): للإدارة فقط.
    الحذف: للإدارة، أو للموظف إن كان مثالاً، أو متاحاً سُجّل قبل أقل من 24 ساعة وليس ثميناً (خطأ إدخال) */
 export const canDirectReturn = i => S.isAdmin || !isHighValue(i?.cat);
+/* v14 (H19) — القواعد تفرضها أيضاً:
+   تخفيض التصنيف من ثمين إلى غير ثمين: للمدير فقط (الرفع إلى ثمين مسموح للموظف).
+   الأرشفة والتصرّف: للمدير، أو بعد انتهاء مدة الحفظ (keepUntil، أو محسوبة لغرض قديم ليس فيه).
+   أدلة التفاصيل السرية (اللون، الماركة، الوصف، الإجابات، المكان، المبنى، القاعة): للموظف خلال 24 ساعة من التسجيل فقط */
+export const canChangeCat = (from, to) => S.isAdmin || from === to || !isHighValue(from) || isHighValue(to);
+export const keepEnd = i => typeof i?.keepUntil === 'number' ? i.keepUntil : keepUntilOf(i?.cat, S.offices.find(o => o.id === i?.officeId), i?.foundDate);
+export const canArchive = i => !!i && (S.isAdmin || (keepEnd(i) > 0 && keepEnd(i) <= Date.now()));
+export const EVIDENCE = ['color', 'brand', 'desc', 'details', 'spot', 'bldg', 'room'];
+export const evidenceLocked = i => !!i && !S.isAdmin && !((i.createdAt || 0) > Date.now() - 864e5);
 export const canDeleteItem = i => !!i && (S.isAdmin || i.sample === true
   || (i.status === 'available' && typeof i.createdAt === 'number' && i.createdAt > Date.now() - 864e5 && !isHighValue(i.cat)));
 
 /* v9: تعديل غرض من نموذج الموظف: batch واحد فيه update للحقول المعدّلة فقط (لا status ولا reservedFor ولا returnedAt
    ولا disposal)، والتفاصيل السرية كاملة، وقيد «تعديل» في السجل */
 export async function editItem(i, patch, secret){
-  for (const k of ['status', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt', 'officeId', 'createdBy', 'createdAt', 'ref']) delete patch[k];
+  for (const k of ['status', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt', 'officeId', 'createdBy', 'createdAt', 'ref', 'sample', 'keepUntil', 'lastLog']) delete patch[k];
+  if (patch.cat && !canChangeCat(i.cat, patch.cat)) fail(t('wf.hvDowngrade'));
+  // v14: بعد 24 ساعة تبقى الأدلة كما سُجّلت (للموظف)، ويُكتب الباقي
+  if (evidenceLocked(i)){ const old = S.secrets[i.id] || {}; for (const k of EVIDENCE){ if (old[k] !== undefined && old[k] !== '') secret[k] = old[k]; } }
   const b = dbx.batch();
   itemUpdate(b, i, {...patch, updatedAt: Date.now()}, {...secret, officeId: i.officeId});
   log(b, i.officeId, 'edit', {itemId: i.id});
@@ -351,10 +405,12 @@ export async function setItemStatus(i, to, note = ''){
     if (!canDirectReturn(i)) fail(t('wf.hvDirectAdmin'));
     if (String(note).trim().length < 6) fail(t('wf.needHandoverNote'));
     patch.returnedAt = now;
-    secret = {...secretOf(i), handoverNote: String(note).slice(0, 600)};
+    // v14: merge (لا إعادة كتابة كاملة): الأدلة السرية تبقى كما هي حتى لو لم تُحمَّل محلياً
+    b.set(dbx.ref('itemSecrets/' + i.id), {officeId: i.officeId, handoverNote: String(note).slice(0, 600)}, {merge: true});
     // H13a: التسليم (المباشر أيضاً) يرفض بقية الطلبات
     skippedOwn = await closeOthers(b, i, '', 'rejected', tAr('sys.handedDirect'));
   } else if (to === 'archived'){
+    if (!canArchive(i)) fail(t('wf.keepNotOver'));
     skippedOwn = await closeOthers(b, i, '', 'cancelled', tAr('sys.archived'));
   } else fail(t('wf.badStatus'));
   itemUpdate(b, i, patch, secret);
@@ -396,7 +452,9 @@ export async function disposeItems(items, method, note = ''){
   if (method === 'finder' && !items.every(finderOk)) fail(t('wf.noFinder'));
   let n = 0;
   const one = async (b, i, claims, now) => {
-    itemUpdate(b, i, {status: 'disposed', disposal: method, disposedAt: now, reservedFor: '', updatedAt: now}, {...secretOf(i), disposalNote: String(note).slice(0, 600)});
+    if (!canArchive(i)) fail(t('wf.keepNotOver'));
+    itemUpdate(b, i, {status: 'disposed', disposal: method, disposedAt: now, reservedFor: '', updatedAt: now});
+    b.set(dbx.ref('itemSecrets/' + i.id), {officeId: i.officeId, disposalNote: String(note).slice(0, 600)}, {merge: true});   // v14: merge
     for (const o of claims) if (o.uid !== S.uid) closeClaim(b, o, {status: 'cancelled', note: tAr('sys.retentionEnded'), decidedAt: now, decidedBy: S.uid});
     log(b, i.officeId, 'dispose', {itemId: i.id, note: tAr('disposal.' + method) + (note ? ' — ' + note : '')});
     n++;
@@ -430,7 +488,8 @@ export async function deleteItem(i){
   if (['clear', 'blur', 'none'].includes(i.photo) && await dbx.get('itemPhotosPrivate/' + i.id).catch(() => null)) b.delete(dbx.ref('itemPhotosPrivate/' + i.id));
   if (S.secrets[i.id] || await dbx.get('itemSecrets/' + i.id).catch(() => null)) b.delete(dbx.ref('itemSecrets/' + i.id));
   b.delete(dbx.ref('items/' + i.id));
-  log(b, i.officeId, 'delete', {itemId: i.id, note: full(i).title || i.ref});
+  // v14: قيد الحذف بالرقم الثابت del_{itemId} (القواعد تشترطه في الـ batch نفسه)
+  log(b, i.officeId, 'delete', {itemId: i.id, id: 'del_' + i.id, note: full(i).title || i.ref});
   await commit(b);
   return {skippedOwn};
 }

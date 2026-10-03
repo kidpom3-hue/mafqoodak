@@ -7,7 +7,7 @@ import { backBtn, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry, migratePublic } from '../migrate.js';
-import { MS_NOTE, expireGroupClaim, OPEN } from '../workflow.js';
+import { MS_NOTE, expireGroupClaim, OPEN, evidenceLocked } from '../workflow.js';
 import { emailUser } from '../notify.js';   // H9: ملاحظة مدة الإضافة لا تُعرض في السجل
 
 /* ---------- staff dashboard ---------- */
@@ -303,7 +303,8 @@ export function claimCardStaff(c, opts){
   const kind = i && ['pending', 'approved'].includes(c.status) ? conflictOf(c, full(i)) : '';
   const tip = i && ['pending', 'approved'].includes(c.status) && cat(i.cat).staffCheck ? `<div class="note info">${icon('shield')}<span>${t(cat(i.cat).staffCheck)}</span></div>` : '';
   // الطلب المنتهي أو الملغى يُعاد تفعيله من سجل الطلبات (الغرض متاح ← مقبول ومحجوز له، وإلا ← قيد المراجعة)
-  const again = !own && ['expired', 'cancelled'].includes(c.status) && c.uid !== 'deleted' ? `<div class="btn-row"><button class="btn sm soft" data-act="reactivate" data-id="${esc(c.id)}">${icon('swap')}${t('st.reactivate')}</button></div>` : '';
+  // v14 (H19): لا إعادة تفعيل لطلب ألغاه صاحبه (cancelledAt)؛ القواعد تمنعه أيضاً
+  const again = !own && ['expired', 'cancelled'].includes(c.status) && c.uid !== 'deleted' && !c.cancelledAt ? `<div class="btn-row"><button class="btn sm soft" data-act="reactivate" data-id="${esc(c.id)}">${icon('swap')}${t('st.reactivate')}</button></div>` : '';
   const actions = own && ['pending', 'approved'].includes(c.status) ? `<div class="note">${icon('info')}<span>${t('st.ownClaim')}</span></div>`
     : loadingIt && ['pending', 'approved'].includes(c.status) ? ''
     : orphan ? `<div class="btn-row"><button class="btn sm" data-act="closeOrphan" data-id="${esc(c.id)}">${icon('x')}${t('st.orphanClose')}</button></div>`
@@ -313,7 +314,7 @@ export function claimCardStaff(c, opts){
       <button class="btn sm ghost" data-act="ask" data-id="${esc(c.id)}">${icon('question')}${t(c.question ? 'qa.askAgain' : 'qa.ask')}</button>
       <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}${t('c.reject')}</button></div>`
     : c.status === 'approved' ? `<div class="btn-row">
-      <button class="btn sm" data-act="verify" data-id="${esc(c.id)}">${icon('shield')}${t('st.verify')}</button>
+      ${c.codeHash && !S.isAdmin ? `<span class="note">${icon('info')}<span>${t('st.legacyAdmin')}</span></span>` : `<button class="btn sm" data-act="verify" data-id="${esc(c.id)}">${icon('shield')}${t('st.verify')}</button>`}
       ${late ? `<button class="btn sm ghost" data-act="release" data-id="${esc(c.id)}">${icon('swap')}${t('st.release')}</button>` : ''}
       <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}${t('st.unapprove')}</button></div>` : '';
   // الملخّص (PR 3): رقم الطلب والغرض والحالة، والخطوة التالية: مدة الانتظار، أو المهلة المتبقية للحضور (تحذير تحت يوم)
@@ -571,7 +572,8 @@ export function vItemForm(){
     ${hero}
     ${r ? `<div class="note info">${icon('bell')}<span>${t('if.fromReport')}</span></div>` : ''}
     ${f ? `<div class="note info">${icon('tag')}<span>${t('if.fromFound')}${f.note ? `<br><b>${t('hi.finderNote')}</b> ${esc(f.note)}` : ''}</span></div>` : ''}
-    <form data-form="item" class="panel" novalidate ${r ? `data-report="${esc(r.id)}"` : ''} ${f ? `data-found="${esc(f.id)}"` : ''}>
+    ${i && evidenceLocked(i) ? `<div class="note warn">${icon('lock')}<span>${t('st.evidenceLocked')}</span></div>` : ''}
+    <form data-form="item" class="panel" novalidate ${r ? `data-report="${esc(r.id)}"` : ''} ${f ? `data-found="${esc(f.id)}"` : ''} ${i && evidenceLocked(i) ? 'data-locked="1"' : ''}>
       ${photoField(photoKey, t('if.photo'), photoModePicker(mode))}
       <div class="field"><span class="label">${t('c.category')}</span>${catPicker(src?.cat || '')}</div>
       ${subs}

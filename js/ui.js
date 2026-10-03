@@ -61,6 +61,12 @@ export function initForm(){
   const c = f.querySelector('input[name=cat]:checked'); const sens = c ? !!cat(c.value).sensitive : false;
   const n = f.querySelector('#sens-note'), p = f.querySelector('#photo-field');
   if (n) n.hidden = !sens; if (p) p.hidden = sens;
+  lockEvidence(f);
+}
+// v14 (H19): غرض مضى على تسجيله 24 ساعة: حقول الأدلة للعرض فقط للموظف (workflow.editItem يبقي قيمها كما سُجّلت)
+export function lockEvidence(f){
+  if (!f?.dataset.locked) return;
+  f.querySelectorAll('[name=color],[name=brand],[name=desc],[name=spot],[name=bldg],[name=room],[name^=d_]').forEach(el => { el.disabled = true; });
 }
 /* ---------- زر الرجوع في الجوال والمتصفح ----------
    كل صفحة جديدة أو نافذة سفلية تضيف خطوة في سجل المتصفح (pushState).

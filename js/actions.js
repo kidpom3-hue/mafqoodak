@@ -1,5 +1,5 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
-import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat } from './constants.js';
+import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf } from './constants.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
@@ -8,7 +8,7 @@ import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification } from './firebase.js';
-import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar } from './ui.js';
+import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar, lockEvidence } from './ui.js';
 import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor.js';
 // H8: لوحة الموظف والإحصاءات والذكاء الاصطناعي والأمثلة تُحمَّل عند الحاجة (lazy.js). SM() = وحدة staff.js المحمّلة
 // (أزرار لوحة الموظف لا تظهر إلا بعد تحميلها، فهي موجودة عند النقر)
@@ -56,6 +56,7 @@ export function onCatChange(form, catId, sub){
   if (note) note.hidden = !sens;
   if (pf) pf.hidden = !!sens;
   if (sens && (FORM.photo || FORM.hadPhoto)){ clearPhoto(form); toast(t('a.photoRemoved')); }
+  lockEvidence(form);   // v14: الخانات المعاد رسمها تبقى للعرض فقط في الغرض المقفل
 }
 // عند تغيير المكان: نُظهر خانتي المبنى والقاعة إن كان المكان داخل مبنى، ونفرّغهما إن لم يكن
 function onSpotChange(form, spot){
@@ -297,7 +298,9 @@ async function submitForm(form){
       await dbx.set('offices/' + id, {...office, active: true, createdAt: Date.now()});
       if (fd.get('samples')){
         const rows = (await load('sample')).sampleItems(id, office.code);
-        const b2 = dbx.batch(); rows.forEach(s => b2.set(dbx.ref('items/' + s.id), {...s.data, public: pubFlag(s.data.cat)})); await b2.commit();
+        // v14 (H19): كل غرض جديد يبدأ «متاحاً» بلا حجز ولا تسليم (القواعد تفرضه)، ومعه مدة حفظه
+        const b2 = dbx.batch(); rows.forEach(s => { const {returnedAt, ...d} = s.data;
+          b2.set(dbx.ref('items/' + s.id), {...d, status: 'available', public: pubFlag(d.cat), keepUntil: keepUntilOf(d.cat, office, d.foundDate)}); }); await b2.commit();
         const b3 = dbx.batch(); rows.forEach(s => b3.set(dbx.ref('itemSecrets/' + s.id), s.secret)); await b3.commit();
       }
       S.mode = 'visitor'; LS.set('mode', 'visitor');
@@ -442,6 +445,8 @@ async function submitForm(form){
       sample: !!existing?.sample,
       public: pubFlag(catId),   // H16: false للنقود (لا يراها الزائر)، والقواعد ترفض غير ذلك
     };
+    // v14 (H19): مدة الحفظ تُكتب عند الإنشاء فقط (القواعد تتحقق منها، ولا يغيّرها إلا المدير)
+    if (!existing) data.keepUntil = keepUntilOf(catId, curOffice(), data.foundDate);
     /* H10: اللون العام (pubColor) للاقتراح الآلي «قد يكون لك»: فقط حين تظهر الصورة للعامة (واضحة أو مموّهة، والتمويه يُبقي اللون)،
        فهو ظاهر أصلاً ولا يُعدّ دليل ملكية. بلا صورة عامة يبقى اللون سرياً في itemSecrets فقط.
        مع صورة جديدة يُضاف بعد حفظ الصورة العامة (مع photo)، حتى لا يظهر لون بلا صورة إن فشل رفعها */
@@ -567,13 +572,14 @@ async function submitForm(form){
     // v7: فحوص التسليم حسب التصنيف: كلها معلّمة، وتُحفظ مفاتيحها في السجل
     const checks = fd.getAll('hc').map(String), need = handoverChecks(it?.cat);
     if (!need.every(k => checks.includes(k))){ busy(form, false); return formErr(form, t('ho.needAll')); }
-    let wrong = false;
+    // H19: سبب الرفض يظهر داخل النافذة (رمز خاطئ، أو الطلب ليس مقبولاً، أو محجوز لغيره، أو صلاحية)
+    let wrong = '';
     const ok = await write(async () => {
       try { res = await wf.verifyHandover(c, {name: val('rname'), last4: val('rlast4')}, need, code); }
-      catch (e){ if (e?.msg === t('a.codeWrong')){ wrong = true; return; } throw e; }
+      catch (e){ if (e?.msg){ wrong = e.msg; return; } throw e; }
     }, '');
     busy(form, false);
-    if (wrong) return formErr(form, t('a.codeWrong'), 'code');
+    if (wrong) return formErr(form, wrong, wrong === t('a.codeWrong') ? 'code' : undefined);
     if (!ok) return;
     toast(t('a.handedOver'));
     emailFinder(it);
@@ -1005,7 +1011,8 @@ const ACT = {
   itemStatus(el){
     const i = item(el.dataset.id); if (!i) return;
     // v9: التسليم المباشر لغرض ثمين للإدارة فقط (بلا رمز ولا موافقتين)
-    const opts = ['available', 'returned', 'archived'].filter(k => k !== 'returned' || wf.canDirectReturn(i));
+    // v14 (H19): الأرشفة للمدير، أو بعد انتهاء مدة الحفظ (القواعد تفرضها)
+    const opts = ['available', 'returned', 'archived'].filter(k => (k !== 'returned' || wf.canDirectReturn(i)) && (k !== 'archived' || wf.canArchive(i)));
     openSheet(`<h2>${t('a.statusTitle', {ref: esc(i.ref)})}</h2><div class="list">${opts.map(k => `<button class="opt" data-act="setStatus" data-id="${esc(i.id)}" data-v="${k}" ${k === i.status ? 'disabled aria-disabled="true"' : ''}>${pill(ITEM_STATUS, k)}${k === i.status ? `<span class="muted">${t('a.current')}</span>` : ''}</button>`).join('')}</div>
       <p class="hint">${t('a.statusHint', {returned: statusLabel(ITEM_STATUS.returned)})}</p><button class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button>`);
   },
@@ -1078,7 +1085,7 @@ const ACT = {
   },
   // التصرّف في الأغراض التي تجاوزت مدة الحفظ (إجراء جماعي)
   dispose(){
-    const over = S.items.filter(i => i.status === 'available' && SM().keepLeft(i) < 0).map(full);
+    const over = S.items.filter(i => i.status === 'available' && SM().keepLeft(i) < 0 && wf.canArchive(i)).map(full);
     if (!over.length) return toast(t('a.noneOver'));
     // الطريقة المقترحة: إن اتفقت كل الأغراض عليها (مثل الوثائق ← تسليم للجهة المختصة)
     const sug = new Set(over.map(i => cat(i.cat).disposal || '')); const pre = sug.size === 1 ? [...sug][0] : '';
@@ -1286,6 +1293,12 @@ const ACT = {
       let failed = 0;
       for (const i of s){ try { await wf.deleteItem(i); } catch (e){ console.warn(e); failed++; } }
       S.counts.samples = failed; toast(failed ? t('a.samplesPartly', {n: failed}) : t('a.samplesDeleted')); renderAll();
+    });
+  },
+  // v14 (H19): إيقاف البيانات التوضيحية نهائياً بعد حذفها (القواعد ترفض بعده أي غرض «مثال»)
+  samplesOff(){
+    confirmSheet(t('adm.samplesOffQ'), t('adm.samplesOffBody'), t('adm.samplesOff'), async () => {
+      if (await write(() => dbx.update('config/app', {samplesOff: true}), t('adm.samplesOffDone'))) renderAll();
     });
   },
   confirmYes(){ const fn = PENDING_CONFIRM; PENDING_CONFIRM = null; closeSheet(); if (fn) fn(); },
