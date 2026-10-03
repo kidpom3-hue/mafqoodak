@@ -3,7 +3,7 @@ import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STA
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText } from '../i18n.js';
 import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist, isOwner } from '../state.js';
-import { backBtn, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
+import { backBtn, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry, migratePublic } from '../migrate.js';
@@ -381,8 +381,10 @@ export function staffClaims(){
   const orph = orphanClaims();
   const orphBar = orph.length ? `<div class="note warn orphans">${icon('alert')}<span>${t('st.orphans', {claims: tp('n.openClaims', orph.length)})}</span>
     <button class="btn sm" data-act="closeOrphans">${icon('x')}${t('st.orphansClose')}</button></div>` : '';
-  const body = cur === 'decide' ? orphBar + (pend.length ? `<div class="list">${pend.map((c, k) => claimCardStaff(c, {open: k === 0, fresh: fresh.has('s:' + c.id)})).join('')}</div>` : `<p class="muted">${t('st.noNew')}</p>`)
-    : cur === 'come' ? (appr.length ? `<div class="list">${appr.map(c => claimCardStaff(c)).join('')}</div>` : `<p class="muted">${t('st.noCome')}</p>`)
+  // H19: قائمة فارغة: سطر يشرح ما يظهر فيها، وزر لتبويب فيه عمل، وإلا «أضف غرضاً»
+  const go2 = (v, n) => n ? sEmptyTab('claims', v) : '';
+  const body = cur === 'decide' ? orphBar + (pend.length ? `<div class="list">${pend.map((c, k) => claimCardStaff(c, {open: k === 0, fresh: fresh.has('s:' + c.id)})).join('')}</div>` : sEmpty('inbox', 'st.noNew', 'st.noNewSub', go2('come', appr.length)))
+    : cur === 'come' ? (appr.length ? `<div class="list">${appr.map(c => claimCardStaff(c)).join('')}</div>` : sEmpty('clock', 'st.noCome', 'st.noComeSub', go2('decide', pend.length)))
     : cur === 'incoming' ? handins(fs, fresh)
     : hist === null ? `<button class="btn sm ghost" data-act="claimHist">${icon('clock')}${t('st.showHist')}</button>`
     : hist.length ? `<div class="list">${hist.map(c => claimCardStaff(c)).join('')}</div>` : `<p class="muted">${t('c.none')}</p>`;
@@ -421,8 +423,11 @@ function handins(fs, fresh){
   const codeBox = fs.length <= CODE_SEARCH_MIN ? '' : `<form class="filters code-find" data-form="findCode" novalidate>
       <label class="searchbar" style="flex:1;min-width:180px">${icon('tag')}<input name="code" class="code-in" dir="ltr" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="${t('hi.codePh')}" aria-label="${t('hi.codeAria')}"></label>
       <button class="btn sm" type="submit">${icon('search')}${t('hi.codeOpen')}</button></form>`;
-  return fs.length ? `${codeBox}<p class="muted">${t('st.handinHint')}</p><div class="list">${fs.map((f, k) => foundCardStaff(f, k === 0, fresh.has('sf:' + f.id))).join('')}</div>` : `<p class="muted">${t('st.noHandin')}</p>`;
+  return fs.length ? `${codeBox}<p class="muted">${t('st.handinHint')}</p><div class="list">${fs.map((f, k) => foundCardStaff(f, k === 0, fresh.has('sf:' + f.id))).join('')}</div>` : sEmpty('tag', 'st.noHandin', 'st.noHandinSub');
 }
+// H19: قائمة الموظف الفارغة: العنوان والشرح، وزر لتبويب آخر فيه عمل، وإلا «أضف غرضاً»
+const sEmptyTab = (g, v) => `<button class="btn soft" data-act="staffSub" data-g="${g}" data-v="${v}">${icon('fwd')}${t('st.sub.' + v)}</button>`;
+const sEmpty = (ic, k, sub, act) => emptyBox(ic, t(k), t(sub), act || `<button class="btn soft" data-act="nav" data-r="add">${icon('plus')}${t('nav.add')}</button>`, 'sm');
 // خانة البحث بكود إشعار التسليم تظهر فقط إذا زادت الإشعارات المعلّقة على هذا العدد
 export const CODE_SEARCH_MIN = 5;
 export function staffReports(){
@@ -439,9 +444,9 @@ export function staffReports(){
   const fresh = new Set(staffKeys().map(x => x.card));
   const defs = [['picked', picked.length], ['likely', likely.length], ['open', rest.length], ['closed', closed ? closed.length : null]];
   const cur = subTab('reports', defs);
-  const body = cur === 'picked' ? (picked.length ? `<div class="list">${picked.map(r => reportCardStaff(r, false, fresh.has('sr:' + r.id))).join('')}</div>` : `<p class="muted">${t('st.noPicked')}</p>`)
-    : cur === 'likely' ? (likely.length ? `<p class="muted">${t('st.likelyHint')}</p><div class="list">${likely.map(r => reportCardStaff(r, r.id === first, fresh.has('sr:' + r.id))).join('')}</div>` : `<p class="muted">${t('st.noLikely')}</p>`)
-    : cur === 'open' ? `${oldBtn}${rest.length ? `<div class="list">${rest.map(r => reportCardStaff(r, r.id === first, fresh.has('sr:' + r.id))).join('')}</div>` : `<p class="muted">${t('st.noReports')}</p>`}`
+  const body = cur === 'picked' ? (picked.length ? `<div class="list">${picked.map(r => reportCardStaff(r, false, fresh.has('sr:' + r.id))).join('')}</div>` : sEmpty('spark', 'st.noPicked', 'st.noPickedSub', rest.length ? sEmptyTab('reports', 'open') : ''))
+    : cur === 'likely' ? (likely.length ? `<p class="muted">${t('st.likelyHint')}</p><div class="list">${likely.map(r => reportCardStaff(r, r.id === first, fresh.has('sr:' + r.id))).join('')}</div>` : sEmpty('spark', 'st.noLikely', 'st.noLikelySub', rest.length ? sEmptyTab('reports', 'open') : ''))
+    : cur === 'open' ? `${oldBtn}${rest.length ? `<div class="list">${rest.map(r => reportCardStaff(r, r.id === first, fresh.has('sr:' + r.id))).join('')}</div>` : sEmpty('bell', 'st.noReports', 'st.noReportsSub')}`
     : closed === null ? `<button class="btn sm ghost" data-act="closedReps">${icon('clock')}${t('st.rShowClosed')}</button>`
     : closed.length ? `<div class="list">${closed.map(r => reportCardStaff(r)).join('')}</div>` : `<p class="muted">${t('c.none')}</p>`;
   return subTabs('reports', defs, cur, body);

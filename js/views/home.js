@@ -6,7 +6,7 @@ import { S, curOffice } from '../state.js';
 import { card, skelCards, groupCard, groupEntries, groupedHere, pubActive } from './visitor.js';
 import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt } from './common.js';
 import { APP_VERSION } from '../config.js';
-import { officeUrl, brandLogo, collegeLinks } from './common.js';
+import { officeUrl, brandLogo, collegeLinks, oKicker, emptyBox, navBtn } from './common.js';
 import { load } from '../lazy.js';   // H8: رمز QR في التذييل يُحمَّل بعد الرسم
 import { hydrate } from '../ui.js';
 
@@ -23,6 +23,7 @@ const TAG_ART = `<svg class="tag-art" viewBox="0 0 220 240" aria-hidden="true">
 
 // H4: شريط الأرقام الثلاثة انتقل إلى صفحة التصفح. «تفاصيل الخدمات» و«مؤشرات المكتب» صفّا روابط هادئان
 // بعرض كامل بعد «خصوصيتك أولاً» وقبل التذييل
+// H19: زرّان رئيسيان فقط («أضعتُ غرضاً» و«وجدتُ غرضاً»)؛ التصفح والخدمات تحتهما في صفوف الروابط
 export function vHome(){
   const o = curOffice();
   return `<div class="wrap home" data-view="home">
@@ -31,7 +32,7 @@ export function vHome(){
         ${brandOf(o)
           // H15: مكتب الكلية: شعارها (أبيض فوق الأخضر الداكن) وبجانبه «مكتب المفقودات» بدل سطر نوع المكان
           ? `<div class="hh-brand">${brandLogo(o, 'dark')}<span class="hh-brand-txt">${t('br.office')}</span></div>`
-          : `<span class="hh-kicker">${icon(otype(o.type).icon)}${esc(otypeName(o.type))}${oCity(o) ? ' · ' + esc(oCity(o)) : ''}</span>`}
+          : oKicker(o) ? `<span class="hh-kicker">${oKicker(o)}</span>` : ''}
         <h1>${t('home.lostIn', {name: esc(oName(o))})}</h1>
         <p>${t('home.lead')}</p>
         <form class="hero-search" data-form="homeSearch" role="search">
@@ -40,10 +41,9 @@ export function vHome(){
         </form>
       </div>
       ${TAG_ART}
-      <div class="cta3">
+      <div class="cta3 cta2">
         <button class="cta" data-act="nav" data-r="report"><span class="ci">${icon('bell')}</span><span><b>${t('home.ctaLost')}</b><small>${t('home.ctaLostSub')}</small></span></button>
         <button class="cta" data-act="nav" data-r="found"><span class="ci">${icon('tag')}</span><span><b>${t('home.ctaFound')}</b><small>${t('home.ctaFoundSub')}</small></span></button>
-        <button class="cta" data-act="nav" data-r="browse"><span class="ci">${icon('grid')}</span><span><b>${t('home.ctaBrowse')}</b><small id="cta-count">${t('home.ctaBrowseSub')}</small></span></button>
       </div>
     </section>
 
@@ -72,6 +72,7 @@ export function vHome(){
     </section>
 
     <nav class="link-rows" aria-label="${t('home.moreAria')}">
+      <button class="link-row" data-act="nav" data-r="browse"><span class="lr-ic">${icon('grid')}</span><span class="grow"><b>${t('home.ctaBrowse')}</b><small id="cta-count">${t('home.ctaBrowseSub')}</small></span>${icon('fwd')}</button>
       <button class="link-row" data-act="nav" data-r="service"><span class="lr-ic">${icon('grid')}</span><span class="grow"><b>${t('svc.details')}</b><small>${t('home.svcDesc')}</small></span>${icon('fwd')}</button>
       <button class="link-row" data-act="nav" data-r="numbers"><span class="lr-ic">${icon('chart')}</span><span class="grow"><b>${t('num.title')}</b><small>${t('home.numDesc')}</small></span>${icon('fwd')}</button>
     </nav>
@@ -93,7 +94,7 @@ export function updateHome(){
         ...avail.filter(i => !groupedHere(i.cat)).map(i => ({at: i.createdAt || 0, html: card(i)}))];
       const arr = rows.sort((a, b) => b.at - a.at).slice(0, 8);
       latest.innerHTML = arr.length ? `<div class="hscroll">${arr.map(x => x.html).join('')}</div>`
-        : `<div class="empty">${icon('box')}<b>${t('home.empty')}</b><span>${t('home.emptySub')}</span></div>`;
+        : emptyBox('box', t('home.empty'), t('home.emptySub'), navBtn('report', 'bell', t('home.ctaLost')));
     }
   }
   // H8: رمز QR في التذييل يُرسم بعد تحميل qr.js (مكانه محجوز بالحجم نفسه فلا تقفز الصفحة)

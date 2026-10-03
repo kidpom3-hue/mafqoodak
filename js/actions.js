@@ -26,8 +26,38 @@ import { SETTINGS, APP_VERSION } from './config.js';
 function formErr(form, msg, field){
   const e = form.querySelector('.form-err'); if (!e) return; e.textContent = msg; e.hidden = !msg; if (!msg) return;
   const el = field && form.querySelector(`[name="${field}"]`);
+  // H19: الخانة في خطوة أخرى من النموذج: نعرض تلك الخطوة أولاً
+  const st = el?.closest('.step'); if (st && st.hidden) showStep(form, Number(st.dataset.step), true);
   if (el){ const d = el.closest('details'); if (d) d.open = true; el.focus({preventScroll: true}); el.scrollIntoView({block: 'center', behavior: 'smooth'}); }
   else e.scrollIntoView({block: 'center', behavior: 'smooth'});
+}
+/* H19: نماذج الخطوات (البلاغ والطلب): خطوة واحدة ظاهرة، ومؤشر الخطوات يتبعها.
+   «التالي» يفحص الخانات المطلوبة في الخطوة الحالية فقط؛ الفحص الكامل عند الإرسال، وخطؤه يعيد إلى خطوة الخانة */
+export function showStep(form, n, keepErr){
+  const total = Number(form.dataset.steps) || 1; n = Math.max(1, Math.min(total, n));
+  form.dataset.step = n;
+  form.querySelectorAll('.step').forEach(x => { x.hidden = Number(x.dataset.step) !== n; });
+  form.querySelectorAll('.stepper li').forEach(li => { const k = Number(li.dataset.n);
+    li.classList.toggle('cur', k === n); li.classList.toggle('done', k < n);
+    if (k === n) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current'); });
+  if (!keepErr){ const e = form.querySelector('.form-err'); if (e){ e.hidden = true; e.textContent = ''; } }
+  form.querySelector(`.step[data-step="${n}"] .step-h`)?.focus({preventScroll: true});
+  form.scrollIntoView({block: 'start', behavior: 'smooth'});
+}
+function stepMissing(form){
+  const st = form.querySelector(`.step[data-step="${form.dataset.step || 1}"]`); if (!st) return null;
+  if (st.querySelector('input[name=cat]') && !st.querySelector('input[name=cat]:checked')) return {msg: t('a.needCat'), el: st.querySelector('input[name=cat]')};
+  for (const el of st.querySelectorAll('[required]')){
+    if (el.disabled || el.closest('[hidden]')) continue;
+    const empty = el.type === 'radio' ? !st.querySelector(`input[name="${el.name}"]:checked`) : el.type === 'checkbox' ? !el.checked : !String(el.value || '').trim();
+    if (empty) return {msg: t('step.need'), el};
+  }
+  return null;
+}
+function stepNext(form){
+  const m = stepMissing(form);
+  if (m){ formErr(form, m.msg); const d = m.el.closest('details'); if (d) d.open = true; m.el.focus({preventScroll: true}); m.el.scrollIntoView({block: 'center', behavior: 'smooth'}); return; }
+  showStep(form, (Number(form.dataset.step) || 1) + 1);
 }
 function busy(form, on){ const b = form.querySelector('button[type=submit]'); if (b) b.disabled = on; }
 
@@ -1104,6 +1134,8 @@ const ACT = {
   closedReps(){ loadClosedReports(); },   // «مغلقة» في تبويب البلاغات (PR 3)
   adminRefresh(){ loadAdminCounts(true); },
   // تعبئة طلب الاستلام من بلاغ المستخدم المفتوح
+  stepNext(el){ const f = el.closest('form'); if (f) stepNext(f); },
+  stepPrev(el){ const f = el.closest('form'); if (f) showStep(f, (Number(f.dataset.step) || 1) - 1); },
   useReport(el){
     const r = S.myReports.find(x => x.id === el.dataset.id); const f = el.closest('form'); if (!r || !f) return;
     const more = f.querySelector('#cl-more'); if (more) more.open = true;   // H1: ما عُبّئ من البلاغ يظهر
@@ -1347,7 +1379,10 @@ export function bindEvents(){
   });
   app.addEventListener('submit', e => {
     const f = e.target.closest('form[data-form]'); if (!f) return;
-    e.preventDefault(); submitForm(f);
+    e.preventDefault();
+    // H19: Enter في خطوة غير الأخيرة = «التالي» لا الإرسال
+    if (f.dataset.steps && Number(f.dataset.step || 1) < Number(f.dataset.steps)) return stepNext(f);
+    submitForm(f);
   });
   let qTimer;
   app.addEventListener('input', e => {

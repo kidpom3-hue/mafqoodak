@@ -1,10 +1,27 @@
 // عناصر واجهة مشتركة بين الصفحات
-import { icon, brandOf, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf, statusLabel, ITEM_STATUS } from '../constants.js';
+import { icon, otype, otypeName, oCity, brandOf, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf, statusLabel, ITEM_STATUS } from '../constants.js';
 import { t, hasKey } from '../i18n.js';
 import { LS, esc, relDay, colorDot, isBuilding, roomWord, spotText, showTitle, when, fmtDate, isoDay } from '../utils.js';
 import { aiReady } from '../firebase.js';   // H8: ai.js يُحمَّل عند الحاجة فقط
 import { THEMES, theme, TEXTS, textSize } from '../theme.js';
-import { S, isStaffHere, answered } from '../state.js';
+import { S, isStaffHere, answered, singleMode } from '../state.js';
+
+/* H19: نموذج من خطوات (البلاغ والطلب، 3 خطوات بحد أقصى). كل الخانات في النموذج نفسه (لا يضيع ما كُتب)،
+   وتظهر خطوة واحدة فقط. stepper = مؤشر الخطوات أعلى النموذج؛ step = جسم خطوة بعنوانها؛ stepNav = «السابق/التالي».
+   التنقل في actions.js (stepNext/stepPrev/showStep)، وخطأ الإرسال يفتح الخطوة التي فيها الخانة */
+export const stepper = labels => `<ol class="stepper" aria-label="${t('step.aria')}">${labels.map((l, k) => `<li data-n="${k + 1}" ${k ? '' : 'aria-current="step" class="cur"'}><span class="sn" aria-hidden="true">${k + 1}</span><span class="sl">${l}</span></li>`).join('')}</ol>`;
+export const step = (n, total, title, body) => `<div class="step" data-step="${n}" ${n > 1 ? 'hidden' : ''}>
+  <h2 class="step-h" tabindex="-1"><span class="sr-only">${t('step.of', {n, total})}: </span>${title}</h2>${body}</div>`;
+export const stepNav = (n, total) => n >= total ? '' : `<div class="step-nav">${n > 1 ? `<button type="button" class="btn ghost" data-act="stepPrev">${icon('back')}${t('step.prev')}</button>` : ''}<button type="button" class="btn" data-act="stepNext">${t('step.next')}${icon('fwd')}</button></div>`;
+export const stepBack = () => `<button type="button" class="btn ghost step-back" data-act="stepPrev">${icon('back')}${t('step.prev')}</button>`;
+
+/* H19: قائمة فارغة: عنوان واضح، وسطر يشرح ما يظهر هنا، وزر للخطوة التالية */
+export const emptyBox = (ic, title, sub = '', act = '', cls = '') => `<div class="empty ${cls}">${icon(ic)}<b>${title}</b>${sub ? `<span>${sub}</span>` : ''}${act}</div>`;
+export const navBtn = (r, ic, label) => `<button class="btn soft" data-act="nav" data-r="${r}">${icon(ic)}${label}</button>`;
+
+/* H19: سطر فوق اسم المكتب: نوع المنشأة والمدينة؛ في وضع المكتب الواحد المدينة فقط (لا أنواع منشآت للزائر) */
+export const oKicker = o => singleMode() ? (oCity(o) ? icon('pin') + esc(oCity(o)) : '')
+  : `${icon(otype(o.type).icon)}${esc(otypeName(o.type))}${oCity(o) ? ' · ' + esc(oCity(o)) : ''}`;
 
 /* حالة نموذج الإدخال الحالي (الصورة المختارة) */
 // copyFrom: مفتاح صورة بلاغ تُنسخ للغرض عند قبول البلاغ (مثل r_abc)

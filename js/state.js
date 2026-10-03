@@ -405,6 +405,8 @@ export function start(){
     const first = !S.officesLoaded; S.officesLoaded = true;
     const active = S.offices.filter(o => o.active !== false);
     if (!curOffice() && active.length === 1){ setOffice(active[0].id, true); return; }
+    // H19: وضع المكتب الواحد: الزائر يدخل مكتب الكلية مباشرة (بلا قائمة المواقع)
+    if (!curOffice() && singleOffice()){ setOffice(singleOffice(), true); return; }
     fixMode(); ensureOfficeSubs();
     if (first || !curOffice()) reset(); else changed();
   }, e => { errH('offices')(e); S.officesLoaded = true; reset(); });
@@ -596,6 +598,10 @@ export async function loadClaimHistory(){
   changed();
 }
 
+/* H19: وضع المكتب الواحد (SETTINGS.singleOffice): رقم المكتب إن كان موجوداً ونشطاً، وإلا '' (السلوك القديم).
+   الزائر لا يرى قائمة المواقع ولا أنواع المنشآت؛ الموظف والإدارة يبقى لهم تغيير الموقع */
+export const singleOffice = () => { const id = SETTINGS.singleOffice || ''; return id && S.offices.some(o => o.id === id && o.active !== false) ? id : ''; };
+export const singleMode = () => !!singleOffice() && !S.isAdmin && !staffOffices().length;
 export function setOffice(id, silent){
   const changedOffice = id !== S.officeId;
   S.officeId = id; LS.set('office', id);

@@ -2,7 +2,7 @@
 import { icon, LOGO, statusLabel, MODE_LABEL, brandOf } from './constants.js';
 import { t } from './i18n.js';
 import { $, $$, esc, toast } from './utils.js';
-import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, getEmail, SHARE_RE, OFFICE_RE } from './state.js';
+import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, getEmail, SHARE_RE, OFFICE_RE, singleMode } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice } from './views/visitor.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
 import { vHome, updateHome, vFound, vHandin } from './views/home.js';
@@ -155,6 +155,8 @@ function renderMain(){
   if (S.route.name === 'login' && S.uid) S.route = S.route.params.next || {name: homeRoute(), params: {}};
   if (!S.config){ main.innerHTML = S.route.name === 'login' ? vLogin() : S.route.name === 'privacy' ? vPrivacy() : vSetup(); return; }
   // لا مكان مختار (أو لم يصل بعد من قاعدة البيانات): نعرض قائمة الأماكن دون تغيير الصفحة المطلوبة
+  // H19: وضع المكتب الواحد: صفحة اختيار المكان لا تظهر للزائر
+  if (S.route.name === 'pick' && singleMode() && curOffice()) S.route = {name: homeRoute(), params: {}};
   if (!curOffice() && !['pick', 'admin', 'officeForm', 'audit', 'login', 'privacy', 'a11y'].includes(S.route.name)){ main.innerHTML = vPick(); return; }
   const r = routeFns(ROUTES[S.route.name] || ROUTES.home);
   if (!r){ main.innerHTML = loadingHtml(); return; }   // H8: الوحدة في الطريق
