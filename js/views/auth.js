@@ -2,9 +2,9 @@
 import { icon, LOGO, otype } from '../constants.js';
 import { t } from '../i18n.js';
 import { esc, daysWord } from '../utils.js';
-import { S } from '../state.js';
+import { S, curOffice } from '../state.js';
 import { SETTINGS } from '../config.js';
-import { backBtn } from './common.js';
+import { backBtn, claimDomainsOf } from './common.js';
 
 export function vLogin(){
   const mode = S.route.params.mode || 'signin';
@@ -13,6 +13,8 @@ export function vLogin(){
       <h1>${t(mode === 'signup' ? 'login.titleUp' : 'login.titleIn')}</h1>
       <p>${t('login.lead')}</p>
     </div>
+    ${/* H19: المكتب يشترط بريد الكلية لطلب الاستلام: تلميح قبل الدخول */ ''}
+    ${claimDomainsOf(curOffice()).length ? `<div class="note info domain-hint">${icon('idcard')}<span>${t('login.domainHint', {domains: claimDomainsOf(curOffice()).map(d => `<b dir="ltr">@${esc(d)}</b>`).join(t('c.listSep'))})}</span></div>` : ''}
     <button class="btn block ghost" data-act="google">${icon('users')}${t('login.google')}</button>
     <div class="divider"><span>${t('login.orEmail')}</span></div>
     <div class="seg wide">

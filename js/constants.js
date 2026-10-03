@@ -174,6 +174,13 @@ export function detailValue(d, v){
 }
 // مدة الحفظ الفعلية للغرض: مدة التصنيف إن كانت أقصر من مدة المكتب
 export const keepDaysOf = (catId, office) => { const o = Number(office?.retentionDays) || 90, c = cat(catId).retentionDays; return c && c < o ? c : o; };
+/* v14 (H19): نهاية مدة الحفظ بالمللي ثانية = يوم العثور (منتصف الليل UTC) + أيام الحفظ. تُكتب في الغرض عند إنشائه (keepUntil)،
+   والقواعد تتحقق منها (keepOk: نفس retentionDays لـ ids وbottles هناك) ولا يغيّرها إلا المدير.
+   قبلها لا يؤرشف الموظف الغرض ولا يتصرّف فيه */
+export const keepUntilOf = (catId, office, foundDate) => {
+  const d = Date.parse(String(foundDate || '') + 'T00:00:00Z');
+  return Number.isFinite(d) ? d + keepDaysOf(catId, office) * 864e5 : 0;
+};
 // alt/altEn: كلمات إضافية للبحث باللغتين
 export const COLORS = [
   {id:'black',name:'أسود',en:'Black',hex:'#1c1c1c',alt:'اسود سوداء سودا',altEn:'black dark'},

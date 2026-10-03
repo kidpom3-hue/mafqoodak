@@ -62,7 +62,7 @@ export function vNumbers(){
     <section class="hero"><div class="hero-kicker">${icon('chart')}${t('num.kicker')}</div><h1 class="hero-title">${t('num.title')}</h1>
       <p class="hero-sub">${esc(oName(o))}</p></section>`;
   if (d === 'loading' || d === undefined) return `<div class="wrap" data-view="numbers">${head}<div class="loading" aria-busy="true"><span class="spin"></span></div></div>`;
-  if (!d) return `<div class="wrap" data-view="numbers">${head}<div class="empty">${icon('chart')}<b>${t('num.none')}</b></div></div>`;
+  if (!d) return `<div class="wrap" data-view="numbers">${head}<div class="empty">${icon('chart')}<b>${t('num.none')}</b><button class="btn soft" data-act="nav" data-r="browse">${icon('grid')}${t('home.ctaBrowse')}</button></div></div>`;
   const tile = (label, value, hint = '') => `<div class="kpi"><span class="kpi-l">${label}</span><b class="kpi-v">${value}</b>${hint ? `<span class="kpi-h">${hint}</span>` : ''}</div>`;
   const [y, m] = String(d.month || '').split('-').map(Number);
   const month = y && m ? new Intl.DateTimeFormat(locale(), {month: 'long', year: 'numeric', timeZone: TZ}).format(new Date(Date.UTC(y, m - 1, 15))) : '';

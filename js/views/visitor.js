@@ -2,8 +2,8 @@
 import { icon, LOGO, brandOf, CATS, cat, catName, isGrouped, isHiddenCat, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
 import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, tAr, noteText } from '../i18n.js';
-import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard } from '../state.js';
-import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks } from './common.js';
+import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode } from '../state.js';
+import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
 import { aiReady } from '../firebase.js';
@@ -35,7 +35,7 @@ export function vBrowse(){
   const o = curOffice();
   return `<div class="wrap" data-view="browse">
     <section class="hero">
-      <div class="hero-kicker">${icon(otype(o.type).icon)}${esc(otypeName(o.type))}${oCity(o) ? ' · ' + esc(oCity(o)) : ''}</div>
+      ${oKicker(o) ? `<div class="hero-kicker">${oKicker(o)}</div>` : ''}
       <h1 class="hero-title">${t('br.title', {name: esc(oName(o))})}</h1>
     </section>
     <section class="stats-band" id="br-stats" aria-label="${t('home.statsAria')}"></section>
@@ -140,7 +140,7 @@ export function updateBrowse(){
   const hint = S.filter.cat === 'all' && q.length ? CATS.filter(c => hiddenHere(c.id) && groupHit(q, c.id)).map(c => hiddenNote(c.id)).join('') : '';
   const any = pubActive().length;
   res.innerHTML = hint + (arr.length ? `<div class="grid">${arr.join('')}</div>`
-    : hint ? '' : `<div class="empty">${icon('search')}<b>${t(any ? 'br.noResults' : 'home.empty')}</b><span>${t(any ? 'br.noResultsSub' : 'home.emptySub')}</span></div>`);
+    : hint ? '' : emptyBox('search', t(any ? 'br.noResults' : 'home.empty'), t(any ? 'br.noResultsSub' : 'home.emptySub'), navBtn('report', 'bell', t('home.ctaLost'))));
   hydrate();
 }
 
@@ -150,7 +150,7 @@ export function vItem(){
   // الغرض غير محمّل (مُسلَّم أو من رابط مشاركة): نجلبه مرة واحدة
   if (!i){ ensureItem(id); if (itemLoading(id)) return `<div class="loading"><span class="spin"></span></div>`; }
   // H16: رابط مشاركة لغرض نقود: «غير متاح» (الزائر لا يقرؤه أصلاً؛ وهذا للموظف في وضع الزائر)
-  if (!i || hiddenHere(i.cat)) return `<div class="wrap">${backBtn()}<div class="empty">${icon('box')}<b>${t('it.unavailable')}</b></div></div>`;
+  if (!i || hiddenHere(i.cat)) return `<div class="wrap">${backBtn()}${emptyBox('box', t('it.unavailable'), t('it.unavailableSub'), navBtn('browse', 'grid', t('home.ctaBrowse')))}</div>`;
   // H11: غرض من تصنيف مجمّع: لا صفحة منفردة للزائر (ولا للروابط القديمة #item/…)، بل نموذج الطلب بالوصف
   if (groupedHere(i.cat)){ setTimeout(() => { if (S.route.name === 'item' && S.route.params.id === id) go('gclaim', {cat: i.cat}, false); }); return loadingHtml(); }
   const c = cat(i.cat); const o = S.offices.find(x => x.id === i.officeId) || curOffice();
@@ -242,11 +242,12 @@ function claimForm(p){
   const edc = p.edit ? S.myClaims.find(cl => cl.id === p.edit) : null;
   const gcat = p.cat || (edc?.grouped ? edc.cat : '');
   const i = gcat ? null : item(p.id);
-  // غرض من تصنيف مجمّع: الطلب بالوصف، إلا طلب الغرض الذي رشّحه الموظف لبلاغك («هذا غرضي — اطلب استلامه»)
-  if (i && !p.edit && groupedHere(i.cat) && !(p.report && myReports().some(r => r.id === p.report && r.staffPick === i.id))) return claimForm({cat: i.cat});
+  // غرض من تصنيف مجمّع: الطلب بالوصف دائماً (v14: القواعد ترفض الطلب المباشر على غرض منها)،
+  // ومن ترشيح الموظف لبلاغك يُعبّأ من البلاغ (report)، ويربطه الموظف بالغرض
+  if (i && !p.edit && isGrouped(i.cat)) return claimForm({cat: i.cat, report: p.report});
   const o = (i && S.offices.find(x => x.id === i.officeId)) || (edc && S.offices.find(x => x.id === edc.officeId)) || curOffice();
   const catId = gcat || i?.cat || '';
-  if (gcat ? !isGrouped(gcat) : (!i || !ACTIVE.includes(i.status))) return `<div class="wrap">${backBtn()}<div class="empty">${icon('box')}<b>${t('cl.unavailable')}</b></div></div>`;
+  if (gcat ? !isGrouped(gcat) : (!i || !ACTIVE.includes(i.status))) return `<div class="wrap">${backBtn()}${emptyBox('box', t('cl.unavailable'), t('it.unavailableSub'), navBtn('browse', 'grid', t('home.ctaBrowse')))}</div>`;
   if (!S.uid) return `<div class="wrap">${backBtn()}${loginPrompt(t('gc.login'))}</div>`;
   if (!S.verified) return `<div class="wrap">${backBtn()}${verifyPrompt(t('cl.verifyWhat'))}</div>`;
   // G3: «تعديل الطلب» (params.edit = رقم الطلب): ما دام قيد المراجعة ولم يسأل الموظف بعد
@@ -268,12 +269,12 @@ function claimForm(p){
   // قيم الخانات عند التعديل: من الطلب نفسه
   const v = ed ? {name: ed.claimantName, last4: ed.idLast4, proof: ed.proof, spot: ed.lostSpot, bldg: ed.bldg, room: ed.room, date: ed.lostDate}
     : {proof: pre?.desc, spot: pre?.spot, bldg: pre?.bldg, room: pre?.room, date: pre?.lostDate};
-  // H1: الظاهر افتراضياً: الهوية، والأسئلة المطلوبة للتصنيف، والإقرار. والباقي في «تفاصيل إضافية» المطوية،
-  // وتُفتح عند التعديل أو التعبئة من بلاغ أو إن كان فيها قيم. الوصف الحر ظاهر إن كان إجبارياً لهذا التصنيف
+  // H19: ثلاث خطوات: 1) صفات الغرض (المطلوبة ظاهرة، والاختيارية في «تفاصيل إضافية» المطوية التي تُفتح عند التعديل
+  // أو التعبئة من بلاغ أو إن كان فيها قيم) 2) مكان الفقد ووقته 3) الهوية (الاسم من الحساب) والإقرار والإرسال
   const proofField = `<div class="field"><label for="proof">${t(proofOpt ? 'cl.proofMore' : 'cl.proof')}${proofOpt ? ` <span class="hint">${t('c.optional')}</span>` : ''}</label>
         <textarea id="proof" name="proof" class="input" ${proofOpt ? '' : 'required'}>${esc(v.proof || '')}</textarea>
         <span class="hint">${t(q.hint)}</span></div>`;
-  const optVals = [src.brand, v.spot, v.date, v.bldg, v.room, proofOpt ? v.proof : '', q.fields.includes('color') && !q.req.includes('color') ? src.color : '',
+  const optVals = [src.brand, proofOpt ? v.proof : '', q.fields.includes('color') && !q.req.includes('color') ? src.color : '',
     ...q.details.filter(d => !d.as && !detailReq(d, 'claim')).map(d => src.details?.[d.k])];
   const moreOpen = !!ed || !!pre || optVals.some(Boolean);
   // v7: مكتب يشترط بريد الكلية لطلب الاستلام: رسالة واضحة وزر للدخول بالبريد الصحيح بدل النموذج
@@ -288,14 +289,13 @@ function claimForm(p){
     <section class="hero"><div class="hero-kicker">${icon('shield')}${t(gcat ? 'gc.kicker' : 'cl.kicker')}</div><h1 class="hero-title">${ed ? t('cl.editTitle') : gcat ? t('grp.' + catId + '.cta') : t('cl.title')}</h1></section>
     ${head}
     ${ed ? `<div class="note info">${icon('edit')}<span>${t('cl.editNote', {no: `<b dir="ltr">${esc(claimNo(ed))}</b>`})}</span></div>` : ''}
-    <form data-form="claim" ${i ? `data-id="${esc(i.id)}"` : `data-gcat="${esc(catId)}"`} ${ed ? `data-edit="${esc(ed.id)}"` : ''} class="panel" novalidate>
+    <form data-form="claim" ${i ? `data-id="${esc(i.id)}"` : `data-gcat="${esc(catId)}"`} ${ed ? `data-edit="${esc(ed.id)}"` : ''} class="panel" novalidate data-steps="3" data-step="1">
+      ${stepper([t('step.proof'), t('step.where'), t('step.you')])}
+      <div class="form-err" hidden></div>
+      ${step(1, 3, t('step.proofQ'), `
       ${rep ? `<div class="note info">${icon('bell')}<span>${t('cl.hasReport', {title: esc(rep.title)})}</span><button type="button" class="btn sm soft" data-act="useReport" data-id="${esc(rep.id)}">${t('cl.useReport')}</button></div>` : ''}
       ${pre ? `<div class="note info">${icon('bell')}<span>${t('cl.fromReport', {title: esc(pre.title)})}</span></div>` : ''}
       <input type="hidden" name="reportId" value="${esc(pre?.id || '')}">
-      <div class="field id-box" role="group" aria-labelledby="c-idt"><span class="label" id="c-idt">${icon('idcard')}${t('cl.idTitle')}</span>
-        <div class="field"><label for="c-name">${t(ids ? 'cl.nameIds' : 'cl.name')}</label><input id="c-name" name="claimantName" class="input" maxlength="120" autocomplete="name" required value="${esc(v.name || '')}"></div>
-        <div class="field"><label for="c-last4">${t(ids ? 'cl.last4Ids' : 'cl.last4')}</label><input id="c-last4" name="idLast4" class="input" inputmode="numeric" maxlength="4" dir="ltr" autocomplete="off" required value="${esc(v.last4 || '')}"></div>
-        <span class="hint">${icon('lock')}${t('cl.idPrivate')}</span></div>
       <div id="cat-fields" data-mode="claim">${catFields(catId, src, 'claim', 'req')}</div>
       ${proofOpt ? '' : proofField}
       <details class="more-box" id="cl-more" ${moreOpen ? 'open' : ''}>
@@ -303,19 +303,27 @@ function claimForm(p){
         <div class="more-body">
           <div id="cat-fields-opt">${catFields(catId, src, 'claim', 'opt')}</div>
           ${proofOpt ? proofField : ''}
-          <div class="field"><label for="c-spot">${t('cl.where')}</label><select id="c-spot" name="spot" class="input">${spotOptions(o, v.spot || '')}</select></div>
-          ${spotExtra({spot: v.spot, bldg: v.bldg, room: v.room})}
-          <div class="field"><label for="c-date">${t('cl.when')} <span class="hint">${t('c.optional')}</span></label><input id="c-date" name="lostDate" type="date" class="input" max="${today()}" value="${esc(v.date || '')}">
-            <span class="hint date-hint" ${v.date ? 'hidden' : ''}>${t('cl.dateHint')}</span></div>
           ${ed ? '' : `<div class="field"><label for="proof-in">${t(isHiddenCat(catId) ? 'cl.proofImg.' + catId : 'cl.proofImg')} <span class="hint">${t('c.optional')}</span></label>
             <input id="proof-in" type="file" accept="image/*" multiple class="input">
             <span class="hint">${icon('lock')}${t('cl.proofImgHint')}</span><div id="proof-pv" class="proof-pv"></div></div>`}
         </div>
       </details>
+      ${stepNav(1, 3)}`)}
+      ${step(2, 3, t('step.whereQ'), `
+      <div class="field"><label for="c-spot">${t('cl.where')} <span class="hint">${t('c.optional')}</span></label><select id="c-spot" name="spot" class="input">${spotOptions(o, v.spot || '')}</select></div>
+      ${spotExtra({spot: v.spot, bldg: v.bldg, room: v.room})}
+      <div class="field"><label for="c-date">${t('cl.when')} <span class="hint">${t('c.optional')}</span></label><input id="c-date" name="lostDate" type="date" class="input" max="${today()}" value="${esc(v.date || '')}">
+        <span class="hint date-hint" ${v.date ? 'hidden' : ''}>${t('cl.dateHint')}</span></div>
+      <span class="hint">${t('cl.whereWhy')}</span>
+      ${stepNav(2, 3)}`)}
+      ${step(3, 3, t('step.youQ'), `
+      <div class="field id-box" role="group" aria-labelledby="c-idt"><span class="label" id="c-idt">${icon('idcard')}${t('cl.idTitle')}</span>
+        <div class="field"><label for="c-name">${t(ids ? 'cl.nameIds' : 'cl.name')}</label><input id="c-name" name="claimantName" class="input" maxlength="120" autocomplete="name" required value="${esc(v.name || (ed ? '' : S.me?.name || ''))}"></div>
+        <div class="field"><label for="c-last4">${t(ids ? 'cl.last4Ids' : 'cl.last4')}</label><input id="c-last4" name="idLast4" class="input" inputmode="numeric" maxlength="4" dir="ltr" autocomplete="off" required value="${esc(v.last4 || '')}"></div>
+        <span class="hint">${icon('lock')}${t('cl.idPrivate')}</span></div>
       <label class="check"><input type="checkbox" name="pledge" id="pledge"><span>${t('cl.pledge')}</span></label>
-      <div class="form-err" hidden></div>
-      <button class="btn block" type="submit">${icon('check')}${t(ed ? 'c.saveEdit' : 'cl.send')}</button>
-      <div class="note">${icon('lock')}<span>${t(gcat ? 'gc.privacy' : 'cl.privacy')}</span></div>
+      <div class="step-nav">${stepBack()}<button class="btn" type="submit">${icon('check')}${t(ed ? 'c.saveEdit' : 'cl.send')}</button></div>
+      <div class="note">${icon('lock')}<span>${t(gcat ? 'gc.privacy' : 'cl.privacy')}</span></div>`)}
     </form>
   </div>`;
 }
@@ -326,7 +334,7 @@ export function vReportForm(){
   if (!S.verified) return `<div class="wrap">${verifyPrompt(t('rp.verifyWhat'))}</div>`;
   // G3: «تعديل» البلاغ (params.id): النموذج نفسه معبّأً بكل حقوله، والحفظ تحديث للبلاغ نفسه
   const r = S.route.params.id ? S.myReports.find(x => x.id === S.route.params.id && x.status === 'open') : null;
-  if (S.route.params.id && !r) return `<div class="wrap">${backBtn()}<div class="empty">${icon('bell')}<b>${t('rp.gone')}</b></div></div>`;
+  if (S.route.params.id && !r) return `<div class="wrap">${backBtn()}${emptyBox('bell', t('rp.gone'), '', navBtn('mine', 'inbox', t('it.follow')))}</div>`;
   const photoKey = r?.photo && !cat(r.cat).sensitive ? 'r_' + r.id : null;
   resetForm(!!photoKey);
   const o = (r && S.offices.find(x => x.id === r.officeId)) || curOffice();
@@ -334,20 +342,26 @@ export function vReportForm(){
   return `<div class="wrap" data-view="report">${r ? backBtn() : ''}
     <section class="hero"><div class="hero-kicker">${icon('bell')}${t('rp.kicker', {office: esc(oName(o))})}</div><h1 class="hero-title">${t(r ? 'rp.editTitle' : 'rp.title')}</h1>
       <p class="hero-sub">${t(r ? 'rp.editSub' : 'rp.sub')}</p></section>
-    <form data-form="report" class="panel" novalidate ${r ? `data-id="${esc(r.id)}"` : ''}>
+    <form data-form="report" class="panel" novalidate data-steps="3" data-step="1" ${r ? `data-id="${esc(r.id)}"` : ''}>
+      ${stepper([t('step.what'), t('step.where'), t('step.desc')])}
+      <div class="form-err" hidden></div>
+      ${step(1, 3, t('step.whatQ'), `
       ${photoField(photoKey, t('rp.photo'))}
       <div class="field"><span class="label">${t('c.category')}</span>${catPicker(r?.cat || '')}</div>
       <div class="field" id="subs-field" ${hasSubs ? '' : 'hidden'}><span class="label">${t('c.type')}</span><div id="subs">${hasSubs ? subsPicker(r.cat, r.sub) : ''}</div></div>
       <div id="cat-fields" data-mode="report">${r ? catFields(r.cat, r, 'report') : ''}</div>
       <div class="field"><label for="r-title">${t('rp.name')}</label><input id="r-title" name="title" class="input" required placeholder="${t('rp.namePh')}" maxlength="80" value="${esc(r?.title || '')}"></div>
-      <div class="field"><label for="r-desc">${t('rp.desc')}</label><textarea id="r-desc" name="desc" class="input" placeholder="${t('rp.descPh')}" maxlength="600">${esc(r?.desc || '')}</textarea></div>
+      ${stepNav(1, 3)}`)}
+      ${step(2, 3, t('step.whereQ'), `
       <div class="two">
         <div class="field"><label for="r-spot">${t('cl.where')}</label><select id="r-spot" name="spot" class="input">${spotOptions(o, r?.spot || '')}</select></div>
         <div class="field"><label for="r-date">${t('rp.when')}</label><input id="r-date" name="lostDate" type="date" class="input" value="${esc(r?.lostDate || today())}" max="${today()}"></div>
       </div>
       ${spotExtra(r)}
-      <div class="form-err" hidden></div>
-      <button class="btn block" type="submit">${icon(r ? 'check' : 'search')}${t(r ? 'c.saveEdit' : 'rp.send')}</button>
+      ${stepNav(2, 3)}`)}
+      ${step(3, 3, t('step.descQ'), `
+      <div class="field"><label for="r-desc">${t('rp.desc')} <span class="hint">${t('c.optional')}</span></label><textarea id="r-desc" name="desc" class="input" placeholder="${t('rp.descPh')}" maxlength="600">${esc(r?.desc || '')}</textarea></div>
+      <div class="step-nav">${stepBack()}<button class="btn" type="submit">${icon(r ? 'check' : 'search')}${t(r ? 'c.saveEdit' : 'rp.send')}</button></div>`)}
     </form>
     ${r ? `<p class="del-link"><button class="link danger" data-act="delReport" data-id="${esc(r.id)}">${icon('trash')}${t('rp.delete')}</button></p>` : ''}
   </div>`;
@@ -577,7 +591,7 @@ const FAQ = () => [1, 2, 3, 4, 5, 6, 7].map(n => [t('faq.q' + n), t('faq.a' + n)
 export function vOffice(){
   const o = curOffice();
   return `<div class="wrap" data-view="office">
-    <section class="hero">${brandLogo(o, 'light', 'ofc-logo')}<div class="hero-kicker">${icon(otype(o.type).icon)}${esc(otypeName(o.type))}${oCity(o) ? ' · ' + esc(oCity(o)) : ''}</div><h1 class="hero-title">${esc(oName(o))}</h1></section>
+    <section class="hero">${brandLogo(o, 'light', 'ofc-logo')}${oKicker(o) ? `<div class="hero-kicker">${oKicker(o)}</div>` : ''}<h1 class="hero-title">${esc(oName(o))}</h1></section>
     <div class="panel">
       <div class="section-title">${icon('building')}${t('ofc.title')}</div>
       <dl class="facts">
@@ -592,7 +606,7 @@ export function vOffice(){
       <p class="muted">${t('br.about')}</p>
       ${collegeLinks(o, 'grid')}
     </div>` : ''}
-    <button class="btn ghost" data-act="pickOffice">${icon('pin')}${t('ui.changePlace')}</button>
+    ${singleMode() ? '' : `<button class="btn ghost" data-act="pickOffice">${icon('pin')}${t('ui.changePlace')}</button>`}
     <div class="panel">
       <h2 class="section-title">${icon('grid')}${t('svc.indexTitle')}</h2>
       <div class="svc-links" role="list">${['claim', 'report', 'handin'].map(id => `<button role="listitem" class="opt" data-act="nav" data-r="service" data-id="${id}">${icon(id === 'claim' ? 'shield' : id === 'report' ? 'bell' : 'tag')}<span class="grow">${t('svc.' + id + '.name')}</span>${icon('fwd')}</button>`).join('')}</div>

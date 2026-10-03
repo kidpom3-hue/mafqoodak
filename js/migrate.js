@@ -3,7 +3,7 @@
 // المرحلة E5: مكان العثور (spot) سري أيضاً، وينقله migrateSpots لكل غرض محمّل (النشطة، وما جُلب بفلتر الحالة).
 import { dbx, deleteField } from './firebase.js';
 import { S, isStaffHere, cachePhoto } from './state.js';
-import { pubFlag } from './constants.js';
+import { pubFlag, keepUntilOf } from './constants.js';
 import { LS } from './utils.js';
 import { makeBlur, publicTitle, toast } from './utils.js';
 import { t, tp } from './i18n.js';
@@ -98,21 +98,25 @@ export async function migrateSpots(){
 let pubRunning = false;
 const OLD_KEYS = ['color', 'brand', 'desc', 'bldg', 'room', 'storage', 'details', 'spot'];
 export async function migratePublic(){
-  const office = S.officeId, key = 'pubMig:' + office;
+  // v14 (H19): المفتاح pubMig2 = يضيف أيضاً keepUntil (نهاية مدة الحفظ) للأغراض القديمة التي ليس فيها
+  const office = S.officeId, key = 'pubMig2:' + office;
   if (pubRunning || !isStaffHere() || !office || LS.get(key, false)) return;
   pubRunning = true;
   try {
     const all = await dbx.list('items', [['officeId', '==', office]]);
-    const todo = all.filter(i => i.public !== pubFlag(i.cat) && i.photo !== true && !OLD_KEYS.some(k => k in i));
+    const o = S.offices.find(x => x.id === office);
+    const patchOf = i => ({...(i.public !== pubFlag(i.cat) ? {public: pubFlag(i.cat)} : {}),
+      ...(!('keepUntil' in i) && keepUntilOf(i.cat, o, i.foundDate) ? {keepUntil: keepUntilOf(i.cat, o, i.foundDate)} : {})});
+    const todo = all.filter(i => Object.keys(patchOf(i)).length && i.photo !== true && !OLD_KEYS.some(k => k in i));
     let failed = 0;
     for (let k = 0; k < todo.length; k += 100){
       const part = todo.slice(k, k + 100), b = dbx.batch();
-      part.forEach(i => b.update(dbx.ref('items/' + i.id), {public: pubFlag(i.cat)}));
+      part.forEach(i => b.update(dbx.ref('items/' + i.id), patchOf(i)));
       try { await b.commit(); }
       catch (e){
         console.warn(e);
         // غرض واحد مرفوض يفشل الـ batch كله: نعيد المحاولة غرضاً غرضاً
-        for (const i of part){ try { await dbx.update('items/' + i.id, {public: pubFlag(i.cat)}); } catch (e2){ console.warn(e2); failed++; } }
+        for (const i of part){ try { await dbx.update('items/' + i.id, patchOf(i)); } catch (e2){ console.warn(e2); failed++; } }
       }
     }
     if (!failed) LS.set(key, true);

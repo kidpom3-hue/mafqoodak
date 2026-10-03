@@ -46,7 +46,7 @@ export function vStats(){
       <button class="btn sm ghost" data-act="statsRefresh" data-id="${esc(id)}">${icon('swap')}${t('sx.refresh')}</button></div>`;
   if (!data) return `<div class="wrap" data-view="stats">${head}<div class="loading" aria-busy="true"><span class="spin"></span></div></div>`;
   const s = computeStats(data.items, o, data.reports || []);
-  if (!s.total) return `<div class="wrap" data-view="stats">${head}<div class="empty">${icon('chart')}<b>${t('sx.empty')}</b></div></div>`;
+  if (!s.total) return `<div class="wrap" data-view="stats">${head}<div class="empty">${icon('chart')}<b>${t('sx.empty')}</b><button class="btn soft" data-act="nav" data-r="add">${icon('plus')}${t('st.firstItem')}</button></div></div>`;
   // الأشهر: عمودان متجاوران لكل شهر (ما وُجد وما أُعيد) على محور واحد
   const top = nice(Math.max(...s.months.map(m => Math.max(m.found, m.ret))));
   const months = `<div class="cols" role="list">
