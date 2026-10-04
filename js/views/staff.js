@@ -1,7 +1,7 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
 import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, GROUP_EXPIRE_DAYS, isHiddenCat } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
-import { t, tp, noteText } from '../i18n.js';
+import { t, tp, noteText, hasKey } from '../i18n.js';
 import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist, isOwner } from '../state.js';
 import { backBtn, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
@@ -121,8 +121,10 @@ export function staffItems(){
 }
 /* سجل الحيازة (للموظف): كل ما حدث للغرض من تسجيله إلى تسليمه، من قيود logs.
    الأغراض الأقدم من السجل تبدأ بتاريخ تسجيلها. */
-export const LOG_ACTIONS = ['claim', 'create', 'edit', 'receive', 'ask', 'approve', 'reject', 'release', 'reactivate', 'handover', 'status:available', 'status:returned', 'status:archived', 'dispose', 'delete',
-  'perm:grant', 'perm:revoke', 'perm:admin', 'perm:unadmin'];
+/* H21: اسم العملية من القاموس (log.<action>) لكل عملية لها مفتاح، بدل قائمة ثابتة كانت تُظهر link وexpire وغيرها بالإنجليزية */
+export const logLabel = a => hasKey('log.' + a) ? t('log.' + a) : esc(a);
+// صاحب الطلب: من الطلب المحمّل، وإلا من رقمه ({itemId}_{uid}، أو g_{uid}_{cat}_{وقت} للطلب بالوصف)
+const claimUid = id => [...S.claims, ...(S.claimHist || [])].find(c => c.id === id)?.uid || (id.startsWith('g_') ? id.split('_')[1] : id.slice(id.indexOf('_') + 1));
 export function timeline(i){
   ensureLogs(i);
   const L = S.logs[i.id];
@@ -133,9 +135,9 @@ export function timeline(i){
     ...claims.map(c => ({action: 'claim', at: c.createdAt, claimId: c.id}))].sort((a, b) => (a.at || 0) - (b.at || 0));
   return `<div class="panel">${head}
     <ol class="timeline">${events.map(e => {
-      const claimant = e.claimId ? e.claimId.slice(e.claimId.indexOf('_') + 1) : '';
+      const claimant = e.claimId ? claimUid(e.claimId) : '';
       return `<li class="tl-${esc(e.action.split(':')[0])}"><span class="tl-dot" aria-hidden="true"></span><div class="tl-body">
-        <b>${LOG_ACTIONS.includes(e.action) ? t('log.' + e.action) : esc(e.action)}</b>
+        <b>${logLabel(e.action)}</b>
         <span class="meta">${fmtDateTime(e.at)}${e.by ? ` · ${t('tl.by')} ${person(e.by)}` : ''}</span>
         ${claimant ? `<span class="meta">${t('tl.claimant')} ${person(claimant)}</span>` : ''}
         ${e.note && !MS_NOTE.test(e.note) ? `<span class="tl-note">${esc(noteText(e.note))}</span>` : ''}
@@ -303,8 +305,8 @@ export function claimCardStaff(c, opts){
   const kind = i && ['pending', 'approved'].includes(c.status) ? conflictOf(c, full(i)) : '';
   const tip = i && ['pending', 'approved'].includes(c.status) && cat(i.cat).staffCheck ? `<div class="note info">${icon('shield')}<span>${t(cat(i.cat).staffCheck)}</span></div>` : '';
   // الطلب المنتهي أو الملغى يُعاد تفعيله من سجل الطلبات (الغرض متاح ← مقبول ومحجوز له، وإلا ← قيد المراجعة)
-  // v14 (H19): لا إعادة تفعيل لطلب ألغاه صاحبه (cancelledAt)؛ القواعد تمنعه أيضاً
-  const again = !own && ['expired', 'cancelled'].includes(c.status) && c.uid !== 'deleted' && !c.cancelledAt ? `<div class="btn-row"><button class="btn sm soft" data-act="reactivate" data-id="${esc(c.id)}">${icon('swap')}${t('st.reactivate')}</button></div>` : '';
+  // v14 (H19): لا إعادة تفعيل لطلب ألغاه صاحبه (cancelledAt)؛ القواعد تمنعه أيضاً. H21: ولا لطلب بالوصف أُغلق دون ربط (لا غرض له)
+  const again = !own && ['expired', 'cancelled'].includes(c.status) && c.uid !== 'deleted' && !c.cancelledAt && !!c.itemId ? `<div class="btn-row"><button class="btn sm soft" data-act="reactivate" data-id="${esc(c.id)}">${icon('swap')}${t('st.reactivate')}</button></div>` : '';
   const actions = own && ['pending', 'approved'].includes(c.status) ? `<div class="note">${icon('info')}<span>${t('st.ownClaim')}</span></div>`
     : loadingIt && ['pending', 'approved'].includes(c.status) ? ''
     : orphan ? `<div class="btn-row"><button class="btn sm" data-act="closeOrphan" data-id="${esc(c.id)}">${icon('x')}${t('st.orphanClose')}</button></div>`

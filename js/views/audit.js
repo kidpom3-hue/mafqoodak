@@ -5,7 +5,7 @@ import { esc, fmtDateTime } from '../utils.js';
 import { t, noteText } from '../i18n.js';
 import { S, AUDIT, loadAudit } from '../state.js';
 import { backBtn, person } from './common.js';
-import { LOG_ACTIONS } from './staff.js';
+import { logLabel } from './staff.js';
 
 const FILTERS = ['all', ...Object.keys(AUDIT)];
 
@@ -30,7 +30,7 @@ export function vAudit(){
     <ol class="timeline audit">${L.map(e => {
       const perm = e.action.startsWith('perm:');
       return `<li class="tl-${esc(e.action.split(':')[0])}"><span class="tl-dot" aria-hidden="true"></span><div class="tl-body">
-        <b>${LOG_ACTIONS.includes(e.action) ? t('log.' + e.action) : esc(e.action)}</b>
+        <b>${logLabel(e.action)}</b>
         <span class="meta">${fmtDateTime(e.at)} · ${t('tl.by')} ${person(e.by)}</span>
         ${perm && e.note ? `<span class="meta">${t('au.who')} ${person(e.note)}</span>` : ''}
         ${e.itemId ? `<button class="link" data-act="openItem" data-id="${esc(e.itemId)}">${icon('box')}${t('au.openItem')}</button>` : ''}

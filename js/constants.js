@@ -274,6 +274,8 @@ export const BRANDS = {
     themeColor: '#00343A',   // الأخضر المزرق الداكن في هوية المؤسسة (لون شريط المتصفح في الجوال)
     logo: 'icons/college/tvtc-logo.png', logoWhite: 'icons/college/tvtc-logo-white.png',
     mark: 'icons/college/tvtc-mark.png', markWhite: 'icons/college/tvtc-mark-white.png',
+    // H21: أبعاد الملفات الحقيقية (عرض، ارتفاع) لحجز مكان الصورة قبل تحميلها؛ حدّثها إن تغيّر ملف شعار
+    size: {'icons/college/tvtc-logo.png': [595, 150], 'icons/college/tvtc-logo-white.png': [604, 150], 'icons/college/tvtc-mark.png': [79, 96], 'icons/college/tvtc-mark-white.png': [81, 96]},
     site: 'https://tvtc.gov.sa/ar/Training-Units/Boys-Colleges/ALAHSATC/Pages/default.aspx',
     links: [
       {k: 'site', url: 'https://tvtc.gov.sa/ar/Training-Units/Boys-Colleges/ALAHSATC/Pages/default.aspx'},
