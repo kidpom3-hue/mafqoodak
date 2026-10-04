@@ -579,7 +579,7 @@ export function vItemForm(){
     ${f ? `<div class="note info">${icon('tag')}<span>${t('if.fromFound')}${f.note ? `<br><b>${t('hi.finderNote')}</b> ${esc(f.note)}` : ''}</span></div>` : ''}
     ${i && evidenceLocked(i) ? `<div class="note warn">${icon('lock')}<span>${t('st.evidenceLocked')}</span></div>` : ''}
     <form data-form="item" class="panel" novalidate ${r ? `data-report="${esc(r.id)}"` : ''} ${f ? `data-found="${esc(f.id)}"` : ''} ${i && evidenceLocked(i) ? 'data-locked="1"' : ''}>
-      ${photoField(photoKey, t('if.photo'), photoModePicker(mode))}
+      ${photoField(photoKey, t('if.photo'), photoModePicker(mode), !!i && evidenceLocked(i) && ['clear', 'blur', 'none'].includes(i.photo))}
       <div class="field"><span class="label">${t('c.category')}</span>${catPicker(src?.cat || '')}</div>
       ${subs}
       ${secretNote}

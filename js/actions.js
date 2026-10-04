@@ -1,7 +1,7 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
 import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf } from './constants.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
-import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits } from './utils.js';
+import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
 import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId } from './state.js';
 import * as wf from './workflow.js';
@@ -385,13 +385,17 @@ async function submitForm(form){
     // v7: حدود «الصيد» على الجهاز أولاً (القواعد تفرضها أيضاً): 3 طلبات جارية، وطلب واحد لكل تصنيف كل 24 ساعة
     if (S.myClaims.filter(c => ['pending', 'approved'].includes(c.status)).length >= CLAIM_MAX_OPEN){ busy(form, false); return formErr(form, t('cl.quotaFull', {n: CLAIM_MAX_OPEN})); }
     if (S.myClaims.some(c => (c.createdAt || 0) > Date.now() - CLAIM_CAT_MS && (c.cat || item(c.itemId)?.cat) === catId)){ busy(form, false); return formErr(form, t('cl.quotaCat', {cat: esc(catName(catId))})); }
+    // H20: الحصة على الخادم (claimQuota) تحسب الطلب المسحوب أو المحذوف أيضاً، فنقرؤها ونعرض الموعد بدل رفض غامض
+    const quota = await dbx.get('claimQuota/' + S.uid).catch(() => null);
+    const lastRaw = quota?.lastByCat?.[catId];
+    const lastMs = typeof lastRaw?.toMillis === 'function' ? lastRaw.toMillis() : Number(lastRaw) || 0;
+    if (lastMs && Date.now() - lastMs < CLAIM_CAT_MS){ busy(form, false); return formErr(form, t('cl.quotaCatAt', {cat: esc(catName(catId)), when: when(lastMs + CLAIM_CAT_MS)})); }
     // v7: مكتب يشترط بريد الكلية
     if (!claimEmailOk(S.offices.find(o => o.id === officeId), S.me?.email)){ busy(form, false); return formErr(form, t('cl.domainNeed')); }
     const proofs = (FORM.proofs || []).slice(0, 2);
     // v9: رمز 8 أحرف؛ بصمته في claimCodes (لا يقرؤها أحد) تُنشأ مع الطلب، والطلب نفسه بلا codeHash
     const code = genCode(); const codeHash = await sha(id + ':' + code);
     LS.set('codes', {...LS.get('codes', {}), [id]: code});
-    await dbx.set('users/' + S.uid + '/private/codes', {codes: {[id]: code}}, {merge: true}).catch(e => console.warn(e));
     try {
       // خانات التصنيف فقط (الوثائق والنقود بلا لون ولا ماركة)، وإجابات أسئلته في details
       // رقم الطلب القصير يظهر للمستخدم والموظف، ويُبحث به في تبويب الاستلام
@@ -408,6 +412,8 @@ async function submitForm(form){
         (b, ref) => {
           b.set(ref('claimQuota/' + S.uid), {open: arrayUnion(id), lastByCat: {[catId]: serverTimestamp()}}, {merge: true});
           b.set(ref('claimCodes/' + id), {uid: S.uid, hash: codeHash});
+          // H20: نسخة الرمز في سجلك الخاص في العملية نفسها (لا يُحفظ رمز لطلب لم يُنشأ)
+          b.set(ref('users/' + S.uid + '/private/codes'), {codes: {[id]: code}}, {merge: true});
           proofs.forEach((data, k) => b.set(ref(`claimProofs/${id}_${k}`), {claimId: id, officeId, uid: S.uid, data, createdAt: Date.now()}));
         });
     } catch (e){

@@ -282,7 +282,8 @@ export async function rejectClaim(c, note){
   notMine(c);
   const b = dbx.batch();
   closeClaim(b, c, {status: 'rejected', note: String(note || '').slice(0, 200), decidedAt: Date.now(), decidedBy: S.uid});
-  const i = S.items.find(x => x.id === c.itemId);
+  // H20: الغرض من الخادم إن لم يكن محمّلاً (وإلا بقي محجوزاً لطلب مرفوض)
+  const i = await fetchItem(c.itemId).catch(() => null);
   if (c.status === 'approved' && i?.reservedFor === c.id) itemUpdate(b, i, {status: 'available', reservedFor: '', updatedAt: Date.now()});
   log(b, c.officeId, 'reject', {itemId: c.itemId, claimId: c.id, note});
   await commit(b);
@@ -382,7 +383,8 @@ export async function releaseReservation(c, note = tAr('sys.pickupEnded')){
   notMine(c);
   const b = dbx.batch();
   closeClaim(b, c, {status: 'expired', note, decidedAt: Date.now(), decidedBy: S.uid});
-  const i = S.items.find(x => x.id === c.itemId);
+  // H20: الغرض من الخادم إن لم يكن محمّلاً
+  const i = await fetchItem(c.itemId).catch(() => null);
   if (i?.reservedFor === c.id) itemUpdate(b, i, {status: 'available', reservedFor: '', updatedAt: Date.now()});
   log(b, c.officeId, 'release', {itemId: c.itemId, claimId: c.id, note});
   await commit(b);

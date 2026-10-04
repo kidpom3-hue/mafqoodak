@@ -222,7 +222,7 @@ export const CLAIM_STATUS = {
   approved:{l:'جاهز للاستلام',en:'Ready to collect',c:'ok'},
   done:{l:'تم الاستلام',en:'Collected',c:'info'},
   rejected:{l:'لم يُقبل',en:'Not accepted',c:'bad'},
-  expired:{l:'انتهت مهلة الاستلام',en:'Pickup window ended',c:'mute'},
+  expired:{l:'انتهى',en:'Ended',c:'mute'},   // H20: قد ينتهي لسبب غير المهلة (الغرض لم يعد متاحاً، أو لا مطابقة)
   cancelled:{l:'أُلغي',en:'Cancelled',c:'mute'},
 };
 // إشعار التسليم (foundReports) كما يراه الواجد: returned محسوبة من حالة الغرض المرتبط

@@ -89,6 +89,8 @@ export function claimTimeline(c, staff = false){
   if (c.editedAt) ev.push(['ctl.edited', c.editedAt]);
   if (c.decidedAt) ev.push(['ctl.dec.' + (c.status === 'done' ? 'approved' : c.status), c.decidedAt]);
   if (c.doneAt) ev.push(['ctl.done', c.doneAt]);
+  // H20: سحبه صاحبه
+  if (c.cancelledAt) ev.push([staff ? 'ctl.withdrawnStaff' : 'ctl.withdrawn', c.cancelledAt]);
   ev.sort((a, b) => a[1] - b[1]);
   // آخر موعد للاستلام: للطلب المقبول (أو الذي انتهت مهلته)، وقد يكون في المستقبل
   if (c.pickupBy && ['approved', 'expired'].includes(c.status)) ev.push(['ctl.pickupBy', c.pickupBy, c.pickupBy > Date.now()]);
@@ -172,19 +174,21 @@ export function photoModePicker(sel = 'blur'){
     <span class="hint">${t('c.photoModeHint')}</span>
     <span class="hint">${t('c.blurColorHint')}</span></div>`;
 }
-export function photoField(existingKey, label, extra = ''){
+// H20: locked = الصورة الأصلية دليل بعد 24 ساعة: لا تغيير ولا حذف (القواعد تفرضه للموظف)، وطريقة الظهور تبقى
+export function photoField(existingKey, label, extra = '', locked = false){
   return `<div class="field" id="photo-field"><span class="label">${label}</span>
     <div class="photo-drop">
       <div class="pv" id="pv">${existingKey ? `<img data-photo="${esc(existingKey)}" alt="" hidden>` : ''}${icon('camera')}</div>
       <div class="col">
-        <div class="btn-row">
+        ${locked ? '' : `<div class="btn-row">
           <span class="btn sm ghost filebtn">${icon('camera')}${t('c.pickPhoto')}<input type="file" accept="image/*" id="photo-in" aria-label="${t('c.pickPhoto')}"></span>
           <button type="button" class="btn sm ghost" data-act="removePhoto" id="rm-photo" ${existingKey ? '' : 'hidden'}>${icon('x')}${t('c.remove')}</button>
-        </div>
+        </div>`}
         ${aiReady() ? `<button type="button" class="btn sm soft" data-act="aiFill" id="ai-btn" disabled>${icon('spark')}${t('c.aiFill')}</button>` : ''}
         <span class="ai-status" id="ai-status"></span>
       </div>
     </div>
+    ${locked ? `<span class="hint">${icon('lock')}${t('st.photoLocked')}</span>` : ''}
     ${extra}
   </div>
   <div class="note warn" id="sens-note" hidden>${icon('lock')}<span>${t('c.sensNote')}</span></div>`;

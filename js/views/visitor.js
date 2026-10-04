@@ -179,7 +179,7 @@ export function vItem(){
     actions = `<div class="note">${icon('clock')}<span>${t('it.disposed')}</span></div>`;
   } else if (mine && ['expired', 'cancelled'].includes(mine.status)){
     // طلبه انتهت مهلته أو أُلغي: رقم الطلب ثابت فلا يُرسل طلباً جديداً؛ يراجع المكتب فيعيد الموظف تفعيل طلبه
-    actions = `<div class="note warn">${icon('clock')}<span>${t(mine.status === 'expired' ? 'it.mineExpired' : 'it.mineCancelled')}</span></div>
+    actions = `<div class="note warn">${icon('clock')}<span>${t(mine.status === 'expired' ? 'it.mineExpired' : mine.cancelledAt ? 'it.mineWithdrawn' : 'it.mineCancelled')}</span></div>
       ${o ? `<dl class="facts">${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}${o.phone ? `<dt>${t('found.contact')}</dt><dd><span dir="ltr">${esc(o.phone)}</span></dd>` : ''}</dl>` : ''}`;
   } else if (mine?.status === 'rejected'){
     actions = `<div class="note warn">${icon('info')}<span>${t('it.rejected')}</span></div>`;
@@ -432,7 +432,7 @@ export function vMine(){
     return `<button role="tab" id="mt-${k}" aria-controls="mp-${k}" aria-selected="${k === cur}" tabindex="${k === cur ? 0 : -1}" data-act="mineTab" data-v="${k}">
       <span class="tl">${t('mine.t.' + k)}</span><span class="ts">${t('mine.ts.' + k)}</span>${tabNum(nw, act)}</button>`; }).join('')}</div>`;
   return `<div class="wrap" data-view="mine">
-    <section class="hero"><div class="hero-kicker">${icon('inbox')}${t('mine.kicker')}</div><h1 class="hero-title">${t('nav.mine')}</h1></section>
+    <section class="hero"><div class="hero-kicker">${icon('inbox')}${singleMode() ? t('mine.single', {office: esc(oName(curOffice()))}) : t('mine.kicker')}</div><h1 class="hero-title">${t('nav.mine')}</h1></section>
     ${attentionBox(cls, reps)}
     ${tabs}
     <div role="tabpanel" id="mp-${cur}" aria-labelledby="mt-${cur}" tabindex="0" class="mine-panel">${mineList(cur, lists[cur], focus)}</div>
@@ -498,21 +498,27 @@ export function claimCardMine(c){
       <button class="btn sm ghost" data-act="copy" data-v="${esc(fmtPickup(code))}">${icon('copy')}${t('c.copy')}</button>
       ${c.pickupBy ? `<small class="${late ? 'late' : ''}">${t(late ? 'st.pickupEnded' : 'mine.codeUntil', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`, when: when(c.pickupBy)})}</small>` : ''}
       <small>${t('mine.codeHint')}</small></div>`;
-    body = code ? `<dl class="facts"><dt>${t('st.cmpPlace')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>`
+    body = code ? `<dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>`
       : `<div class="note warn">${icon('info')}<span>${t('mine.noCode')}</span></div>
          ${c.pickupBy ? `<div class="note ${late ? 'warn' : 'info'}">${icon('clock')}<span>${t(late ? 'st.pickupEnded' : 'mine.collectBy', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`})}</span></div>` : ''}`;
   }
   else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>${t('mine.done', {when: relTime(c.doneAt)})}</span></div>${rateBox(c)}`;
   else if (c.status === 'rejected') body = `<div class="note warn">${icon('info')}<span>${c.note ? t('mine.rejectedWhy', {note: esc(noteText(c.note))}) : t('mine.rejected')}</span></div>`;
   // H13a: أُغلق لأن الغرض لم يعد متاحاً (حُذف أو سُلّم أو أُرشف): سبب واضح بدل «انتهت مهلة الاستلام»
-  else if (c.status === 'expired') body = `<div class="note warn">${icon('clock')}<span>${t(c.note === tAr('sys.itemUnavailable') ? 'mine.itemUnavailable' : gw ? 'gc.expiredMine' : 'mine.expired')}</span></div>`;
-  else if (c.status === 'cancelled') body = `<div class="note">${icon('info')}<span>${c.note ? t('mine.cancelledWhy', {note: esc(noteText(c.note))}) : t('mine.cancelled')}</span></div>`;
+  // H20: سبب آخر غير انتهاء المهلة يظهر كما كتبه المكتب
+  else if (c.status === 'expired') body = `<div class="note warn">${icon('clock')}<span>${c.note === tAr('sys.itemUnavailable') ? t('mine.itemUnavailable') : gw ? t('gc.expiredMine')
+    : c.note && c.note !== tAr('sys.pickupEnded') ? t('mine.expiredWhy', {note: esc(noteText(c.note))}) : t('mine.expired')}</span></div>`;
+  // H20: سحبه صاحبه (cancelledAt) غير «أُلغي» بسبب من المكتب
+  else if (c.status === 'cancelled') body = `<div class="note">${icon('info')}<span>${c.cancelledAt ? t('mine.withdrawn') : c.note ? t('mine.cancelledWhy', {note: esc(noteText(c.note))}) : t('mine.cancelled')}</span></div>`;
   // الخطوة التالية (سطر واحد في الملخّص)
   const need = claimNeed(c);
   const next = gone && ['pending', 'approved'].includes(c.status) ? t('ns.gone')
     : c.status === 'pending' ? t(awaitingAnswer(c) ? 'ns.answer' : gw ? 'gc.nsMatching' : 'ns.review')
     : c.status === 'approved' ? (late ? t('ns.late') : c.pickupBy ? t('ns.come', {date: esc(dateOf(c.pickupBy))}) : t('ns.comeNoDate'))
-    : c.status === 'done' ? t(c.rating ? 'ns.done' : 'ns.rate') : gw && c.status === 'expired' ? t('gc.nsExpired') : t('ns.' + c.status);
+    : c.status === 'done' ? t(c.rating ? 'ns.done' : 'ns.rate') : gw && c.status === 'expired' ? t('gc.nsExpired')
+    : c.status === 'expired' && c.note === tAr('sys.itemUnavailable') ? t('ns.gone')
+    : c.status === 'expired' && c.note && c.note !== tAr('sys.pickupEnded') ? t('ns.ended')
+    : c.status === 'cancelled' && c.cancelledAt ? t('ns.withdrawn') : t('ns.' + c.status);
   return mcard({key: 'c:' + c.id, id: 'claim-' + c.id, open: !!need, fresh: FRESH.has('c:' + c.id), muted: CLAIM_DONE.includes(c.status), tone: need || late ? 'warn' : '', pillHtml: gw && c.status === 'pending' ? `<span class="pill info">${t('gc.matching')}</span>` : pill(CLAIM_STATUS, c.status), next,
     head: `<span class="refs">${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<b dir="ltr" class="req-no">${esc(claimNo(c))}</b></span><h3>${i ? esc(showTitle(i)) : c.grouped ? t('grp.' + c.cat + '.title') : esc(t(gone ? 'mine.goneTitle' : 'c.loadingDots'))}</h3>`,
     body: `${top}
