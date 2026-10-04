@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v14 (H19: إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
+// قواعد حماية بيانات مفقودك — الإصدار v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -106,10 +106,26 @@ service cloud.firestore {
     function logDoc(id) { return /databases/$(database)/documents/logs/$(id); }
     function cfg() { return get(/databases/$(database)/documents/config/app).data; }
     // قيد سجل جديد في العملية نفسها لهذا الغرض، يكتبه من يكتب الآن (لم يكن موجوداً قبلها)
-    function newLog(id, itemId) {
+    // v15 (H20): وفي مكتب الغرض نفسه (لا يُكتب القيد في مكتب آخر يعمل فيه الموظف)
+    function newLog(id, itemId, officeId) {
       return id is string && id.size() > 0 && id.size() <= 100
         && !exists(logDoc(id)) && existsAfter(logDoc(id))
-        && getAfter(logDoc(id)).data.itemId == itemId && getAfter(logDoc(id)).data.by == me();
+        && getAfter(logDoc(id)).data.itemId == itemId && getAfter(logDoc(id)).data.by == me()
+        && getAfter(logDoc(id)).data.officeId == officeId;
+    }
+    // v15 (H20): حالات الغرض المعروفة فقط
+    function itemStatuses() { return ['available', 'reserved', 'returned', 'archived', 'disposed']; }
+    // v15: حقول الأصل لا تتغير بعد الإنشاء (من سجّله، ورقم القيد، والبلاغ أو الإشعار أو الطلب الذي جاء منه)
+    function itemFixed() {
+      return request.resource.data.get('createdBy', '') == resource.data.get('createdBy', '')
+        && request.resource.data.get('ref', '') == resource.data.get('ref', '')
+        && request.resource.data.get('fromFound', '') == resource.data.get('fromFound', '')
+        && request.resource.data.get('fromReport', '') == resource.data.get('fromReport', '')
+        && request.resource.data.get('createdFrom', '') == resource.data.get('createdFrom', '');
+    }
+    // v15: غرض سُجّل قبل أقل من 24 ساعة
+    function itemNew(itemId) {
+      return get(/databases/$(database)/documents/items/$(itemId)).data.get('createdAt', 0) > request.time.toMillis() - 86400000;
     }
     // مدة الحفظ بالأيام: الأقصر من مدة المكتب ومدة التصنيف (نفس retentionDays في CATS بـ js/constants.js — عدّلهما معاً)
     function keepDays(d) {
@@ -287,10 +303,16 @@ service cloud.firestore {
         && fresh(request.resource.data, 'createdAt') && keepOk(request.resource.data)
         && !('lastLog' in request.resource.data)
         // v14: لا أغراض توضيحية بعد أن يوقفها المدير (config/app.samplesOff)
-        && (request.resource.data.get('sample', false) != true || cfg().get('samplesOff', false) != true);
+        && (request.resource.data.get('sample', false) != true || cfg().get('samplesOff', false) != true)
+        // v15 (H20): من سجّله = من يكتب الآن (إلا الأمثلة التوضيحية)
+        && (request.resource.data.get('createdBy', '') == me() || request.resource.data.get('sample', false) == true);
       allow update: if isStaffOf(resource.data.officeId)
         && request.resource.data.officeId == resource.data.officeId
         && !request.resource.data.keys().hasAny(secretKeys())
+        // v15 (H20): حالة معروفة، وحقول الأصل ثابتة، وreservedFor لا يتغير إلا مع «محجوز» (أو يُمسح)
+        && request.resource.data.status in itemStatuses() && itemFixed()
+        && (request.resource.data.get('reservedFor', '') == resource.data.get('reservedFor', '')
+            || request.resource.data.get('reservedFor', '') == '' || request.resource.data.status == 'reserved')
         // v11: public يطابق التصنيف بعد كل تعديل (تغيير التصنيف إلى نقود يجعله خاصاً في العملية نفسها)
         && publicOk(request.resource.data)
         // v13 (H18): تاريخ العثور ليس في المستقبل (إن تغيّر)
@@ -310,9 +332,11 @@ service cloud.firestore {
         // v14: كل تغيير في الحالة أو التصنيف معه قيد سجل جديد في العملية نفسها (lastLog = رقمه)
         && (request.resource.data.get('lastLog', '') == resource.data.get('lastLog', '')
             ? (request.resource.data.status == resource.data.status && request.resource.data.cat == resource.data.cat)
-            : newLog(request.resource.data.lastLog, itemId))
-        // «محجوز» فقط لطلب مقبول في العملية نفسها
-        && (request.resource.data.status != 'reserved' || resource.data.status == 'reserved'
+            : newLog(request.resource.data.lastLog, itemId, resource.data.officeId))
+        // «محجوز» فقط لطلب مقبول في العملية نفسها. v15 (H20): أو بقاء الحجز نفسه كما هو
+        // (نقل الحجز إلى طلب آخر يحتاج أن يكون ذلك الطلب «مقبولاً» بعد العملية)
+        && (request.resource.data.status != 'reserved'
+            || (resource.data.status == 'reserved' && request.resource.data.get('reservedFor', '') == resource.data.get('reservedFor', ''))
             || getAfter(/databases/$(database)/documents/claims/$(request.resource.data.reservedFor)).data.status == 'approved')
         // «سُلّم» فقط بطلب اكتمل بالرمز، أو بتسليم مباشر موثّق باسم المستلم في التفاصيل السرية
         && (request.resource.data.status != 'returned' || resource.data.status == 'returned'
@@ -329,7 +353,7 @@ service cloud.firestore {
       // v9: الحذف للإدارة، أو لموظف المكتب إذا كان مثالاً، أو متاحاً سُجّل قبل أقل من 24 ساعة وليس ثميناً (خطأ إدخال)
       // v14 (H19): ومعه قيد سجل بالرقم الثابت del_{itemId} في العملية نفسها
       allow delete: if (isAdmin() || (isStaffOf(resource.data.officeId) && deletable(resource.data)))
-        && newLog('del_' + itemId, itemId);
+        && newLog('del_' + itemId, itemId, resource.data.officeId);
     }
 
     // التفاصيل السرية للغرض (اللون، الماركة، الوصف، مكان العثور والمبنى والقاعة، موضع الحفظ): لموظفي مكتبه فقط
@@ -361,9 +385,15 @@ service cloud.firestore {
     // الصورة الأصلية الواضحة: لموظفي المكتب فقط (العامة في itemPhotos: واضحة أو مموّهة أو غير موجودة حسب اختيار الموظف)
     match /itemPhotosPrivate/{itemId} {
       allow read: if isStaffOf(resource.data.officeId);
-      allow create, update: if isStaffOf(request.resource.data.officeId)
-        && request.resource.data.keys().hasOnly(['officeId', 'data']) && smallImage()
-        && get(/databases/$(database)/documents/items/$(itemId)).data.officeId == request.resource.data.officeId;
+      function privOk() {
+        return isStaffOf(request.resource.data.officeId)
+          && request.resource.data.keys().hasOnly(['officeId', 'data']) && smallImage()
+          && get(/databases/$(database)/documents/items/$(itemId)).data.officeId == request.resource.data.officeId;
+      }
+      allow create: if privOk();
+      // v15 (H20): الصورة الأصلية دليل: يستبدلها الموظف خلال 24 ساعة من تسجيل الغرض فقط، وبعدها المدير
+      allow update: if privOk() && resource.data.officeId == request.resource.data.officeId
+        && (isAdmin() || itemNew(itemId));
       // v14 (H19): الأصل الواضح دليل: يحذفه المدير، أو الموظف بشرط أن يُسمح بحذف الغرض نفسه (itemDeletable)
       allow delete: if isAdmin() || (isStaffOf(resource.data.officeId) && itemDeletable(itemId));
     }
@@ -487,7 +517,13 @@ service cloud.firestore {
           && (resource.data.status != 'done' || request.resource.data.status == 'done')
           && (!('cancelledAt' in resource.data) || request.resource.data.status == resource.data.status)
           && (request.resource.data.status != 'approved' || resource.data.status == 'approved' || approveOk(claimId, request.resource.data.itemId))
-          && (request.resource.data.status != 'done' || resource.data.status == 'done' || (doneOk(claimId, resource.data.itemId) && codeOk(claimId)))
+          // v15 (H20): «مكتمل» من «مقبول» فقط (لا تسليم لطلب قيد المراجعة ولو بالرمز الصحيح)
+          && (request.resource.data.status != 'done' || resource.data.status == 'done'
+              || (resource.data.status == 'approved' && doneOk(claimId, resource.data.itemId) && codeOk(claimId)))
+          // v15: من قرّر ومن سلّم ومن سأل = الموظف الذي يكتب الآن (لا يُنسب لموظف آخر)
+          && (request.resource.data.get('decidedBy', '') == resource.data.get('decidedBy', '') || request.resource.data.decidedBy == me())
+          && (request.resource.data.get('doneBy', '') == resource.data.get('doneBy', '') || request.resource.data.doneBy == me())
+          && (request.resource.data.get('askedBy', '') == resource.data.get('askedBy', '') || request.resource.data.askedBy == me())
           && strMax(request.resource.data, 'note', 600) && strMax(request.resource.data, 'question', 600)
           && strMax(request.resource.data, 'handoverNote', 600))
         // v9: «إلغاء» صاحب الطلب لطلبه قيد المراجعة (بعد سؤال الموظف لا يُحذف، فلا يُعاد إرساله لتخمين جديد)
@@ -684,6 +720,9 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['claimId', 'officeId', 'uid', 'data', 'createdAt'])
         && request.resource.data.uid == me() && smallImage()
         && fresh(request.resource.data, 'createdAt')
+        // v15 (H20): صور الإثبات مع إنشاء الطلب فقط (لا تُضاف لطلب موجود)
+        && request.resource.data.claimId is string && request.resource.data.claimId.size() <= 200
+        && !exists(claimDoc(request.resource.data.claimId))
         && (proofId == request.resource.data.claimId + '_0'
             || (proofId == request.resource.data.claimId + '_1' && getAfter(claimDoc(request.resource.data.claimId)).data.get('proofs', 0) >= 2))
         && getAfter(claimDoc(request.resource.data.claimId)).data.uid == me()

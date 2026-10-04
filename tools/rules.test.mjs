@@ -939,5 +939,68 @@ await t('v14-12: صورة البلاغ true مسموحة', mk(alice, 'reports/bi
 await t('v14-12: staffPick أطول من 100 مرفوض', updateDoc(doc(A, 'reports/big2'), {staffPick: 'x'.repeat(101), pickedAt: now}), false);
 await t('v14-12: staffPick عادي مسموح', updateDoc(doc(A, 'reports/big2'), {staffPick: 'x1', pickedAt: now}));
 
+// ── v15 (H20): فحص شامل ──
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  for (const k of ['z1', 'z2', 'z3', 'z4', 'z9', 'zq']){ await setDoc(doc(d, 'items/' + k), pub(k)); await setDoc(doc(d, 'itemSecrets/' + k), sec); }
+  await setDoc(doc(d, 'claims/z2_alice'), claim('z2', 'alice'));
+  // z3: محجوز لطلب ما زال «قيد المراجعة» (بيانات غير متسقة)، وبصمة رمزه صحيحة
+  await setDoc(doc(d, 'items/z3'), {...pub('z3'), status: 'reserved', reservedFor: 'z3_alice'});
+  await setDoc(doc(d, 'claims/z3_alice'), claim('z3', 'alice'));
+  await setDoc(doc(d, 'claimCodes/z3_alice'), {uid: 'alice', hash: H('z3_alice')});
+  // z4: محجوز لطلب مرفوض، وطلب آخر قيد المراجعة
+  await setDoc(doc(d, 'items/z4'), {...pub('z4'), status: 'reserved', reservedFor: 'z4_bob'});
+  await setDoc(doc(d, 'claims/z4_bob'), {...claim('z4', 'bob'), status: 'rejected', decidedAt: now});
+  await setDoc(doc(d, 'claims/z4_alice'), claim('z4', 'alice'));
+  // z5 عمره 3 أيام، وz6 عمره ساعة، ولكلٍّ صورة أصلية
+  await setDoc(doc(d, 'items/z5'), {...pub('z5'), createdAt: now - 3 * 864e5}); await setDoc(doc(d, 'itemPhotosPrivate/z5'), {officeId: O, data: IMG});
+  await setDoc(doc(d, 'items/z6'), {...pub('z6'), createdAt: now - 3600e3}); await setDoc(doc(d, 'itemPhotosPrivate/z6'), {officeId: O, data: IMG});
+  await setDoc(doc(d, 'claims/zq_alice'), claim('zq', 'alice', {proofs: 1}));   // عدد الصور 1 (لولا v15 لقُبلت صورته)
+  await setDoc(doc(d, 'staff/staffM'), {offices: [O, 'dom']});
+});
+const M = as('staffM');
+// 1) حالة غير معروفة
+await t('v15-1: حالة «lost» مرفوضة', upItem(A, 'z1', {status: 'lost', updatedAt: now}), false);
+await t('v15-1: حالة معروفة (أرشفة المدير) مسموحة', upItem(owner, 'z1', {status: 'archived', updatedAt: now}));
+// 2) reservedFor على غرض متاح
+await t('v15-2: reservedFor على غرض متاح (بلا حجز) مرفوض', upItem(A, 'z2', {reservedFor: 'z2_alice', updatedAt: now}), false);
+await t('v15-2: الحجز بقبول الطلب في العملية نفسها مسموح', approveB(A, 'z2', 'z2_alice', 'staffA'));
+// 3) التسليم من «مقبول» فقط
+await t('v15-3: تسليم طلب قيد المراجعة بالرمز الصحيح مرفوض', doneB(B, 'z3', 'z3_alice', CODE), false);
+await env.withSecurityRulesDisabled(async c => { await updateDoc(doc(c.firestore(), 'claims/z3_alice'), {status: 'approved', decidedAt: now}); });
+await t('v15-3: تسليم الطلب نفسه بعد قبوله مسموح', doneB(B, 'z3', 'z3_alice', CODE));
+// 4) نقل الحجز
+await t('v15-4: نقل حجز غرض (طلبه مرفوض) إلى طلب قيد المراجعة مرفوض', upItem(A, 'z4', {reservedFor: 'z4_alice', updatedAt: now}), false);
+await t('v15-4: فكّ الحجز إلى «متاح» مسموح', upItem(A, 'z4', {status: 'available', reservedFor: deleteField(), updatedAt: now}));
+// 5) استبدال الصورة الأصلية
+await t('v15-5: الموظف لا يستبدل صورة غرض عمره 3 أيام', setDoc(doc(A, 'itemPhotosPrivate/z5'), {officeId: O, data: IMG + 'B'}), false);
+await t('v15-5: المدير يستبدلها', setDoc(doc(owner, 'itemPhotosPrivate/z5'), {officeId: O, data: IMG + 'B'}));
+await t('v15-5: الموظف يستبدل صورة غرض عمره ساعة', setDoc(doc(A, 'itemPhotosPrivate/z6'), {officeId: O, data: IMG + 'B'}));
+// 6) حقول الأصل ثابتة
+await t('v15-6: تغيير createdBy مرفوض', upItem(A, 'z9', {createdBy: 'staffB'}), false);
+await t('v15-6: تغيير ref مرفوض', upItem(A, 'z9', {ref: 'TCA-HACK'}), false);
+await t('v15-6: إضافة fromFound لاحقاً مرفوضة', upItem(A, 'z9', {fromFound: 'f1'}), false);
+await t('v15-6: تعديل النوع (sub) مسموح', upItem(A, 'z9', {sub: 'حقيبة ظهر', updatedAt: now}));
+// 7) من سجّله = من يكتب
+await t('v15-7: إنشاء غرض باسم موظف آخر مرفوض', setDoc(doc(B, 'items/z7'), pub('z7')), false);
+await t('v15-7: إنشاء غرض باسمه مسموح', setDoc(doc(B, 'items/z7'), {...pub('z7'), createdBy: 'staffB'}));
+// 8) decidedBy/askedBy باسم من يكتب
+await t('v15-8: سؤال باسم موظف آخر مرفوض', updateDoc(doc(A, 'claims/zq_alice'), {question: 'ما لون الغلاف؟', askedAt: now, askedBy: 'staffB'}), false);
+await t('v15-8: سؤال باسمه مسموح', updateDoc(doc(A, 'claims/zq_alice'), {question: 'ما لون الغلاف؟', askedAt: now, askedBy: 'staffA'}));
+await t('v15-8: رفض باسم موظف آخر مرفوض', updateDoc(doc(A, 'claims/zq_alice'), {status: 'rejected', decidedAt: now, decidedBy: 'staffB', note: 'لا يطابق'}), false);
+await t('v15-8: رفض باسمه مسموح', updateDoc(doc(A, 'claims/zq_alice'), {status: 'rejected', decidedAt: now, decidedBy: 'staffA', note: 'لا يطابق'}));
+// 9) قيد السجل في مكتب الغرض نفسه (موظف في مكتبين)
+await t('v15-9: تغيير التصنيف بقيد في مكتب آخر (dom) مرفوض', batch(M, (b, r) => {
+  b.set(r('logs/m15a'), {...logDoc('staffM', 'edit', {itemId: 'z9'}), officeId: 'dom'}); b.update(r('items/z9'), {cat: 'glasses', lastLog: 'm15a', updatedAt: now}); }, {noLog: true}), false);
+await t('v15-9: وبقيد في مكتب الغرض مسموح', batch(M, (b, r) => {
+  b.set(r('logs/m15b'), logDoc('staffM', 'edit', {itemId: 'z9'})); b.update(r('items/z9'), {cat: 'glasses', lastLog: 'm15b', updatedAt: now}); }, {noLog: true}));
+// 10) صور الإثبات مع إنشاء الطلب فقط
+await t('v15-10: صورة إثبات لطلب موجود مرفوضة', setDoc(doc(alice, 'claimProofs/zq_alice_0'), {claimId: 'zq_alice', officeId: O, uid: 'alice', data: IMG, createdAt: now}), false);
+await setQuota('carol', {open: []}); await setRate('carol', Date.now() - 60000);
+await t('v15-10: صورة إثبات مع إنشاء الطلب في batch واحد مسموحة', batch(carol, (b, r) => {
+  b.set(r('claims/z6_carol'), claim('z6', 'carol', {proofs: 1})); b.set(r('rate/carol'), {at: serverTimestamp()});
+  b.set(r('claimQuota/carol'), {open: arrayUnion('z6_carol'), lastByCat: {bags: serverTimestamp()}}, {merge: true});
+  b.set(r('claimProofs/z6_carol_0'), {claimId: 'z6_carol', officeId: O, uid: 'carol', data: IMG, createdAt: now});
+  b.set(r('claimCodes/z6_carol'), {uid: 'carol', hash: H('z6_carol')}); }));
+
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);
