@@ -73,7 +73,7 @@ export function vHome(){
 
     <nav class="link-rows" aria-label="${t('home.moreAria')}">
       <button class="link-row" data-act="nav" data-r="browse"><span class="lr-ic">${icon('grid')}</span><span class="grow"><b>${t('home.ctaBrowse')}</b><small id="cta-count">${t('home.ctaBrowseSub')}</small></span>${icon('fwd')}</button>
-      <button class="link-row" data-act="nav" data-r="service"><span class="lr-ic">${icon('grid')}</span><span class="grow"><b>${t('svc.details')}</b><small>${t('home.svcDesc')}</small></span>${icon('fwd')}</button>
+      <button class="link-row" data-act="nav" data-r="service"><span class="lr-ic">${icon('book')}</span><span class="grow"><b>${t('svc.details')}</b><small>${t('home.svcDesc')}</small></span>${icon('fwd')}</button>
       <button class="link-row" data-act="nav" data-r="numbers"><span class="lr-ic">${icon('chart')}</span><span class="grow"><b>${t('num.title')}</b><small>${t('home.numDesc')}</small></span>${icon('fwd')}</button>
     </nav>
 
