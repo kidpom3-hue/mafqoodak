@@ -18,7 +18,7 @@ export const firebaseConfig = {
 // رقم إصدار التطبيق (H6): يظهر بخط صغير في أسفل قائمة الحساب وفي التذييل، لتتأكد أن جوالك يعرض آخر نسخة.
 // ارفعه مع CACHE في sw.js في كل Pull Request (الرقمان متساويان دائماً: APP_VERSION '23' ⇔ CACHE 'mafqoodak-v23').
 // tools/check-i18n.mjs يفشل إن اختلفا.
-export const APP_VERSION = '39';
+export const APP_VERSION = '40';
 
 // 2) إعدادات التطبيق
 export const SETTINGS = {

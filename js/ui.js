@@ -167,7 +167,7 @@ function renderMain(){
 function renderHeader(){
   const o = curOffice(); const ms = S.config ? modes() : ['visitor'];
   const acct = !S.configured || !S.authReady ? ''
-    : S.uid ? `<button class="avatar-btn" data-act="account" aria-label="${t('ui.account')}">${safeAvatar(S.me?.photo) ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span>${esc((S.me?.name || '?').trim().charAt(0))}</span>`}</button>`
+    : S.uid ? `<button class="avatar-btn" data-keep="acct" data-act="account" aria-label="${t('ui.account')}">${safeAvatar(S.me?.photo) ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span>${esc((S.me?.name || '?').trim().charAt(0))}</span>`}</button>`
     // H3: تحت 400px يصبح زر الدخول أيقونة فقط (النص مخفي بصرياً ويبقى اسمه في aria-label)، فيتسع اسم المكتب
     : `<button class="btn sm ghost login-btn" data-act="login" aria-label="${t('ui.signIn')}">${icon('users')}<span class="login-txt">${t('ui.signIn')}</span></button>`;
   // زر اللغة: يعرض اللغة الأخرى («EN» في العربية، «عربي» في الإنجليزية)
@@ -179,8 +179,8 @@ function renderHeader(){
   applyBrand(bo);
   // H5: الترتيب: الشعار + «مفقودك» | Aa | اللغة | الحساب. أُزيل زر اسم المكتب (تغيير المكان في صفحة المكتب)
   // H15: بجانب «مفقودك» نجمة شعار المؤسسة بعد خط فاصل (تظهر في كل المقاسات؛ الشعار الكامل في الواجهة الرئيسية)
-  $('#hdr').innerHTML = `<div class="top-row">
-      <div class="brand-wrap"><button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="${t('app.name')} — ${t('nav.home')}">${LOGO}<span class="wordmark">${t('app.name')}</span></button>${brandLogo(bo, 'light', 'hdr-logo', 'mark')}</div>
+  setHeader($('#hdr'), `<div class="top-row">
+      <div class="brand-wrap" data-keep="brand"><button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="${t('app.name')} — ${t('nav.home')}">${LOGO}<span class="wordmark">${t('app.name')}</span></button>${brandLogo(bo, 'light', 'hdr-logo', 'mark')}</div>
       ${S.config && (o || S.mode === 'admin') ? `<nav class="top-links" aria-label="${t('ui.navigation')}">${navItems().map(n => {
         const on = S.route.name === n.r && (!n.tab || (n.r === 'staff' ? S.staffTab : S.adminTab) === n.tab);
         return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}">${n.l}${tabNum(n.b, 0)}</button>`;
@@ -191,12 +191,31 @@ function renderHeader(){
     </div>
     ${S.uid && !S.verified ? `<div class="verify-bar" role="status">${icon('lock')}<span>${t('ui.verifyBar')} ${t('ui.verifyStaff')}</span>
       <button class="btn sm" data-act="checkVerified">${t('c.verified')}</button><button class="btn sm ghost" data-act="resendVerify">${t('ui.resend')}</button></div>` : ''}
-    ${ms.length > 1 ? `<div class="seg modes" role="tablist" aria-label="${t('ui.viewMode')}">${ms.map(m => `<button class="${S.mode === m ? 'on' : ''}" data-act="mode" data-v="${m}" role="tab" aria-selected="${S.mode === m}">${statusLabel(MODE_LABEL[m])}</button>`).join('')}</div>` : ''}`;
+    ${ms.length > 1 ? `<div class="seg modes" role="tablist" aria-label="${t('ui.viewMode')}">${ms.map(m => `<button class="${S.mode === m ? 'on' : ''}" data-act="mode" data-v="${m}" role="tab" aria-selected="${S.mode === m}">${statusLabel(MODE_LABEL[m])}</button>`).join('')}</div>` : ''}`);
   syncHeader();
+}
+/* H21: innerHTML كان يعيد بناء الترويسة مع كل رسم فيُنشأ شعار الكلية من جديد ويومض. العناصر data-keep تبقى ما دامت لم تتغير */
+function setHeader(h, html){
+  const tpl = document.createElement('template'); tpl.innerHTML = html;
+  // importNode: نقل الصورة القديمة إلى محتوى <template> (مستند آخر) يعيد تحميلها
+  const frag = document.importNode(tpl.content, true);
+  for (const n of frag.querySelectorAll('[data-keep]')){
+    const o = h.querySelector(`[data-keep="${n.dataset.keep}"]`);
+    if (o && o.isEqualNode(n)) n.replaceWith(o);
+  }
+  h.replaceChildren(frag);
+}
+const BRAND_IMGS = new Map();
+function preloadBrand(b){
+  for (const src of [b.logo, b.logoWhite, b.mark, b.markWhite].filter(Boolean)){
+    if (BRAND_IMGS.has(src)) continue;
+    const im = new Image(); im.src = src; im.decode?.().catch(() => {}); BRAND_IMGS.set(src, im);
+  }
 }
 /* H15: data-brand على <html> يبدّل ألوان CSS إلى ألوان المؤسسة، ولون شريط المتصفح (theme-color) معها */
 function applyBrand(o){
   const b = brandOf(o), h = document.documentElement;
+  if (b) preloadBrand(b);
   if ((h.dataset.brand || '') === (b?.id || '')) return;
   if (b) h.dataset.brand = b.id; else delete h.dataset.brand;
   const m = document.querySelector('meta[name="theme-color"]');

@@ -1,7 +1,7 @@
 // Service Worker: يحفظ ملفات التطبيق ليفتح بسرعة ويعمل عند ضعف الاتصال.
 // الاستراتيجية: الشبكة أولاً (لتظهر تعديلاتك فوراً)، ثم النسخة المحفوظة إذا انقطع الاتصال.
 // عند تغيير أسماء الملفات غيّر رقم الإصدار هنا.
-const CACHE = 'mafqoodak-v39';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
+const CACHE = 'mafqoodak-v40';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
 // ملفات التطبيق نفسه فقط: ملفات Firebase من gstatic (ومنها firebase-app-check.js) لا يتعامل معها هذا العامل (مصدر آخر)
 // H8: تبقى هنا كل الملفات، ومنها ما يُحمَّل عند الحاجة فقط (lazy.js)، ليعمل التطبيق كاملاً دون اتصال بعد أول زيارة
 const SHELL = [
@@ -26,6 +26,14 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  // H21: الصور (الأيقونات والشعار) من النسخة المحفوظة أولاً؛ تتجدد مع رقم الإصدار. كان طلبها من الشبكة يُخفي الشعار عند كل تنقل
+  if (req.destination === 'image'){
+    e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => {
+      if (res.ok){ const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
+      return res;
+    })));
+    return;
+  }
   // H6: cache: 'no-cache' يجبر المتصفح على سؤال الخادم (GitHub Pages) عن كل ملف بدل نسخته المخزّنة في ذاكرة HTTP،
   // فلا تظهر نسخة قديمة بعد التحديث. طلب فتح الصفحة (navigate) لا يقبل خيارات إضافية، فنبني له طلباً جديداً بعنوانه
   const fresh = req.mode === 'navigate' ? new Request(req.url, {cache: 'no-cache'}) : new Request(req, {cache: 'no-cache'});

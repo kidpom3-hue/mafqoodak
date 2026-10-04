@@ -43,7 +43,8 @@ export const AGAIN = {v: null};
    والمخفية بـ display:none لا يقرؤها قارئ الشاشة. kind: 'logo' (أفقي بالاسم) أو 'mark' (النجمة وحدها) */
 export function brandLogo(o, on = 'light', cls = '', kind = 'logo'){
   const b = brandOf(o); if (!b) return '';
-  const img = (src, k) => `<img class="br-logo ${k} ${cls}" src="${esc(src)}" alt="${t('br.logoAlt')}" decoding="async">`;
+  // H21: width/height من BRANDS.size (مكان محجوز قبل التحميل)، وبلا decoding="async" حتى لا يُرسم فارغاً لحظة
+  const img = (src, k) => { const [w, h] = b.size?.[src] || []; return `<img class="br-logo ${k} ${cls}" src="${esc(src)}" alt="${t('br.logoAlt')}"${w ? ` width="${w}" height="${h}"` : ''}>`; };
   const color = kind === 'mark' ? b.mark : b.logo, white = kind === 'mark' ? b.markWhite : b.logoWhite;
   return on === 'dark' ? img(white, 'on-dark') : img(color, 'lg-l') + img(white, 'lg-d');
 }

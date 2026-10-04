@@ -576,6 +576,7 @@ export const AUDIT = {
   handover: ['status:returned'], delete: ['delete'], dispose: ['dispose'],
   perms: ['perm:grant', 'perm:revoke', 'perm:admin', 'perm:unadmin'],
   backup: ['backup'],   // H8: من صدّر نسخة احتياطية ومتى
+  cash: ['approveCash', 'cashUndo'],   // H21: قبول النقود المباشر (H17) والتراجع عنه
 };
 export async function loadAudit(officeId, filter, force = false){
   const k = officeId + '|' + filter; if (!db || !officeId || (S.audit[k] && !force)) return;
