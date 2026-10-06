@@ -117,6 +117,8 @@ window.addEventListener('popstate', () => {
   backStep();
 });
 export function renderAll(){ renderHeader(); renderMain(); renderNav(); renderSheet(); hydrate(); }
+// H22: انقطاع الاتصال وعودته يغيّران الترويسة فقط (main.js)، فلا يُعاد رسم الصفحة ولا يضيع ما كُتب في نموذج مفتوح
+export { renderHeader };
 
 /* ارتفاع الترويسة في متغير CSS ليلتصق شريط البحث تحتها مباشرة، وظل خفيف عند الالتصاق */
 /* H13a: ومعه --hdr-vh = ارتفاعها الظاهر فعلاً (بعد zoom حجم الخط) لـ scroll-padding-top في CSS: أي تمرير إلى عنصر
@@ -191,6 +193,7 @@ function renderHeader(){
     </div>
     ${S.uid && !S.verified ? `<div class="verify-bar" role="status">${icon('lock')}<span>${t('ui.verifyBar')} ${t('ui.verifyStaff')}</span>
       <button class="btn sm" data-act="checkVerified">${t('c.verified')}</button><button class="btn sm ghost" data-act="resendVerify">${t('ui.resend')}</button></div>` : ''}
+    ${navigator.onLine === false ? `<div class="verify-bar net-bar" role="status">${icon('wifiOff')}<span>${t('net.offline')}</span></div>` : ''}
     ${ms.length > 1 ? `<div class="seg modes" role="tablist" aria-label="${t('ui.viewMode')}">${ms.map(m => `<button class="${S.mode === m ? 'on' : ''}" data-act="mode" data-v="${m}" role="tab" aria-selected="${S.mode === m}">${statusLabel(MODE_LABEL[m])}</button>`).join('')}</div>` : ''}`);
   syncHeader();
 }

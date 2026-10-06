@@ -661,7 +661,7 @@ async function submitForm(form){
       }
       await dbx.del('users/' + user.uid + '/private/codes');
       await dbx.del('users/' + user.uid + '/private/profile').catch(() => {});   // H18: البريد الخاص
-      await dbx.del('rate/' + user.uid).catch(() => {});   // H7: وقت آخر إنشاء (تسمح القواعد بحذفه بعد 20 ثانية)
+      await dbx.del('rate/' + user.uid).catch(() => {});   // H7: وقت آخر إنشاء. H22: يُحذف بعد انتهاء النافذة اليومية فقط؛ قبلها يبقى عدّاداً بلا بيانات شخصية
       await dbx.del('staffRequests/' + user.uid).catch(() => {});
       await dbx.del('users/' + user.uid);
       // 4) حذف الحساب نفسه من Firebase Authentication

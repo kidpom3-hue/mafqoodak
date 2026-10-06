@@ -2,7 +2,7 @@
 // G6: التطبيق يدير مكان التمرير بنفسه عند الرجوع (ui.js)، فلا يتدخّل المتصفح ويعيده مكاناً آخر
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 import { S, start, onChange, onReset, setOffice, SHARE_RE, OFFICE_RE } from './state.js';
-import { renderAll, refresh, go } from './ui.js';
+import { renderAll, refresh, go, renderHeader } from './ui.js';
 import { bindEvents } from './actions.js';
 import { checkNotify } from './notify.js';
 import { toast } from './utils.js';
@@ -34,6 +34,9 @@ onChange(() => { refresh(); checkNotify(); });   // تحديث جزئي عند �
 onReset(renderAll);  // إعادة رسم كاملة (تسجيل دخول/خروج، تغيير المكان)
 renderAll();
 start();
+// H22: شريط «لا يوجد اتصال» في الترويسة فقط (لا يُعاد رسم الصفحة فلا يضيع ما كُتب)، ورسالة عند عودة الاتصال
+addEventListener('offline', () => renderHeader());
+addEventListener('online', () => { renderHeader(); toast(t('net.back')); });
 // بعد تسجيل الخروج وإعادة تحميل الصفحة (actions.js ← signOut)
 try { if (sessionStorage.getItem('mfq:signedOut')){ sessionStorage.removeItem('mfq:signedOut'); setTimeout(() => toast(t('a.signedOut')), 400); } } catch {}
 // v7: بعد «سجّل الدخول ببريد الكلية» (خروج ثم إعادة تحميل): صفحة الدخول مباشرة

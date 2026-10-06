@@ -519,6 +519,7 @@ input[type=date].input::-webkit-date-and-time-value{text-align:start}
 .cmp .v.ok{color:var(--ok)}
 .cmp .v.bad{color:var(--bad)}
 .cmp .v.mute{color:var(--muted);font-weight:500;font-size:11.5px}
+.cmp-empty{margin:0;padding:8px 10px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line)}
 .cmp-sum{padding:8px 10px;background:var(--surface-2);font-weight:700}
 /* رأس بطاقة الطلب: تحذير «أرسل N طلبات» في سطر مستقل حتى لا يدفع حالة الطلب خارج الشاشة */
 .claim-who{min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
@@ -528,6 +529,7 @@ input[type=date].input::-webkit-date-and-time-value{text-align:start}
 .verify-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--warn-soft);color:var(--warn);border-radius:12px;padding:8px 10px;font-size:13px;font-weight:600}
 .verify-bar>span{flex:1;min-width:160px}
 .verify-bar>svg{width:18px;height:18px;flex:none}
+.net-bar{padding-block:6px}
 @media (min-width:720px){.verify-bar{order:3;flex-basis:100%}}
 /* تنبيه مدة الحفظ في المستودع */
 .note.retention{align-items:center;flex-wrap:wrap}

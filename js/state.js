@@ -1,6 +1,6 @@
 // حالة التطبيق والاشتراك في البيانات من Firestore
 import { auth, db, dbx, configured, onAuthStateChanged, getRedirectResult, deleteField } from './firebase.js';
-import { LS, matchScore, toast, dayNum, subKey, setSpotHook, tokens, norm } from './utils.js';
+import { LS, matchScore, toast, dayNum, subKey, setSpotHook, tokens, norm, when } from './utils.js';
 import { t, LANG, saved, setLang } from './i18n.js';
 import { oName, spotLabel, cat, catName, COLORS, autoSuggestOk, SUGG_STOP, claimOf, GROUP_DAYS, AMOUNT_TOL } from './constants.js';
 import { SETTINGS } from './config.js';
@@ -662,22 +662,43 @@ export function getName(uid){
 
 /* ---------- الكتابة مع رسائل أخطاء واضحة ---------- */
 /* H7: إنشاء محدود (بلاغ، إشعار تسليم، طلب استلام) عبر dbx.createLimited. القواعد تسمح بإنشاء واحد كل 20 ثانية لكل حساب؛
-   نتحقق على الجهاز أولاً، وعند رفض الخادم نقرأ rate/{uid}: إن كان الإنشاء السابق قريباً تظهر رسالة ودّية «انتظر قليلاً ثم أعد المحاولة» */
-const RATE_MS = 20000;
+   نتحقق على الجهاز أولاً، وعند رفض الخادم نقرأ rate/{uid}: إن كان الإنشاء السابق قريباً تظهر رسالة ودّية «انتظر قليلاً ثم أعد المحاولة»
+   H22 (v16): وحد يومي 30 إنشاءً لكل حساب في نافذة 24 ساعة (rate.n وrate.w)؛ عند بلوغه رسالة بموعد السماح (err.dayCap).
+   ودون اتصال لا نرسل شيئاً (err.offlineNow) حتى لا يبقى الزر معلّقاً */
+const RATE_MS = 20000, RATE_DAY_MAX = 30, RATE_WIN = 864e5;
 const rateErr = () => Object.assign(new Error('rate'), {msg: t('err.rateWait'), code: 'rate'});
+const capErr = w => Object.assign(new Error('cap'), {msg: t('err.dayCap', {when: when(w + RATE_WIN)}), code: 'rate'});
+const tsMs = v => typeof v?.toMillis === 'function' ? v.toMillis() : +v || 0;
+// العدّاد التالي: نافذة قائمة → n + 1 مع بدايتها نفسها، وإلا نافذة جديدة (n = 1)
+const nextRate = (r, inWin) => inWin ? {n: (+r.n || 0) + 1, keepW: r.w} : {n: 1, keepW: null};
+// H22: دون اتصال لا ننتظر الخادم: كانت العملية تبقى معلّقة (والزر «جارٍ الإرسال») حتى يعود الاتصال
+export const offlineErr = () => navigator.onLine === false ? Object.assign(new Error('offline'), {msg: t('err.offlineNow'), code: 'offline'}) : null;
 export async function createLimited(path, data, extra){
+  const off = offlineErr(); if (off) throw off;
   if (Date.now() - (LS.get('rateAt', 0) || 0) < RATE_MS) throw rateErr();
-  try { await dbx.createLimited(path, data, S.uid, extra); LS.set('rateAt', Date.now()); }
+  const r = await dbx.get('rate/' + S.uid).catch(() => null);
+  const w = tsMs(r?.w), inWin = !!w && Date.now() - w < RATE_WIN;
+  if (inWin && (+r.n || 0) >= RATE_DAY_MAX) throw capErr(w);
+  const send = win => dbx.createLimited(path, data, S.uid, extra, nextRate(r, win));
+  try { await send(inWin); }
   catch (e){
-    if (String(e?.code || '').includes('permission-denied')){
-      const r = await dbx.get('rate/' + S.uid).catch(() => null);
-      const at = typeof r?.at?.toMillis === 'function' ? r.at.toMillis() : +r?.at || 0;
-      if (at && Date.now() - at < RATE_MS + 10000) throw rateErr();
-    }
-    throw e;
+    if (!String(e?.code || '').includes('permission-denied')) throw e;
+    const r2 = await dbx.get('rate/' + S.uid).catch(() => null);
+    const at = tsMs(r2?.at), w2 = tsMs(r2?.w);
+    if (at && Date.now() - at < RATE_MS + 10000) throw rateErr();
+    if (w2 && Date.now() - w2 < RATE_WIN && (+r2.n || 0) >= RATE_DAY_MAX) throw capErr(w2);
+    // ساعة الجهاز قرب نهاية النافذة: الخادم رأى غير ما رأيناه، فنجرب الفرع الآخر مرة واحدة (يبقى الرفض الحقيقي رفضاً)
+    const tries = w && Math.abs(Date.now() - w - RATE_WIN) <= 36e5 ? [nextRate(r, !inWin)] : [];
+    // انتقالي: قبل نشر قواعد v16 (قواعد v15 لا تقبل n وw) نجرب {at} وحده؛ قواعد v16 ترفضه. يُحذف بعد نشر v16 بأسابيع
+    tries.push('legacy');
+    let ok = false;
+    for (const x of tries){ try { await dbx.createLimited(path, data, S.uid, extra, x); ok = true; break; } catch {} }
+    if (!ok) throw e;
   }
+  LS.set('rateAt', Date.now());
 }
 export async function write(fn, okMsg){
+  if (offlineErr()){ toast(t('err.offlineNow')); return false; }
   try { await fn(); if (okMsg) toast(okMsg); return true; }
   catch (e){
     console.warn(e);
