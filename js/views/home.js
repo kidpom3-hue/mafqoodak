@@ -97,19 +97,22 @@ export function updateHome(){
         : emptyBox('box', t('home.empty'), t('home.emptySub'), navBtn('report', 'bell', t('home.ctaLost')));
     }
   }
-  // H8: رمز QR في التذييل يُرسم بعد تحميل qr.js (مكانه محجوز بالحجم نفسه فلا تقفز الصفحة)
-  const q = $('#sf-qr');
-  if (q && !q.firstChild) load('qr').then(m => { if (q.isConnected && !q.firstChild) q.innerHTML = m.qrSvg(q.dataset.url, {label: t('po.qrAria')}); }).catch(() => {});
+  fillFootQr();
   hydrate();
 }
+// H8: رمز QR في التذييل يُرسم بعد تحميل qr.js (مكانه محجوز بالحجم نفسه فلا تقفز الصفحة).
+// H24: مصدّرة لأن التذييل صار في كل صفحات الزائر (decorate في ui.js)
+export function fillFootQr(){
+  const q = $('#sf-qr');
+  if (q && !q.firstChild) load('qr').then(m => { if (q.isConnected && !q.firstChild) q.innerHTML = m.qrSvg(q.dataset.url, {label: t('po.qrAria')}); }).catch(() => {});
+}
 
-/* التذييل (H4): شريط بعرض الصفحة بالأخضر الداكن نفسه لبطاقة الرئيسية (--hero-bg) ونص أبيض.
-   الهوية (الشعار، ووصف سطر واحد، ورمز QR صغير للمكتب بخلفية بيضاء) · مجموعة «المكتب» (روابطه ومكانه وأوقاته وهاتفه)
-   · شريط أخير: «© السنة مفقودك» وتحته «الخصوصية والشروط | إمكانية الوصول».
-   H15: في مكتب الكلية فقط عمود ثالث «روابط الكلية» (شعارها وموقعها ورايات والبلاك بورد وحسابها على X)
-   وسطر «الاسم والشعار بإذن من إدارة الكلية». بلا شعار رؤية 2030 أو أي شعار حكومي آخر.
-   المظهر وحجم الخط انتقلا إلى زر «Aa» في الشريط العلوي، واللغة إلى زرها هناك */
-function footer(o){
+/* التذييل (H24، بأسلوب المنصات الحكومية): شريط بعرض الصفحة بالأخضر الداكن (--hero-bg) ونص أبيض، في كل صفحات الزائر.
+   الأعمدة: الهوية (الشعار، والوصف، ورمز QR للمكتب) · «روابط مهمة» · «الدعم والمساعدة» · «تواصل معنا» (المكان والأوقات والهاتف)
+   · «روابط الكلية» (مكتب الكلية فقط، H15) · شريط أخير: الحقوق، وسطر إذن الكلية، ورقم الإصدار.
+   بلا ختم «موقع حكومي رسمي» ولا شعار الهيئة أو رؤية 2030: المنصة ليست جهة حكومية، والشعار الوحيد شعار الكلية */
+const fLink = (r, label, extra = '') => `<li><button class="link" data-act="nav" data-r="${r}"${extra}>${label}</button></li>`;
+export function footer(o){
   return `<footer class="site-foot">
     <div class="sf-top">
       <div class="sf-brand">
@@ -117,29 +120,31 @@ function footer(o){
         <p>${t('foot.tagline')}</p>
         <div class="sf-qr"><span class="qr-slot" id="sf-qr" data-url="${esc(officeUrl(o))}"></span><small>${t('foot.qr')}</small></div>
       </div>
-      <nav class="sf-col" aria-labelledby="sf-office">
-        <h2 class="sf-h" id="sf-office">${t('foot.officeGroup')}</h2>
-        <div class="sf-links">
-          <button class="link" data-act="nav" data-r="office">${t('foot.office')}</button>
-          <button class="link" data-act="nav" data-r="service">${t('foot.services')}</button>
-        </div>
+      <nav class="sf-col sf-imp" aria-labelledby="sf-links">
+        <h2 class="sf-h" id="sf-links">${t('foot.links')}</h2>
+        <ul class="sf-links">${fLink('service', t('svc.details'))}${fLink('browse', t('nav.browse'))}${fLink('numbers', t('num.title'))}${fLink('office', t('foot.office'))}</ul>
+      </nav>
+      <nav class="sf-col sf-help" aria-labelledby="sf-support">
+        <h2 class="sf-h" id="sf-support">${t('foot.support')}</h2>
+        <ul class="sf-links">${fLink('office', t('foot.faq'))}${fLink('privacy', t('foot.legal'))}${fLink('a11y', t('foot.a11y'))}</ul>
+      </nav>
+      <div class="sf-col sf-contact">
+        <h2 class="sf-h">${t('foot.officeGroup')}</h2>
         <ul class="sf-info">
           <li>${icon('pin')}<span>${esc(oPlace(o) || oName(o))}</span></li>
           ${oHours(o) ? `<li>${icon('clock')}<span>${esc(oHours(o))}</span></li>` : ''}
           ${o.phone ? `<li>${icon('phone')}<span dir="ltr">${esc(o.phone)}</span></li>` : ''}
         </ul>
-      </nav>
+      </div>
       ${brandOf(o) ? `<nav class="sf-col sf-college" aria-labelledby="sf-college">
         <h2 class="sf-h" id="sf-college">${t('br.links')}</h2>
-        ${brandLogo(o, 'dark', 'sf-logo')}
-        ${collegeLinks(o)}
+        <div class="sf-cl-row">${brandLogo(o, 'dark', 'sf-logo')}${collegeLinks(o)}</div>
       </nav>` : ''}
     </div>
     <div class="sf-bottom">
-      <small class="sf-copy">© ${today().slice(0, 4)} ${t('app.name')}</small>
+      <small class="sf-copy">${t('foot.rights', {year: today().slice(0, 4)})}</small>
       ${brandOf(o) ? `<small class="sf-perm">${t('br.permission')}</small>` : ''}
       <small class="sf-ver">${t('ui.version', {v: APP_VERSION})}</small>
-      <div class="sf-legal"><button class="link" data-act="nav" data-r="privacy">${t('foot.legal')}</button><span aria-hidden="true">|</span><button class="link" data-act="nav" data-r="a11y">${t('foot.a11y')}</button></div>
     </div>
   </footer>`;
 }

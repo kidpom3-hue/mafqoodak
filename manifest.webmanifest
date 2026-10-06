@@ -2,15 +2,15 @@
   "id": "./",
   "name": "مفقودك",
   "short_name": "مفقودك",
-  "description": "ابحث عن مفقوداتك في مكتب المفقودات، وسجّل بلاغاً، واستلم غرضك برمز تحقق.",
+  "description": "ابحث عن مفقوداتك في مكتب المفقودات، وقدّم بلاغ فقد، واستلم غرضك برمز تحقق.",
   "lang": "ar",
   "dir": "rtl",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#EFF3F1",
-  "theme_color": "#0A6A5D",
+  "background_color": "#F6F7F8",
+  "theme_color": "#14573A",
   "categories": [
     "utilities",
     "productivity",
@@ -41,8 +41,8 @@
   ],
   "shortcuts": [
     {
-      "name": "بلّغ عن مفقود",
-      "short_name": "بلّغ",
+      "name": "الإبلاغ عن مفقود",
+      "short_name": "بلاغ جديد",
       "url": "./#report",
       "icons": [
         {

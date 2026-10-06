@@ -37,6 +37,12 @@ export function vService(){
   return `<div class="wrap narrow" data-view="service">${S.hist.length ? backBtn() : ''}
     <section class="hero"><div class="hero-kicker">${icon('grid')}${t('svc.kicker')}</div><h1 class="hero-title">${t('svc.' + id + '.name')}</h1>
       <p class="hero-sub">${esc(oName(o))}</p></section>
+    <dl class="svc-sum">
+      <div><dt>${icon('clock')}${t('svc.sec.time')}</dt><dd>${t('svc.' + id + '.dur', vars)}</dd></div>
+      <div><dt>${icon('tag')}${t('svc.sec.fee')}</dt><dd>${t('svc.free')}</dd></div>
+      <div><dt>${icon('grid')}${t('svc.sec.channels')}</dt><dd>${t('svc.chShort')}</dd></div>
+    </dl>
+    <button class="btn svc-start" data-act="nav" data-r="${START[id]}">${icon('fwd')}${t('svc.start')}</button>
     ${sec('desc', `<p>${t('svc.' + id + '.desc')}</p>`)}
     ${sec('who', `<p>${t('svc.who')}</p>`)}
     ${sec('req', `<ul class="svc-list">${list('svc.' + id + '.req').map(x => `<li>${x}</li>`).join('')}</ul>`)}
@@ -52,6 +58,8 @@ export function vService(){
     <button class="btn block" data-act="nav" data-r="${START[id]}">${icon('fwd')}${t('svc.start')}</button>
   </div>`;
 }
+
+/* H24: ملخص الخدمة تحت عنوانها (مدة الإنجاز، والرسوم، والقنوات) وزر «بدء الخدمة» في الأعلى والأسفل، بأسلوب المنصات الحكومية */
 
 /* ---------- مؤشرات المكتب (للزوار) ---------- */
 export function vNumbers(){
