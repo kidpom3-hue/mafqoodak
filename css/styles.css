@@ -178,6 +178,12 @@ textarea.input{min-height:92px;resize:vertical}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:14px}
 .check input{width:18px;height:18px;margin-top:3px;accent-color:var(--primary);flex:none}
 .form-err{color:var(--bad);font-weight:600;font-size:14px}
+/* H23: خطأ تحت الحقل مباشرة (التاريخ بعد اليوم)، والتاريخ مكتوباً بالشهر والسنة */
+.field-err{display:block;color:var(--bad);font-weight:600;font-size:13px;margin-top:4px}
+.date-show{display:block;margin-top:4px}
+input[type=date][aria-invalid=true]{border-color:var(--bad)}
+/* حقل التاريخ في الواجهة العربية: ترتيب «يوم/شهر/سنة» من اليسار كما يعرضه المتصفح (بلا خلط اتجاهات)، ومحاذاته لبداية السطر */
+:root[dir=rtl] input[type=date]{direction:ltr;text-align:right}
 .ai-status{font-size:13px;color:var(--primary);font-weight:600;display:flex;align-items:center;gap:6px}
 
 /* item detail */

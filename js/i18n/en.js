@@ -212,6 +212,7 @@ export const EN = {
   "st.cmpEmpty": "No answer and nothing recorded: {list}.",
   "it.youHandedIn": "You handed this item in to the office, so you can't claim it in the app. If it really is yours, speak to the office staff.",
   "wf.finderClaim": "The claimant is the person who handed this item in, so the claim can't be approved or linked. If they really own it, hand it over directly after checking.",
+  "a.futureDate": "The date can't be after today",
   "home.lostIn": "Lost something at <span class=\"hl\">{name}</span>?",
   "home.lead": "Everything handed in to the lost property office is listed here. Search for your item or report it, then collect it with a pickup code.",
   "home.searchPh": "e.g. wallet, car key, earbuds",

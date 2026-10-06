@@ -163,6 +163,8 @@ function renderMain(){
   const r = routeFns(ROUTES[S.route.name] || ROUTES.home);
   if (!r){ main.innerHTML = loadingHtml(); return; }   // H8: الوحدة في الطريق
   main.innerHTML = r.v();
+  // H23: سطر التاريخ المقروء («15 أكتوبر 2026») تحت كل حقل تاريخ من البداية (checkDate في actions.js يستمع لـ change)
+  main.querySelectorAll('input[type=date]').forEach(el => el.dispatchEvent(new Event('change', {bubbles: true})));
   if (r.update) r.update();
   if (r.after) r.after();
 }

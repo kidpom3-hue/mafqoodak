@@ -50,6 +50,8 @@ export const daysAgo = s => dayNum(today()) - dayNum(s);
 // تاريخ مخزّن كنص (YYYY-MM-DD): نأخذ ظهر ذلك اليوم بتوقيت غرينتش، فيبقى اليوم نفسه في الرياض
 const noon = s => { if (typeof s !== 'string' || !DAY_RE.test(s)) return null; const [y,m,d] = s.split('-').map(Number); const x = new Date(Date.UTC(y, m-1, d, 12)); return isNaN(x.getTime()) ? null : x; };
 // التاريخ حسب اللغة: ar-SA أو en-GB، بالتقويم الميلادي والأرقام اللاتينية في اللغتين
+// H23: التاريخ كاملاً بالسنة («15 أكتوبر 2026» / «15 October 2026») تحت حقول التاريخ
+export const fmtDateFull = s => { const d = noon(s); try { return d ? fmt('dy', {day: 'numeric', month: 'long', year: 'numeric'}).format(d) : ''; } catch { return ''; } };
 export const fmtDate = s => { const d = noon(s); try { return d ? fmt('d', {day: 'numeric', month: 'long'}).format(d) : ''; } catch { return ''; } };
 // التاريخ والوقت (سجل الحيازة): «27 سبتمبر 2026، 10:30 ص» / «27 Sept 2026, 10:30»
 export const fmtDateTime = ms => { if (!okMs(ms)) return ''; try { return fmt('dt', {day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit'}).format(new Date(ms)); } catch { return ''; } };

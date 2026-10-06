@@ -1,7 +1,7 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
 import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf } from './constants.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
-import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when } from './utils.js';
+import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when, fmtDateFull } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
 import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn } from './state.js';
 import * as wf from './workflow.js';
@@ -44,9 +44,28 @@ export function showStep(form, n, keepErr){
   form.querySelector(`.step[data-step="${n}"] .step-h`)?.focus({preventScroll: true});
   form.scrollIntoView({block: 'start', behavior: 'smooth'});
 }
+/* H23: حقل التاريخ يُفحص فوراً (عند التغيير والخروج منه): لا تاريخ بعد اليوم (Safari يتجاهل max أحياناً).
+   الخطأ تحت الحقل مباشرة، وتحته التاريخ مكتوباً بالشهر والسنة («15 أكتوبر 2026») بعزل الاتجاه (<bdi>) */
+export function checkDate(el){
+  if (!el || el.type !== 'date') return true;
+  const bad = !!el.value && el.value > today(), box = el.closest('.field') || el.parentElement;
+  let show = box.querySelector('.date-show');
+  if (!show){ show = document.createElement('span'); show.className = 'hint date-show'; el.after(show); }
+  show.innerHTML = el.value && !bad ? `<bdi>${esc(fmtDateFull(el.value))}</bdi>` : '';
+  show.hidden = !show.innerHTML;
+  let e = box.querySelector('.date-err');
+  if (bad){
+    if (!e){ e = document.createElement('span'); e.className = 'field-err date-err'; e.id = (el.id || el.name) + '-err'; e.setAttribute('role', 'alert'); show.after(e); }
+    e.textContent = t('a.futureDate'); el.setAttribute('aria-invalid', 'true'); el.setAttribute('aria-describedby', e.id);
+  } else { e?.remove(); el.removeAttribute('aria-invalid'); el.removeAttribute('aria-describedby'); }
+  return !bad;
+}
 function stepMissing(form){
   const st = form.querySelector(`.step[data-step="${form.dataset.step || 1}"]`); if (!st) return null;
   if (st.querySelector('input[name=cat]') && !st.querySelector('input[name=cat]:checked')) return {msg: t('a.needCat'), el: st.querySelector('input[name=cat]')};
+  // H23: تاريخ بعد اليوم يمنع «التالي» (لا يُترك للإرسال الأخير)
+  const badDate = [...st.querySelectorAll('input[type=date]')].find(el => !checkDate(el));
+  if (badDate) return {msg: t('a.futureDate'), el: badDate};
   for (const el of st.querySelectorAll('[required]')){
     if (el.disabled || el.closest('[hidden]')) continue;
     const empty = el.type === 'radio' ? !st.querySelector(`input[name="${el.name}"]:checked`) : el.type === 'checkbox' ? !el.checked : !String(el.value || '').trim();
@@ -56,7 +75,8 @@ function stepMissing(form){
 }
 function stepNext(form){
   const m = stepMissing(form);
-  if (m){ formErr(form, m.msg); const d = m.el.closest('details'); if (d) d.open = true; m.el.focus({preventScroll: true}); m.el.scrollIntoView({block: 'center', behavior: 'smooth'}); return; }
+  // H23: خطأ التاريخ يظهر تحت الحقل نفسه (checkDate)، فلا نكرره أعلى النموذج
+  if (m){ if (m.el.type !== 'date') formErr(form, m.msg); else formErr(form, ''); const d = m.el.closest('details'); if (d) d.open = true; m.el.focus({preventScroll: true}); m.el.scrollIntoView({block: 'center', behavior: 'smooth'}); return; }
   showStep(form, (Number(form.dataset.step) || 1) + 1);
 }
 function busy(form, on){ const b = form.querySelector('button[type=submit]'); if (b) b.disabled = on; }
@@ -1384,6 +1404,9 @@ export function bindEvents(){
       e.preventDefault(); tabs[n].click();
     }
   });
+  // H23: فحص التاريخ فوراً عند تغييره أو الخروج من الحقل
+  app.addEventListener('change', e => { if (e.target.type === 'date') checkDate(e.target); });
+  app.addEventListener('focusout', e => { if (e.target.type === 'date') checkDate(e.target); });
   app.addEventListener('submit', e => {
     const f = e.target.closest('form[data-form]'); if (!f) return;
     e.preventDefault();
