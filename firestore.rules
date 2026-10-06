@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
+// قواعد حماية بيانات مفقودك — الإصدار v16 (H22: حد يومي للإنشاء لكل حساب، والأدلة الفارغة لا تُملأ بعد 24 ساعة إلا مكان العثور، وحدود config وprivate وpublicStats؛ v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -75,7 +75,16 @@ service cloud.firestore {
     function rateDoc() { return /databases/$(database)/documents/rate/$(me()); }
     function rateOk() {
       return getAfter(rateDoc()).data.at == request.time
-        && (!exists(rateDoc()) || get(rateDoc()).data.at < request.time - duration.value(20, 's'));
+        && (!exists(rateDoc()) || get(rateDoc()).data.at < request.time - duration.value(20, 's'))
+        && capOk(exists(rateDoc()) ? get(rateDoc()).data : {}, getAfter(rateDoc()).data);
+    }
+    // v16 (H22): حد يومي: 30 إنشاءً (بلاغ، إشعار تسليم، طلب استلام) لكل حساب في 24 ساعة، فلا يستنفد حساب واحد
+    // حصة الكتابة المجانية اليومية. w = بداية النافذة (وقت الخادم)، n = عدد الإنشاءات فيها
+    function capOk(b, a) {
+      return a.get('n', 0) is int && a.get('w', null) is timestamp
+        && ((b.get('w', null) is timestamp && b.w > request.time - duration.value(24, 'h'))
+          ? (a.w == b.w && a.n == b.get('n', 0) + 1 && a.n <= 30)
+          : (a.w == request.time && a.n == 1));
     }
     // الأغراض الثمينة (v7؛ نفس القائمة HIGH_VALUE في js/constants.js — عدّلهما معاً)
     // v10 (H14): للتسليم المباشر والحذف بصلاحية الإدارة فقط. القبول بموظف واحد لكل التصنيفات
@@ -234,7 +243,11 @@ service cloud.firestore {
       allow create: if signedIn()
         && !exists(/databases/$(database)/documents/config/app)
         && request.resource.data.ownerUid == me();
-      allow update: if isAdmin() && request.resource.data.ownerUid == resource.data.ownerUid;
+      // v16 (H22): حقول معروفة فقط (الوثيقة يقرؤها الجميع)
+      allow update: if isAdmin() && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.keys().hasOnly(['ownerUid', 'appName', 'createdAt', 'samplesOff'])
+        && (!('samplesOff' in request.resource.data) || request.resource.data.samplesOff is bool)
+        && strMax(request.resource.data, 'appName', 60);
       allow delete: if false;
     }
 
@@ -270,10 +283,16 @@ service cloud.firestore {
           return request.resource.data.keys().hasOnly(['email']) && request.resource.data.email is string
             && request.resource.data.email.size() <= 320;
         }
+        // v16 (H22): وثيقتان فقط: codes (رموز الاستلام: خريطة نصوص قصيرة) وprofile (البريد)
+        function codesOk() {
+          return request.resource.data.keys().hasOnly(['codes']) && request.resource.data.codes is map
+            && request.resource.data.codes.size() <= 300;
+        }
         allow read: if signedIn() && (userId == me() || (docId == 'profile' && isAdmin()));
         // صاحب الحساب: البريد = بريد رمز الدخول نفسه فقط (لا يدّعي بريداً آخر)
         allow create, update: if signedIn() && userId == me()
-            && (docId != 'profile' || (profileOk() && request.resource.data.email == request.auth.token.email))
+            && ((docId == 'codes' && codesOk())
+              || (docId == 'profile' && profileOk() && request.resource.data.email == request.auth.token.email))
           // الإدارة (الترحيل): البريد نفسه الموجود في الوثيقة العامة القديمة
           || (docId == 'profile' && isAdmin() && profileOk()
             && request.resource.data.email == get(/databases/$(database)/documents/users/$(userId)).data.get('email', ''));
@@ -358,11 +377,13 @@ service cloud.firestore {
 
     // التفاصيل السرية للغرض (اللون، الماركة، الوصف، مكان العثور والمبنى والقاعة، موضع الحفظ): لموظفي مكتبه فقط
     match /itemSecrets/{itemId} {
-      function kept(k) { return resource.data.get(k, '') == '' || request.resource.data.get(k, '') == resource.data.get(k, ''); }
+      // v16 (H22): بعد 24 ساعة لا تتغير الأدلة ولا تُملأ الفارغة منها (كان ملء اللون أو الماركة أو الإجابات بعد وصول طلب
+      // يسمح بمطابقتها مع إجابات صديق). الاستثناء: مكان العثور الفارغ (نقل المكان القديم من الإعلان العام إلى هنا)
+      function kept(k) { return request.resource.data.get(k, '') == resource.data.get(k, ''); }
       function evidenceKept() {
-        return kept('color') && kept('brand') && kept('desc') && kept('spot') && kept('bldg') && kept('room')
-          && (!('details' in resource.data) || resource.data.details.size() == 0
-              || request.resource.data.get('details', {}) == resource.data.details);
+        return kept('color') && kept('brand') && kept('desc') && kept('bldg') && kept('room')
+          && (resource.data.get('spot', '') == '' || kept('spot'))
+          && request.resource.data.get('details', {}) == resource.data.get('details', {});
       }
       function itemFresh(itemId) {
         return get(/databases/$(database)/documents/items/$(itemId)).data.get('createdAt', 0) > request.time.toMillis() - 86400000;
@@ -606,7 +627,16 @@ service cloud.firestore {
         && request.resource.data.get('returnRate', 0) is number
         && request.resource.data.get('returnRate', 0) >= 0 && request.resource.data.get('returnRate', 0) <= 100
         && request.resource.data.get('avgDays', 0) is number && request.resource.data.get('avgRating', 0) is number
-        && request.resource.data.get('ratings', 0) is number && request.resource.data.get('updatedAt', 0) is number;
+        && request.resource.data.get('ratings', 0) is number && request.resource.data.get('updatedAt', 0) is number
+        // v16 (H22): أرقام منطقية: غير سالبة، والمُعاد لا يزيد على المُسجَّل، والرضا من 0 إلى 5، ووقت التحديث «الآن»
+        && request.resource.data.get('monthReceived', 0) >= 0 && request.resource.data.get('monthReturned', 0) >= 0
+        && request.resource.data.get('totalReceived', 0) >= 0
+        && request.resource.data.get('totalReturned', 0) >= 0
+        && request.resource.data.get('totalReturned', 0) <= request.resource.data.get('totalReceived', 0)
+        && request.resource.data.get('avgDays', 0) >= 0
+        && request.resource.data.get('avgRating', 0) >= 0 && request.resource.data.get('avgRating', 0) <= 5
+        && request.resource.data.get('ratings', 0) >= 0
+        && fresh(request.resource.data, 'updatedAt');
     }
 
     // سجل العمليات (سلسلة الحيازة): يُضاف إليه فقط، ولا يُعدَّل
@@ -743,9 +773,12 @@ service cloud.firestore {
     // حتى لا يتجاوز أحد الحدّ بحذفها ثم الإنشاء مباشرة
     match /rate/{userId} {
       allow read: if signedIn() && userId == me();
+      // v16 (H22): ومعه عداد النافذة اليومية (capOk)؛ لا يُصفَّر بالكتابة المباشرة، ولا يُحذف قبل انتهاء النافذة
       allow create, update: if signedIn() && userId == me()
-        && request.resource.data.keys().hasOnly(['at']) && request.resource.data.at == request.time;
-      allow delete: if signedIn() && userId == me() && resource.data.at < request.time - duration.value(20, 's');
+        && request.resource.data.keys().hasOnly(['at', 'n', 'w']) && request.resource.data.at == request.time
+        && capOk(resource == null ? {} : resource.data, request.resource.data);
+      allow delete: if signedIn() && userId == me() && resource.data.at < request.time - duration.value(20, 's')
+        && (!(resource.data.get('w', null) is timestamp) || resource.data.w < request.time - duration.value(24, 'h'));
     }
 
     // صلاحيات الموظفين: يمنحها ويسحبها المالك فقط

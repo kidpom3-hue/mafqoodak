@@ -146,7 +146,8 @@ export function timeline(i){
   </div>`;
 }
 /* مقارنة إجابات صاحب الطلب بالحقيقة (من itemSecrets) */
-const OK = '<span class="v ok">✓</span>', OK2 = '<span class="v ok">✓✓</span>', NO = '<span class="v bad">✗</span>', NA = () => `<span class="v mute">${t('st.na')}</span>`;
+// H22: لا «لم يحدد» في عمود النتيجة: ما لم يقله صاحب الطلب ظاهر في عموده («لم يذكر»)، والنتيجة فارغة
+const OK = '<span class="v ok">✓</span>', OK2 = '<span class="v ok">✓✓</span>', NO = '<span class="v bad">✗</span>';
 const isRes = v => v === OK || v === OK2 || v === NO;
 /* مقارنة إجابة سؤال التصنيف بالحقيقة: ✓ أو ✗، أو '' بلا نتيجة
    الأرقام وآخر 4 والاختيار: تطابق تام · التقريبي: الفرق ضمن الأكبر من 20% أو 20 ريالاً
@@ -177,10 +178,10 @@ export const colorPublic = f => f?.photo === 'clear' || f?.photo === 'blur' || f
 // total = عدد الصفوف التي لها نتيجة (✓ أو ✗) دون التاريخ، وhits = المتطابق منها
 export function claimChecks(c, f){
   const q = claimOf(f?.cat);
-  const color = !q.fields.includes('color') ? '' : colorPublic(f) ? SEEN() : !c.color ? NA() : !f?.color ? '' : c.color === f.color ? OK : NO;
-  const place = !c.lostSpot ? NA() : !f?.spot ? '' : c.lostSpot !== f.spot ? NO : (c.bldg && c.bldg === f.bldg ? OK2 : OK);
+  const color = !q.fields.includes('color') ? '' : colorPublic(f) ? SEEN() : !c.color ? '' : !f?.color ? '' : c.color === f.color ? OK : NO;
+  const place = !c.lostSpot ? '' : !f?.spot ? '' : c.lostSpot !== f.spot ? NO : (c.bldg && c.bldg === f.bldg ? OK2 : OK);
   const gap = c.lostDate && f?.foundDate ? dayNum(f.foundDate) - dayNum(c.lostDate) : null;
-  const date = !c.lostDate ? NA() : gap === null ? '' : gap < 0 || gap > 14 ? NO : '';
+  const date = !c.lostDate ? '' : gap === null ? '' : gap < 0 || gap > 14 ? NO : '';
   const det = q.details.map(d => ({d, said: saidOf(c, d), truth: f?.details?.[d.k] || ''})).map(x => ({...x, v: detailCheck(x.d, x.said, x.truth)}));
   // وصف الإثبات الحرّ مقابل الوصف السري: ✓ فقط إن ذكر الاثنان العدد نفسه، وبلا ✗ أبداً
   const proof = c.proof && f?.desc && sameNumber(c.proof, f.desc) ? OK : '';
@@ -222,21 +223,25 @@ function claimCompare(c, f){
   // عرض الإجابة: اسم الخيار من القاموس، والأرقام من اليسار لليمين
   const fmt = (d, v) => d.type === 'pick' ? ((d.opts || []).includes(v) ? dfOpt(d.k, v) : esc(v)) : d.type === 'text' ? esc(v) : `<span dir="ltr">${esc(v)}</span>`;
   const none = `<span class="muted">${t('st.notSaid')}</span>`;
+  // H22: سؤال لم يُجب عنه صاحب الطلب ولم يُسجَّل له شيء في المكتب لا يفيد المقارنة: يُجمع في سطر واحد بدل صف «لم يحدد | —»
+  const empty = [];
+  const opt = (has, label, ...rest) => has ? row(label, ...rest) : (empty.push(label), '');
   return `<div class="cmp${kind ? ' cmp-conflict' : ''}">
     ${kind ? `<div class="cmp-alert">${icon('alert')}<span>${t(kind === 'finder' ? 'st.conflictShortF' : 'st.conflictShortR')}</span></div>` : ''}
     <div class="cmp-row cmp-head"><b></b><span>${t('st.cmpSaid')}</span><span>${t('st.cmpTruth')}</span><span class="v"></span></div>
     ${asKeys.includes('claimantName') ? '' : row(t('st.cmpName'), said(c.claimantName), card)}
     ${asKeys.includes('idLast4') ? '' : row(t('st.cmpLast4'), c.idLast4 ? `<span dir="ltr">${esc(c.idLast4)}</span>` : said(''), card)}
     ${f.finderNote ? row(t('st.cmpFinder'), '<span class="muted">—</span>', esc(f.finderNote)) : ''}
-    ${det.map(x => row(dfLabel(f.cat, x.d.k), x.said ? fmt(x.d, x.said) : none, x.truth ? fmt(x.d, x.truth) : x.d.as ? card : truth(''), x.v)).join('')}
-    ${q.fields.includes('color') ? row(t('c.color'), said(colorName(c.color)), truth(colorName(f.color)), color) : ''}
+    ${det.map(x => opt(x.said || x.truth || x.d.as || x.v, dfLabel(f.cat, x.d.k), x.said ? fmt(x.d, x.said) : none, x.truth ? fmt(x.d, x.truth) : x.d.as ? card : truth(''), x.v)).join('')}
+    ${q.fields.includes('color') ? opt(c.color || f.color, t('c.color'), said(colorName(c.color)), truth(colorName(f.color)), color) : ''}
     ${row(t('st.cmpPlace'), said(spotText({spot: c.lostSpot, bldg: c.bldg, room: c.room})), truth(spotText(f)), place)}
     ${row(t('st.cmpDate'), said(c.lostDate && fmtDate(c.lostDate)), truth(f.foundDate && t('st.foundOn', {date: fmtDate(f.foundDate)})), date)}
-    ${q.fields.includes('brand') ? row(t('st.cmpBrand'), said(c.brand), truth(f.brand)) : ''}
-    ${row(t('st.cmpProof'), said(c.proof), truth(f.desc), proof)}
+    ${q.fields.includes('brand') ? opt(c.brand || f.brand, t('st.cmpBrand'), said(c.brand), truth(f.brand)) : ''}
+    ${opt(c.proof || f.desc, t('st.cmpProof'), said(c.proof), truth(f.desc), proof)}
     ${c.question ? row(`${t('st.cmpQA')}: <span class="cmp-q">${esc(c.question)}</span>`, answered(c) ? esc(c.answer) : `<span class="muted">${t(c.status === 'pending' ? 'qa.waiting' : 'qa.none')}</span>`, '<span class="muted">—</span>') : ''}
     ${rep ? `<div class="cmp-row cmp-head cmp-rep"><b>${icon('bell')}${t('st.fromPrior')}</b><span>${t('st.cmpInReport')}</span><span>${t('st.cmpTruth')}</span><span class="v"></span></div>
       ${rc.map(x => row(x.label || t(x.k), x.said || '<span class="muted">—</span>', x.truth || '<span class="muted">—</span>', x.v ? x.v.replace('✓</span>', `✓ <small>${t('st.fromReport')}</small></span>`) : '')).join('')}` : ''}
+    ${empty.length ? `<p class="cmp-empty">${t('st.cmpEmpty', {list: empty.join(t('c.listSep'))})}</p>` : ''}
     <div class="cmp-sum">${t('st.cmpSum', {n: hits, total})}${rep ? ` <span class="muted">${t('st.priorWeight')}</span>` : ''}</div>
   </div>`;
 }

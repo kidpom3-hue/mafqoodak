@@ -62,7 +62,14 @@ export const dbx = {
   // H7: حدّ الإغراق بلا خادم. إنشاء بلاغ أو إشعار تسليم أو طلب استلام يكتب معه في العملية نفسها rate/{uid} = {at: وقت الخادم}،
   // والقواعد ترفض الإنشاء إن كان آخر إنشاء لهذا الحساب قبل أقل من 20 ثانية (انظر rateOk في firestore.rules)
   // extra(b, ref): كتابات إضافية في العملية نفسها (v7: حصة طلبات الاستلام claimQuota وصور الإثبات claimProofs)
-  createLimited: (path, data, uid, extra) => { const b = writeBatch(db); b.set(doc(db, path), data); b.set(doc(db, 'rate/' + uid), {at: serverTimestamp()}); extra?.(b, p => doc(db, p)); return b.commit(); },
+  // H22 (v16): حد يومي 30 إنشاء لكل حساب: rate = {n, w} — n عدد الإنشاءات في النافذة، w بدايتها (وقت الخادم).
+  // keepW = بداية النافذة الحالية كما قرأناها (تبقى كما هي) أو null لبدء نافذة جديدة الآن (n = 1)
+  createLimited: (path, data, uid, extra, rate) => {
+    const b = writeBatch(db); b.set(doc(db, path), data);
+    // 'legacy' = {at} وحده (انتقالي لقواعد v15 قبل نشر v16)
+    b.set(doc(db, 'rate/' + uid), rate === 'legacy' ? {at: serverTimestamp()} : {at: serverTimestamp(), n: rate?.n || 1, w: rate?.keepW || serverTimestamp()});
+    extra?.(b, p => doc(db, p)); return b.commit();
+  },
   // قراءة مرة واحدة لقائمة وثائق بشروط مساواة (مثل بلاغات المستخدم في كل المكاتب)
   // عدد المستندات فقط (قراءة واحدة لكل 1000 مستند) بدل تحميلها كلها
   count: async (col, filters) => (await getCountFromServer(query(collection(db, col), ...filters.map(([f, op, v]) => where(f, op, v))))).data().count,

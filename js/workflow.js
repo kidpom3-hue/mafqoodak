@@ -371,7 +371,10 @@ export async function editItem(i, patch, secret){
   for (const k of ['status', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt', 'officeId', 'createdBy', 'createdAt', 'ref', 'sample', 'keepUntil', 'lastLog']) delete patch[k];
   if (patch.cat && !canChangeCat(i.cat, patch.cat)) fail(t('wf.hvDowngrade'));
   // v14: بعد 24 ساعة تبقى الأدلة كما سُجّلت (للموظف)، ويُكتب الباقي
-  if (evidenceLocked(i)){ const old = S.secrets[i.id] || {}; for (const k of EVIDENCE){ if (old[k] !== undefined && old[k] !== '') secret[k] = old[k]; } }
+  // H22 (v16): كما هي تماماً، والفارغ منها يبقى فارغاً (القواعد لا تسمح بملئه بعد 24 ساعة)
+  if (evidenceLocked(i)){ const old = S.secrets[i.id] || {}; for (const k of EVIDENCE){
+    if (k === 'spot' && !old.spot) continue;   // المكان الفارغ وحده يُملأ (نقل المكان القديم من الإعلان العام)
+    if (old[k] === undefined) delete secret[k]; else secret[k] = old[k]; } }
   const b = dbx.batch();
   itemUpdate(b, i, {...patch, updatedAt: Date.now()}, {...secret, officeId: i.officeId});
   log(b, i.officeId, 'edit', {itemId: i.id});
