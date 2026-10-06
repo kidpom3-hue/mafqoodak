@@ -57,18 +57,18 @@ export const fmtDate = s => { const d = noon(s); try { return d ? fmt('d', {day:
 export const fmtDateTime = ms => { if (!okMs(ms)) return ''; try { return fmt('dt', {day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit'}).format(new Date(ms)); } catch { return ''; } };
 // G2: الوقت الدقيق الموحّد: «الأحد 27 سبتمبر · 9:31 م»، والسنة فقط إن لم تكن الحالية،
 // وخلال آخر 24 ساعة: «قبل 5 دقائق · 9:31 م». الإنجليزية بالمنطق نفسه
-export function when(ms){
+/* H23: صيغة الوقت الموحّدة في كل الموقع: «29 سبتمبر 2026 · 2:00 ص (قبل 7 أيام)» (بالإنجليزية بالمنطق نفسه).
+   fullWhen = الجزء المطلق فقط (للتلميح title عند المرور أو اللمس على أي وقت نسبي) */
+export function fullWhen(ms){
   if (!okMs(ms)) return '';
   // الساعة لا تنقسم على سطرين: «· 9:31 م» بمسافات غير قابلة للكسر (السطر ينكسر قبل «·» فقط عند الحاجة)
   const d = new Date(ms), clock = ' ·\u00A0' + fmt('hm', {hour: 'numeric', minute: '2-digit', hour12: true}).format(d).replace(/\s/g, '\u00A0');
-  const m = Math.floor((Date.now() - ms) / 6e4);
-  if (m >= 0 && m < 24 * 60){
-    const rel = m < 1 ? t('time.now') : m < 60 ? tp('time.minAgo', m) : tp('time.hourAgo', Math.floor(m / 60));
-    return rel + clock;
-  }
-  const sameYear = isoDay(ms).slice(0, 4) === today().slice(0, 4);
-  const day = fmt(sameYear ? 'dm' : 'dmy', sameYear ? {day: 'numeric', month: 'long'} : {day: 'numeric', month: 'long', year: 'numeric'}).format(d);
-  return fmt('wd', {weekday: 'long'}).format(d) + ' ' + day + clock;
+  return fmt('dmy', {day: 'numeric', month: 'long', year: 'numeric'}).format(d) + clock;
+}
+export function when(ms){
+  if (!okMs(ms)) return '';
+  // وقت في المستقبل (آخر موعد للاستلام): التاريخ والساعة فقط
+  return ms > Date.now() + 6e4 ? fullWhen(ms) : `${fullWhen(ms)} (${relTime(ms)})`;
 }
 // المدة بالأيام: nom للرفع («متبقٍّ يومان»)، وبدونه للجر والنصب («قبل يومين»، «مدة الحفظ 90 يوماً»)
 export const daysWord = (n, nom = false) => tp(nom ? 'n.daysNom' : 'n.days', n);

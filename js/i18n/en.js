@@ -221,6 +221,7 @@ export const EN = {
   "gc.likelyTitle": "Possible match",
   "gc.likely": "Possible match: {what} and place match, but the score is under 85%. Check before linking.",
   "gc.keyAny": "The answer",
+  "st.rNextPickedNoRef": "You suggested an item from the store — waiting for the reporter",
   "home.lostIn": "Lost something at <span class=\"hl\">{name}</span>?",
   "home.lead": "Everything handed in to the lost property office is listed here. Search for your item or report it, then collect it with a pickup code.",
   "home.searchPh": "e.g. wallet, car key, earbuds",

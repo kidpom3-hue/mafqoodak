@@ -3,7 +3,7 @@ import { icon, LOGO, brandOf, CATS, cat, catName, isGrouped, isHiddenCat, colorN
 import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, tAr, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode, iHandedIn } from '../state.js';
-import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack } from './common.js';
+import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
 import { aiReady } from '../firebase.js';
@@ -82,7 +82,7 @@ export function groupCard(g){
     <div class="thumb">${icon(cat(g.group).icon)}</div>
     <div class="card-body">
       <h3>${t('grp.' + g.group + '.title')}</h3>
-      <div class="meta">${icon('box')}<span>${t('grp.count', {items: tp('n.item', g.n), date: g.last ? relDay(isoDay(g.last)) : '—'})}</span></div>
+      <div class="meta">${icon('box')}<span>${t('grp.count', {items: tp('n.item', g.n), date: g.last ? relDayT(isoDay(g.last)) : '—'})}</span></div>
       <span class="btn sm soft grp-cta">${icon('shield')}${t('grp.' + g.group + '.cta')}</span>
     </div>
   </div>`;
@@ -107,7 +107,7 @@ export function card(i){
     <div class="card-body">
       <span class="ref">${esc(i.ref)}</span>
       <h3>${esc(showTitle(i))}</h3>
-      <div class="meta">${icon('clock')}<span>${relDay(i.foundDate)}</span></div>
+      <div class="meta">${icon('clock')}<span>${relDayT(i.foundDate)}</span></div>
       ${i.status !== 'available' ? pill(ITEM_STATUS, i.status) : ''}
     </div>
   </div>`;
@@ -217,7 +217,7 @@ export function vItem(){
           ${staffMode && f.color ? `<dt>${t('c.color')}</dt><dd>${colorDot(f.color)}${esc(colorName(f.color))}</dd>` : ''}
           ${staffMode && f.brand ? `<dt>${t('st.cmpBrand')}</dt><dd>${esc(f.brand)}</dd>` : ''}
           ${staffMode ? `<dt>${t('if.spot')}</dt><dd>${esc(spotText(f) || t('it.unknown'))}</dd>` : ''}
-          <dt>${t('if.date')}</dt><dd>${fmtDate(i.foundDate)} <span class="muted">(${relDay(i.foundDate)})</span></dd>
+          <dt>${t('if.date')}</dt><dd>${fmtDate(i.foundDate)} <span class="muted">(${relDayT(i.foundDate)})</span></dd>
           ${staffMode && f.storage ? `<dt>${t('if.storage')}</dt><dd>${esc(f.storage)}</dd>` : ''}
           ${i.status === 'disposed' && i.disposal ? `<dt>${t('a.method')}</dt><dd>${disposalLabel(i.disposal)}${i.disposedAt ? ` <span class="muted">(${fmtDate(isoDay(i.disposedAt))})</span>` : ''}</dd>` : ''}
           ${staffMode && f.disposalNote ? `<dt>${t('it.disposalNote')}</dt><dd>${esc(f.disposalNote)}</dd>` : ''}
@@ -506,7 +506,7 @@ export function claimCardMine(c){
       : `<div class="note warn">${icon('info')}<span>${t('mine.noCode')}</span></div>
          ${c.pickupBy ? `<div class="note ${late ? 'warn' : 'info'}">${icon('clock')}<span>${t(late ? 'st.pickupEnded' : 'mine.collectBy', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`})}</span></div>` : ''}`;
   }
-  else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>${t('mine.done', {when: relTime(c.doneAt)})}</span></div>${rateBox(c)}`;
+  else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>${t('mine.done', {when: relT(c.doneAt)})}</span></div>${rateBox(c)}`;
   else if (c.status === 'rejected') body = `<div class="note warn">${icon('info')}<span>${c.note ? t('mine.rejectedWhy', {note: esc(noteText(c.note))}) : t('mine.rejected')}</span></div>`;
   // H13a: أُغلق لأن الغرض لم يعد متاحاً (حُذف أو سُلّم أو أُرشف): سبب واضح بدل «انتهت مهلة الاستلام»
   // H20: سبب آخر غير انتهاء المهلة يظهر كما كتبه المكتب
@@ -569,9 +569,10 @@ export function reportCardMine(r, focus){
   const next = r.status !== 'open' ? t(r.closedReason === 'office' ? 'ns.closedOffice' : r.closedReason === 'self' ? 'ns.closedSelf' : 'ns.closed')
     : need === 'stale' ? t('ns.stale') : active ? t('ns.claim') : need === 'sugg' ? t('ns.sugg') : t('ns.search');
   return mcard({key: 'r:' + r.id, open: focus || !!need, fresh: FRESH.has('r:' + r.id), muted: r.status !== 'open', tone: need ? 'warn' : '', pillHtml: pill(REPORT_STATUS, r.status), next,
-    head: `<span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}</span><h3>${esc(r.title)}</h3>`,
-    body: `<div><span class="meta">${r.color ? colorDot(r.color) + esc(colorName(r.color)) + ' · ' : ''}${t('st.lostOn', {date: relDay(r.lostDate)})}</span><span class="meta">${icon('building')}${esc(officeName(r.officeId))}</span>
-      ${whenLine('c.sentAt', r.createdAt)}${whenLine('c.editedAt', r.editedAt)}</div>
+    // H23: وقت الإرسال في البطاقة المطوية نفسها
+    head: `<span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}</span><h3>${esc(r.title)}</h3>${whenLine('c.sentAt', r.createdAt)}`,
+    body: `<div><span class="meta">${r.color ? colorDot(r.color) + esc(colorName(r.color)) + ' · ' : ''}${t('st.lostOn', {date: relDayT(r.lostDate)})}</span><span class="meta">${icon('building')}${esc(officeName(r.officeId))}</span>
+      ${whenLine('c.editedAt', r.editedAt)}</div>
     ${r.status === 'open' && isStale(r) && !active ? `<div class="note warn stale">${icon('clock')}<span><b>${t('rc.stillQ')}</b> ${t('rc.stillHint')}</span></div>
       <div class="btn-row"><button class="btn sm" data-act="renewReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.stillYes')}</button>
         <button class="btn sm ghost" data-act="closeReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.stillFound')}</button></div>`
@@ -581,7 +582,7 @@ export function reportCardMine(r, focus){
       ${auto ? `<div class="pick-box maybe-box"><span class="t">${icon('search')}${t('rc.maybe')}</span>${sugg(auto)}<p class="hint">${t('rc.maybeHint')}</p></div>`
         : !pick && !active ? `<div class="note">${icon('clock')}<span>${t('rc.none')}</span></div>` : ''}
       ${ai.length ? `<span class="label">${icon('spark')} ${t('rc.ai')}</span><div class="list">${ai.map(m => { const it = item(m.id); return it && ACTIVE.includes(it.status) && !no.has(it.id) ? `<div>${miniItem(it)}<div class="reason">${esc(m.reason || '')}</div></div>` : ''; }).join('')}</div>`
-        : r.ai ? `<div class="note">${icon('spark')}<span>${t('rc.aiNone', {when: relTime(r.ai.at)})}</span></div>` : ''}
+        : r.ai ? `<div class="note">${icon('spark')}<span>${t('rc.aiNone', {when: relT(r.ai.at)})}</span></div>` : ''}
       <div class="btn-row">
         ${aiReady() ? `<button class="btn sm soft" data-act="aiMatch" data-id="${esc(r.id)}">${icon('spark')}${t('rc.aiMatch')}</button>` : ''}
         ${closeBtn}

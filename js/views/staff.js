@@ -3,7 +3,7 @@ import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STA
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText, hasKey } from '../i18n.js';
 import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, groupKeyLabel, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist, isOwner } from '../state.js';
-import { backBtn, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
+import { backBtn, relT, relDayT, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry, migratePublic } from '../migrate.js';
@@ -118,7 +118,7 @@ export function staffItems(){
       <div class="row-main">
         <div class="row-top"><span class="ref">${esc(i.ref)}</span>${pill(ITEM_STATUS, i.status)}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${i.sample ? `<span class="pill mute">${t('c.sample')}</span>` : ''}</div>
         <div class="row-title">${esc(showTitle(i))}</div>
-        <div class="meta">${esc(spotText(i))} · ${relDay(i.foundDate)}${i.storage ? ' · ' + esc(i.storage) : ''}${i.status === 'available' && left < 0 ? ` · <span class="flag">${t('st.overKeep')}</span>` : i.status === 'available' && left <= 7 ? ` · <span class="flag">${left ? t('st.keepIn', {days: daysWord(left)}) : t('st.keepToday')}</span>` : ''}</div>
+        <div class="meta">${esc(spotText(i))} · ${relDayT(i.foundDate)}${i.storage ? ' · ' + esc(i.storage) : ''}${i.status === 'available' && left < 0 ? ` · <span class="flag">${t('st.overKeep')}</span>` : i.status === 'available' && left <= 7 ? ` · <span class="flag">${left ? t('st.keepIn', {days: daysWord(left)}) : t('st.keepToday')}</span>` : ''}</div>
       </div>
     </div>`; }).join('')}</div>`;
 }
@@ -287,6 +287,7 @@ function groupBox(c, own){
     <div class="list">${cands.map(({i, s}) => `<div class="cand">
       <div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
         ${own ? '' : `<button class="btn sm ${strong?.i.id === i.id ? '' : 'soft'}" data-act="linkClaim" data-id="${esc(c.id)}" data-i="${esc(i.id)}">${icon('check')}${t(strong?.i.id === i.id ? 'gc.confirm' : 'gc.link')}</button>`}</div>
+      ${whenLine('rc.itemAt', i.createdAt)}
       ${strong?.i.id === i.id ? `<span class="meta hit-line">${icon('shield')}${t('gc.strong', {what})}</span>` : likely?.i.id === i.id ? `<span class="meta hit-line near">${icon('info')}${t('gc.likely', {what})}</span>` : ''}</div>`).join('')}</div>
     ${q && !own ? `<div class="note info gq">${icon('question')}<span>${t('gc.qHint')}<br><b>${esc(q)}</b></span>
       <button class="btn sm soft" data-act="askSugg" data-id="${esc(c.id)}" data-q="${esc(q)}">${t('gc.qSend')}</button></div>` : ''}`;
@@ -488,12 +489,14 @@ function reportCardStaff(r, open, fresh){
   // H10: في التصنيفات بلا اقتراح آلي (نقود، بطاقات…) لا يظهر إلا من طابق تفصيلاً سرياً؛ والمطابق يحمل شارة «تفصيل سري مطابق»
   const cands = isOpen ? staffCands(r, 3) : [];
   const refs = [...rejectedOf(r)].map(id => { const it = item(id); if (!it) ensureItem(id); return it?.ref || ''; }).filter(Boolean);
-  const pickRef = r.staffPick ? (item(r.staffPick)?.ref || '') : '';
+  // H23: رقم قيد الغرض المرشّح؛ إن لم يُحمَّل بعد نجلبه، وحتى يصل صياغة بديلة بلا شرطة فارغة
+  const pickRef = r.staffPick ? (item(r.staffPick)?.ref || (ensureItem(r.staffPick), '')) : '';
   const next = !isOpen ? t('st.rNextClosed', {when: when(r.closedAt || r.createdAt)})
-    : r.staffPick ? t('st.rNextPicked', {ref: `<b dir="ltr">${esc(pickRef)}</b>`}) : cands.length ? t('st.rNextCands', {n: cands.length}) : t('st.rNextNone');
+    : r.staffPick ? (pickRef ? t('st.rNextPicked', {ref: `<b dir="ltr">${esc(pickRef)}</b>`}) : t('st.rNextPickedNoRef')) : cands.length ? t('st.rNextCands', {n: cands.length}) : t('st.rNextNone');
   return mcard({key: 'sr:' + r.id, open, fresh, muted: !isOpen, pillHtml: isStale(r) ? `<span class="pill mute">${t('st.oldReport')}</span>` : isOpen ? '' : pill(REPORT_STATUS, r.status), next,
-    head: `<span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(subLabel(r.sub)) : ''}</span><h3>${esc(r.title)}</h3>${person(r.uid)}`,
-    body: `<div>${r.color ? `<span class="meta">${colorDot(r.color)}${esc(colorName(r.color))}</span>` : ''}${whenLine('c.sentAt', r.createdAt)}${whenLine('c.editedAt', r.editedAt)}</div>
+    // H23: «أُرسل: 29 سبتمبر 2026 · 2:00 ص (قبل 7 أيام)» في البطاقة المطوية نفسها
+    head: `<span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(subLabel(r.sub)) : ''}</span><h3>${esc(r.title)}</h3>${person(r.uid)}${whenLine('c.sentAt', r.createdAt)}`,
+    body: `<div>${r.color ? `<span class="meta">${colorDot(r.color)}${esc(colorName(r.color))}</span>` : ''}${whenLine('c.editedAt', r.editedAt)}</div>
       ${r.photo ? `<div class="row-thumb" style="width:84px;height:84px">${icon('camera')}<img data-photo="r_${esc(r.id)}" alt="" hidden></div>` : ''}
       ${r.desc ? `<div class="proof">${esc(r.desc)}</div>` : ''}
       <div class="meta">${person(r.uid)} · ${r.spot ? t('st.lostAt', {place: esc(spotText(r)), date: fmtDate(r.lostDate)}) : t('st.lostOn', {date: fmtDate(r.lostDate)})}</div>
@@ -501,6 +504,7 @@ function reportCardStaff(r, open, fresh){
       ${isOpen ? acceptBtn(r) : ''}
       ${!isOpen ? '' : cands.length ? `<span class="label">${t('st.cands')}</span><div class="list">${cands.map(({i, s}) => `<div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
         ${r.staffPick === i.id ? `<span class="pill ok">${icon('check')}${t('st.picked')}</span>` : `<button class="btn sm soft" data-act="pickFor" data-r="${esc(r.id)}" data-i="${esc(i.id)}">${t('st.pick')}</button>`}</div>
+        ${whenLine('rc.itemAt', i.createdAt)}
         ${secretHit(r, i) ? `<span class="meta hit-line">${icon('lock')}${t('st.secretHit')}</span>` : ''}`).join('')}</div>`
         : `<p class="muted">${t('st.noCands')}</p>`}`});
 }
