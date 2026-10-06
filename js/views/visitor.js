@@ -474,10 +474,6 @@ export function foundCardMine(f, focus){
       <span class="meta">${icon('building')}${esc(officeName(f.officeId))}</span>${whenLine('c.sentAt', f.createdAt)}
       ${body}`});
 }
-export function claimSteps(st){
-  const s1 = true, s2 = st === 'approved' || st === 'done', s3 = st === 'done';
-  return `<div class="steps"><span class="${s1 ? 'done' : ''}"><i></i>${t('mine.stSent')}</span><span class="sep"></span><span class="${s2 ? 'done' : ''}"><i></i>${t('mine.stApproved')}</span><span class="sep"></span><span class="${s3 ? 'done' : ''}"><i></i>${t('mine.stDone')}</span></div>`;
-}
 export function claimCardMine(c){
   const i = item(c.itemId); if (!i) ensureItem(c.itemId);
   // H11: طلب مجمّع (بالوصف) لم يُقبل بعد: بلا غرض ظاهر لصاحبه، وحالته «قيد المطابقة»
@@ -495,13 +491,11 @@ export function claimCardMine(c){
     <div class="btn-row">${claimEditable(c) && (i || gw) ? `<button class="btn sm ghost" data-act="editClaim" data-id="${esc(c.id)}">${icon('edit')}${t('cl.edit')}</button>` : ''}
       <button class="btn sm ghost" data-act="withdrawClaim" data-id="${esc(c.id)}">${icon('x')}${t('cl.withdraw')}</button></div>`;
   else if (c.status === 'approved'){
-    // رمز الاستلام في مكان بارز أعلى البطاقة: خط كبير، وزر نسخ، وآخر موعد للاستلام
-    // v9: الرمز XXXX-XXXX ومعه QR بالرمز نفسه (يُرسم بعد تحميل qr.js في hydrate)
+    // رمز الاستلام في مكان بارز أعلى البطاقة: خط كبير، وزر نسخ، وآخر موعد للاستلام (H23: يظهر هنا فقط، وبلا QR)
     if (code) top = `<div class="code-tag code-hero"><small>${t('mine.code')}</small><span class="digits" dir="ltr">${esc(fmtPickup(code))}</span>
-      <div class="code-qr" data-qr="${esc(fmtPickup(code))}" aria-hidden="true"></div>
       <button class="btn sm ghost" data-act="copy" data-v="${esc(fmtPickup(code))}">${icon('copy')}${t('c.copy')}</button>
-      ${c.pickupBy ? `<small class="${late ? 'late' : ''}">${t(late ? 'st.pickupEnded' : 'mine.codeUntil', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`, when: when(c.pickupBy)})}</small>` : ''}
-      <small>${t('mine.codeHint')}</small></div>`;
+      ${c.pickupBy ? `<small class="${late ? 'late' : 'until'}">${t(late ? 'st.pickupEnded' : 'mine.codeUntil', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`, when: when(c.pickupBy)})}</small>` : ''}
+      <small class="hint">${t('mine.codeHint')}</small></div>`;
     body = code ? `<dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>`
       : `<div class="note warn">${icon('info')}<span>${t('mine.noCode')}</span></div>
          ${c.pickupBy ? `<div class="note ${late ? 'warn' : 'info'}">${icon('clock')}<span>${t(late ? 'st.pickupEnded' : 'mine.collectBy', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`})}</span></div>` : ''}`;
@@ -516,9 +510,11 @@ export function claimCardMine(c){
   else if (c.status === 'cancelled') body = `<div class="note">${icon('info')}<span>${c.cancelledAt ? t('mine.withdrawn') : c.note ? t('mine.cancelledWhy', {note: esc(noteText(c.note))}) : t('mine.cancelled')}</span></div>`;
   // الخطوة التالية (سطر واحد في الملخّص)
   const need = claimNeed(c);
+  // H23: آخر موعد يظهر مرة واحدة داخل البطاقة؛ الملخّص يذكره فقط حين يقترب (يومان أو أقل)
+  const soon = c.pickupBy && !late && c.pickupBy - Date.now() <= 2 * 864e5;
   const next = gone && ['pending', 'approved'].includes(c.status) ? t('ns.gone')
     : c.status === 'pending' ? t(awaitingAnswer(c) ? 'ns.answer' : gw ? 'gc.nsMatching' : 'ns.review')
-    : c.status === 'approved' ? (late ? t('ns.late') : c.pickupBy ? t('ns.come', {date: esc(dateOf(c.pickupBy))}) : t('ns.comeNoDate'))
+    : c.status === 'approved' ? (late ? t('ns.late') : soon ? t('ns.come', {date: esc(dateOf(c.pickupBy))}) : t('ns.comeNoDate'))
     : c.status === 'done' ? t(c.rating ? 'ns.done' : 'ns.rate') : gw && c.status === 'expired' ? t('gc.nsExpired')
     : c.status === 'expired' && c.note === tAr('sys.itemUnavailable') ? t('ns.gone')
     : c.status === 'expired' && c.note && c.note !== tAr('sys.pickupEnded') ? t('ns.ended')
@@ -527,7 +523,6 @@ export function claimCardMine(c){
     head: `<span class="refs">${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<b dir="ltr" class="req-no">${esc(claimNo(c))}</b></span><h3>${i ? esc(showTitle(i)) : c.grouped ? t('grp.' + c.cat + '.title') : esc(t(gone ? 'mine.goneTitle' : 'c.loadingDots'))}</h3>`,
     body: `${top}
       <span class="meta">${icon('building')}${esc(officeName(c.officeId))}</span>
-      ${['pending', 'approved', 'done'].includes(c.status) && !gone ? claimSteps(c.status) : ''}
       ${claimTimeline(c)}
       ${body}`});
 }

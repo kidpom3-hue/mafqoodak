@@ -236,14 +236,7 @@ dl.facts dd{margin:0;font-weight:600;display:flex;align-items:center;gap:6px;fle
 .maybe-box .hint{margin:0}
 .hit-line{color:var(--ok);font-weight:700;margin-top:-4px}
 .reason{font-size:12.5px;color:var(--muted)}
-.steps{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted);flex-wrap:wrap}
-.steps span{display:inline-flex;align-items:center;gap:5px}
-.steps i{width:8px;height:8px;border-radius:50%;background:var(--line);display:inline-block}
-.steps .done{color:var(--ok)}
-.steps .done i{background:var(--ok)}
-.steps .sep{width:18px;height:1px;background:var(--line)}
 .code-tag{position:relative;align-self:stretch;display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--tag);color:var(--tag-ink);border:1.5px dashed var(--tag-line);border-radius:14px;padding:14px 12px 12px}
-.code-tag::before{content:"";position:absolute;top:10px;inset-inline-start:12px;width:10px;height:10px;border-radius:50%;background:var(--surface);border:1.5px solid var(--tag-line)}
 .code-tag .digits{font-family:var(--f-mono);font-size:32px;font-weight:600;letter-spacing:.28em;direction:ltr;padding-inline-start:.28em}
 .code-tag small{font-size:12.5px;font-weight:600}
 
@@ -772,7 +765,6 @@ html[data-text] .pill{white-space:normal}
 .ctl li{position:relative;font-size:13px;color:var(--muted);line-height:1.5}
 .ctl li::before{content:'';position:absolute;inset-inline-start:-21px;top:.35em;width:8px;height:8px;border-radius:50%;background:var(--surface);border:2px solid var(--primary)}
 .ctl li b{color:var(--ink);font-weight:600}
-.ctl li.future::before{border-color:var(--muted);border-style:dashed}
 /* كل غرض مقترح في بطاقة البلاغ: البطاقة المصغّرة + وقت تسجيله + «هذا غرضي» و«ليس غرضي» */
 .sugg{display:flex;flex-direction:column;gap:6px}
 .list>.sugg+.sugg{border-top:1px dashed var(--line);padding-top:10px}
@@ -1052,9 +1044,6 @@ label.check, .box-head, .box-head b{min-width:0;overflow-wrap:anywhere}
 .note.gq .btn{margin-inline-start:auto}
 /* v9 (H12): رمز الاستلام 8 أحرف XXXX-XXXX ومعه QR (خلفية بيضاء دائماً ليُقرأ) */
 .code-hero .digits{font-size:clamp(24px,8vw,36px);letter-spacing:.04em;white-space:nowrap}
-.code-qr{inline-size:132px;block-size:132px;padding:6px;border-radius:10px;background:var(--qr-bg);align-self:center}
-.code-qr:empty{display:block}
-.code-qr svg{inline-size:100%;block-size:100%;display:block}
 /* H13a: التمرير إلى أي عنصر يُبقيه تحت الترويسة الملتصقة (ارتفاعها الظاهر --hdr-vh يحدّثه syncHeader في ui.js) */
 html{scroll-padding-top:calc(var(--hdr-vh,64px) + 8px)}
 /* H13a: تنبيه الطلبات على أغراض غير متاحة أعلى «قراري» */
@@ -1190,3 +1179,8 @@ html.sheet-open,html.sheet-open body{overflow:hidden}
   .sheet-panel{border-radius:20px;max-height:90vh;margin-bottom:0;padding:22px 20px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
   .sheet-panel::before{display:none}
 }
+/* H23: بطاقة رمز الاستلام: الرمز هو الأبرز، ورقم الطلب والقيد صغيران ثانويان، وآخر موعد مرة واحدة هنا */
+.code-hero .until{font-size:13px}
+.code-hero .hint{font-weight:500;opacity:.85;text-align:center}
+.mcard-h .refs .ref{font-size:11.5px;opacity:.8}
+.mcard-h .refs .req-no{font-size:11.5px;font-weight:500}

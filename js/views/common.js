@@ -96,10 +96,9 @@ export function claimTimeline(c, staff = false){
   // H20: سحبه صاحبه
   if (c.cancelledAt) ev.push([staff ? 'ctl.withdrawnStaff' : 'ctl.withdrawn', c.cancelledAt]);
   ev.sort((a, b) => a[1] - b[1]);
-  // آخر موعد للاستلام: للطلب المقبول (أو الذي انتهت مهلته)، وقد يكون في المستقبل
-  if (c.pickupBy && ['approved', 'expired'].includes(c.status)) ev.push(['ctl.pickupBy', c.pickupBy, c.pickupBy > Date.now()]);
+  // H23: آخر موعد للاستلام لا يُكرَّر هنا: يظهر في بطاقة الرمز (صاحب الطلب) وفي سطر المهلة (الموظف)
   return `<ol class="ctl" aria-label="${t('ctl.title')}">${ev.filter(e => typeof e[1] === 'number' && e[1] > 0)
-    .map(([k, ms, future]) => `<li${future ? ' class="future"' : ''}><b>${t(k)}</b> <span>${when(ms)}</span></li>`).join('')}</ol>`;
+    .map(([k, ms]) => `<li><b>${t(k)}</b> <span>${when(ms)}</span></li>`).join('')}</ol>`;
 }
 // حالة الفتح والطي التي اختارها المستخدم (تبقى عند إعادة الرسم الحيّ): مفتاح البطاقة ← مفتوحة؟ (actions.js يحدّثها)
 export const CARD_OPEN = new Map(), ENDED_OPEN = new Map();
