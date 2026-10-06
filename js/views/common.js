@@ -1,7 +1,7 @@
 // عناصر واجهة مشتركة بين الصفحات
 import { icon, otype, otypeName, oCity, brandOf, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf, statusLabel, ITEM_STATUS } from '../constants.js';
 import { t, hasKey } from '../i18n.js';
-import { LS, esc, relDay, relTime, colorDot, isBuilding, roomWord, spotText, showTitle, when, fullWhen, fmtDate, fmtDateFull, isoDay } from '../utils.js';
+import { LS, esc, relDay, relTime, colorDot, isBuilding, roomWord, spotText, showTitle, when, fullWhen, fmtDate, fmtDateFull, isoDay, okMs, isoMs } from '../utils.js';
 import { aiReady } from '../firebase.js';   // H8: ai.js يُحمَّل عند الحاجة فقط
 import { THEMES, theme, TEXTS, textSize } from '../theme.js';
 import { S, isStaffHere, answered, singleMode } from '../state.js';
@@ -82,9 +82,9 @@ export function thumbHtml(i, cls = 'row-thumb'){
 export const miniItem = (i, extra = '') => { const place = staffView() ? spotText(i) : '';
   return `<button class="mini" data-act="openItem" data-id="${esc(i.id)}">${thumbHtml(i)}<span class="grow"><b>${esc(showTitle(i))}</b><span class="meta">${i.color ? colorDot(i.color) + esc(colorName(i.color)) + ' · ' : ''}${place ? esc(place) + ' · ' : ''}${relDayT(i.foundDate)}</span></span>${extra}</button>`; };
 // G2: سطر وقت دقيق صغير، مثل «أُرسل: الأحد 27 سبتمبر · 9:31 م»
-export const whenLine = (key, ms) => ms ? `<span class="meta when">${icon('clock')}<time datetime="${new Date(ms).toISOString()}" title="${esc(fullWhen(ms))}">${t(key, {when: when(ms)})}</time></span>` : '';
+export const whenLine = (key, ms) => okMs(ms) ? `<span class="meta when">${icon('clock')}<time datetime="${isoMs(ms)}" title="${esc(fullWhen(ms))}">${t(key, {when: when(ms)})}</time></span>` : '';
 // H23: وقت نسبي («قبل 3 أيام»، «اليوم») وعليه التاريخ الكامل تلميحاً عند المرور أو اللمس
-export const relT = ms => ms ? `<time title="${esc(fullWhen(ms))}">${relTime(ms)}</time>` : '';
+export const relT = ms => okMs(ms) ? `<time title="${esc(fullWhen(ms))}">${relTime(ms)}</time>` : '';
 export const relDayT = s => s ? `<time datetime="${esc(s)}" title="${esc(fmtDateFull(s))}">${relDay(s)}</time>` : '';
 /* G2: مسار طلب الاستلام: خط عمودي صغير بالأحداث الموجودة فقط، مرتّبة بالوقت
    staff: نص «أجاب صاحب الطلب» بدل «أجبت» */

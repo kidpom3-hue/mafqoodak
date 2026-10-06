@@ -31,7 +31,7 @@ function fmt(key, o){
 let isoF;
 /* H7: قيم غير صالحة (بيانات تالفة من القواعد القديمة مثل lostDate: 'x' أو createdAt: 'x') لا توقف الصفحة أبداً:
    كل دوال التاريخ ترجع '' بدل أن ترمي RangeError (Invalid time value) */
-const okMs = ms => typeof ms === 'number' && Number.isFinite(ms) && !isNaN(new Date(ms).getTime());
+export const okMs = ms => typeof ms === 'number' && Number.isFinite(ms) && !isNaN(new Date(ms).getTime());
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 export const isoDay = ms => {
   if (!okMs(ms)) return '';
@@ -62,9 +62,13 @@ export const fmtDateTime = ms => { if (!okMs(ms)) return ''; try { return fmt('d
 export function fullWhen(ms){
   if (!okMs(ms)) return '';
   // الساعة لا تنقسم على سطرين: «· 9:31 م» بمسافات غير قابلة للكسر (السطر ينكسر قبل «·» فقط عند الحاجة)
-  const d = new Date(ms), clock = ' ·\u00A0' + fmt('hm', {hour: 'numeric', minute: '2-digit', hour12: true}).format(d).replace(/\s/g, '\u00A0');
-  return fmt('dmy', {day: 'numeric', month: 'long', year: 'numeric'}).format(d) + clock;
+  try {
+    const d = new Date(ms), clock = ' ·\u00A0' + fmt('hm', {hour: 'numeric', minute: '2-digit', hour12: true}).format(d).replace(/\s/g, '\u00A0');
+    return fmt('dmy', {day: 'numeric', month: 'long', year: 'numeric'}).format(d) + clock;
+  } catch { return ''; }
 }
+// قيمة datetime لوسم <time> (فارغة لقيمة غير صالحة، ولا ترمي خطأ أبداً)
+export const isoMs = ms => { if (!okMs(ms)) return ''; try { return new Date(ms).toISOString(); } catch { return ''; } };
 export function when(ms){
   if (!okMs(ms)) return '';
   // وقت في المستقبل (آخر موعد للاستلام): التاريخ والساعة فقط
