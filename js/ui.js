@@ -212,7 +212,7 @@ function trail(){
     found: [t('term.handin')], handin: [found, t('hi.title')], browse: [t('nav.browse')],
     item: [browse, t('bc.item')], claim: [browse, t('cl.title')], gclaim: [browse, t('cl.title')],
     report: [svc, t('rp.title')], mine: [t('nav.mine')], office: [t('foot.office')], privacy: [t('foot.legal')],
-    service: p.id ? [svc, t('svc.' + p.id + '.name')] : [t('svc.details')], numbers: [t('num.title')], a11y: [t('foot.a11y')], login: [t('login.titleIn')],
+    service: ['claim', 'report', 'handin'].includes(p.id) ? [svc, t('svc.' + p.id + '.name')] : [t('svc.details')], numbers: [t('num.title')], a11y: [t('foot.a11y')], login: [t('login.titleIn')],
   }[name];
   return cur ? [[t('nav.home'), homeRoute()], ...cur] : null;
 }
