@@ -3,7 +3,7 @@ import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, 
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
-import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId } from './state.js';
+import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
@@ -352,6 +352,7 @@ async function submitForm(form){
     if (form.dataset.edit && !claimEditable(ed)) return formErr(form, t('cl.noEdit'));
     // المتاح والمحجوز يقبلان الطلب (المحجوز: طلب منافس يراجعه المكتب قبل التسليم)
     if (gcat ? !isGrouped(gcat) : (!i || !ACTIVE.includes(i.status))) return formErr(form, t('cl.unavailable'));
+    if (i && iHandedIn(i)) return formErr(form, t('it.youHandedIn'));   // H23: من سلّم الغرض لا يطلب استلامه (القواعد v17 ترفضه أيضاً)
     const catId = gcat || i.cat, officeId = i?.officeId || ed?.officeId || S.officeId;
     if (!S.verified) return formErr(form, t('a.verifyFirst'));
     // هوية صاحب الطلب: الاسم كما في البطاقة وآخر 4 أرقام منها (يطابقها الموظف عند التسليم)

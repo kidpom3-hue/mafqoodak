@@ -107,6 +107,9 @@ export function ensureFinder(i){
   S.finders[f] = null;
   dbx.get('foundReports/' + f).then(d => { S.finders[f] = d?.uid || ''; }).catch(() => { S.finders[f] = ''; }).finally(changed);
 }
+/* H23: الزائر سلّم هذا الغرض للمكتب بنفسه (إشعار تسليم له مرتبط بالغرض): لا يطلب استلامه ولا يُقترح عليه.
+   القواعد v17 ترفض الطلب أيضاً (notFinder). إن كان هو المالك فعلاً يسلّمه الموظف تسليماً مباشراً */
+export const iHandedIn = i => !!(S.uid && i && S.myFound.some(f => (i.fromFound && f.id === i.fromFound) || (f.itemId && f.itemId === i.id)));
 export function conflictOf(c, i){
   if (!c || !i || !c.uid || c.uid === 'deleted') return '';
   if (i.fromFound){ ensureFinder(i); if (S.finders[i.fromFound] === c.uid) return 'finder'; }
@@ -135,7 +138,9 @@ export function pickOf(r){
 export function candidatesFor(r, n = 3, view = x => x){
   if (isStale(r)) return [];
   const no = rejectedOf(r);
-  return S.items.filter(i => (i.status === 'available' || i.status === 'reserved') && !no.has(i.id))
+  // H23: لا يُرشَّح لصاحب البلاغ غرضٌ سلّمه هو (صاحب إشعار التسليم معروف للموظف عبر ensureFinder)
+  const own = i => !!i.fromFound && (ensureFinder(i), S.finders[i.fromFound] === r.uid);
+  return S.items.filter(i => (i.status === 'available' || i.status === 'reserved') && !no.has(i.id) && !(isStaffHere() && own(i)))
     .map(i => ({i: view(i), s: matchScore(r, view(i))})).filter(x => x.s >= MATCH_MIN)
     .sort((a, b) => b.s - a.s).slice(0, n);
 }
@@ -174,7 +179,7 @@ function autoRanked(r){
   const no = rejectedOf(r);
   const rej = [...no].map(id => item(id)).filter(Boolean);
   const like = i => rej.some(x => x.cat === i.cat && subKey(x.sub) === subKey(i.sub) && x.foundDate === i.foundDate) ? 1 : 0;
-  return S.items.filter(i => ACTIVE.includes(i.status) && !no.has(i.id) && i.id !== r.staffPick && mayBeYours(r, i))
+  return S.items.filter(i => ACTIVE.includes(i.status) && !no.has(i.id) && i.id !== r.staffPick && mayBeYours(r, i) && !iHandedIn(i))
     .map(i => ({i, like: like(i), n: publicClues(r, i)}))
     .sort((a, b) => a.like - b.like || b.n - a.n || (b.i.createdAt || 0) - (a.i.createdAt || 0)).map(x => x.i);
 }

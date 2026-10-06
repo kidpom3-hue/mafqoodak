@@ -2,7 +2,7 @@
 import { icon, LOGO, brandOf, CATS, cat, catName, isGrouped, isHiddenCat, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
 import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, tAr, noteText } from '../i18n.js';
-import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode } from '../state.js';
+import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode, iHandedIn } from '../state.js';
 import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
@@ -161,7 +161,9 @@ export function vItem(){
   if (staffMode && !SM) return loadingHtml();
   const keepDays = keepDaysOf(i.cat, o) - daysAgo(i.foundDate);   // مدة التصنيف إن كانت أقصر من مدة المكتب
   const mine = S.myClaims.find(cl => cl.itemId === i.id);   // طلب سابق (بأي حالة)
-  const claimBtn = S.uid ? `<button class="btn block" data-act="goClaim" data-id="${esc(i.id)}">${icon('shield')}${t('it.claim')}</button>
+  // H23: من سلّم الغرض للمكتب لا يرى «هذا غرضي»، بل سطراً يوضح ذلك
+  const claimBtn = iHandedIn(i) ? `<div class="note info">${icon('tag')}<span>${t('it.youHandedIn')}</span></div>`
+    : S.uid ? `<button class="btn block" data-act="goClaim" data-id="${esc(i.id)}">${icon('shield')}${t('it.claim')}</button>
       <p class="hint">${t('it.claimHint')}</p>`
     : `<button class="btn block" data-act="login">${icon('shield')}${t('it.loginToClaim')}</button>`;
   let actions = '';
@@ -247,6 +249,8 @@ function claimForm(p){
   if (i && !p.edit && isGrouped(i.cat)) return claimForm({cat: i.cat, report: p.report});
   const o = (i && S.offices.find(x => x.id === i.officeId)) || (edc && S.offices.find(x => x.id === edc.officeId)) || curOffice();
   const catId = gcat || i?.cat || '';
+  // H23: من سلّم الغرض لا يطلب استلامه (القواعد ترفضه أيضاً)
+  if (i && !p.edit && iHandedIn(i)) return `<div class="wrap" data-view="claim">${backBtn()}<div class="note info">${icon('tag')}<span>${t('it.youHandedIn')}</span></div></div>`;
   if (gcat ? !isGrouped(gcat) : (!i || !ACTIVE.includes(i.status))) return `<div class="wrap">${backBtn()}${emptyBox('box', t('cl.unavailable'), t('it.unavailableSub'), navBtn('browse', 'grid', t('home.ctaBrowse')))}</div>`;
   if (!S.uid) return `<div class="wrap">${backBtn()}${loginPrompt(t('gc.login'))}</div>`;
   if (!S.verified) return `<div class="wrap">${backBtn()}${verifyPrompt(t('cl.verifyWhat'))}</div>`;
@@ -560,7 +564,7 @@ export function reportCardMine(r, focus){
   const sugg = (it, extra = '') => `<div class="sugg">${miniItem(it)}${extra}${whenLine('rc.itemAt', it.createdAt)}
       ${active ? '' : `<div class="btn-row"><button class="btn sm" data-act="goClaim" data-id="${esc(it.id)}" data-report="${esc(r.id)}">${icon('check')}${t('rc.isMine')}</button>
         <button class="btn sm ghost" data-act="notMine" data-id="${esc(r.id)}" data-item="${esc(it.id)}">${icon('x')}${t('rc.notMine')}</button></div>`}</div>`;
-  const pickBox = pick ? `<div class="pick-box"><span class="t">${icon('shield')}${t('rc.staffPick')}</span>${sugg(pick, whenLine('rc.pickedAt', r.pickedAt))}</div>` : '';
+  const pickBox = pick && !iHandedIn(pick) ? `<div class="pick-box"><span class="t">${icon('shield')}${t('rc.staffPick')}</span>${sugg(pick, whenLine('rc.pickedAt', r.pickedAt))}</div>` : '';
   const need = reportNeed(r);
   const next = r.status !== 'open' ? t(r.closedReason === 'office' ? 'ns.closedOffice' : r.closedReason === 'self' ? 'ns.closedSelf' : 'ns.closed')
     : need === 'stale' ? t('ns.stale') : active ? t('ns.claim') : need === 'sugg' ? t('ns.sugg') : t('ns.search');
