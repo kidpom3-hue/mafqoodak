@@ -1,7 +1,7 @@
 // حالة التطبيق والاشتراك في البيانات من Firestore
 import { auth, db, dbx, configured, onAuthStateChanged, getRedirectResult, deleteField } from './firebase.js';
 import { LS, matchScore, toast, dayNum, subKey, setSpotHook, tokens, norm, when } from './utils.js';
-import { t, LANG, saved, setLang } from './i18n.js';
+import { t, LANG, saved, setLang, hasKey } from './i18n.js';
 import { oName, spotLabel, cat, catName, COLORS, autoSuggestOk, SUGG_STOP, claimOf, GROUP_DAYS, AMOUNT_TOL } from './constants.js';
 import { SETTINGS } from './config.js';
 
@@ -254,10 +254,15 @@ export function groupCands(c, n = 3){
     .map(i => ({i, s: matchScore(r, i)})).sort((x, y) => y.s - x.s).slice(0, n);
 }
 // الإجابة الرقمية الأساسية للتصنيف (المبلغ، عدد المفاتيح، آخر 4 أرقام من الوثيقة)
+// H23: اسم الإجابة الرقمية الأساسية للعرض («المبلغ»، «عدد المفاتيح»…)
+const dfLabelOf = (catId, k) => t(hasKey(`df.${catId}.${k}`) ? `df.${catId}.${k}` : `df.${k}`);   // كـ dfLabel في common.js
+export const groupKeyLabel = c => { const k = keyNum(c)?.[0]; return k ? dfLabelOf(c.cat, k) : t('gc.keyAny'); };
 const keyNum = c => { const r = groupRep(c); for (const k of ['amount', 'keyCount', 'docLast4']) if (r.details[k]) return [k, r.details[k]]; return null; };
 /* «مطابقة مؤكدة»: مرشّح واحد قوي فقط: إجابته الرقمية مطابقة تماماً + نفس المبنى أو المكان السري، ولا منافس ضمن 15 نقطة */
-export function groupStrong(c, cands = groupCands(c)){
-  const [top, second] = cands; if (!top) return null;
+// H23: min = أقل نسبة لـ«مطابقة مؤكدة» (85%)؛ groupStrong(c, cands, 0) = الشروط نفسها بأي نسبة («مطابقة محتملة»)
+export const STRONG_MIN = 85;
+export function groupStrong(c, cands = groupCands(c), min = STRONG_MIN){
+  const [top, second] = cands; if (!top || top.s < min) return null;
   const kn = keyNum(c); if (!kn || String(top.i.details?.[kn[0]] || '') !== String(kn[1])) return null;
   const r = groupRep(c);
   const place = (r.spot && top.i.spot && r.spot === top.i.spot) || (r.bldg && top.i.bldg && r.bldg === top.i.bldg);

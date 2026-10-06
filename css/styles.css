@@ -1165,3 +1165,17 @@ html{scroll-padding-top:calc(var(--hdr-vh,64px) + 8px)}
 #s-stats{min-height:64px}
 /* H23: وسيلة تنقل أساسية واحدة: تحت 900px الشريط السفلي فقط، وفوقها تبويبات اللوحة (الترويسة لا تكررها في صفحة اللوحة) */
 @media (max-width:899px){ #s-tabs{display:none} }
+
+/* H23: جدول المقارنة: ≈ قريب بالأصفر، وتنبيه فرق التاريخ، وعلى الجوال بطاقة لكل صف (بلا تمرير أفقي) */
+.cmp .v.near{color:var(--warn)}
+.cmp-warn{display:flex;gap:8px;align-items:flex-start;margin:0;padding:8px 10px;background:var(--warn-soft);color:var(--warn);font-size:12.5px;font-weight:600;border-top:1px solid var(--line)}
+.cmp-warn svg{width:16px;height:16px;flex:none;margin-top:2px}
+.hit-line.near{color:var(--warn)}
+@media (max-width:640px){
+  .cmp-head{display:none!important}
+  .cmp-row{grid-template-columns:minmax(0,1fr) auto;row-gap:4px}
+  .cmp-row>b{grid-column:1;grid-row:1}
+  .cmp-row>.v{grid-column:2;grid-row:1;min-width:32px}
+  .cmp-row>span[data-l]{grid-column:1/-1}
+  .cmp-row>span[data-l]::before{content:attr(data-l) ": ";color:var(--muted);font-size:11.5px;font-weight:600}
+}

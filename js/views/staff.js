@@ -2,7 +2,7 @@
 import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, GROUP_EXPIRE_DAYS, isHiddenCat } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText, hasKey } from '../i18n.js';
-import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist, isOwner } from '../state.js';
+import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, groupKeyLabel, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist, isOwner } from '../state.js';
 import { backBtn, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
@@ -151,7 +151,9 @@ export function timeline(i){
 /* مقارنة إجابات صاحب الطلب بالحقيقة (من itemSecrets) */
 // H22: لا «لم يحدد» في عمود النتيجة: ما لم يقله صاحب الطلب ظاهر في عموده («لم يذكر»)، والنتيجة فارغة
 const OK = '<span class="v ok">✓</span>', OK2 = '<span class="v ok">✓✓</span>', NO = '<span class="v bad">✗</span>';
-const isRes = v => v === OK || v === OK2 || v === NO;
+// H23: ≈ قريب (أصفر): مبلغ تقريبي ضمن الهامش لا مطابق تماماً، أو نص حرّ يشترك في كلمة فقط
+const NEAR = '<span class="v near" title="≈">≈</span>';
+const isRes = v => v === OK || v === OK2 || v === NO || v === NEAR;
 /* مقارنة إجابة سؤال التصنيف بالحقيقة: ✓ أو ✗، أو '' بلا نتيجة
    الأرقام وآخر 4 والاختيار: تطابق تام · التقريبي: الفرق ضمن الأكبر من 20% أو 20 ريالاً
    النص الحر: ✓ إذا احتوى أحدهما الآخر أو اشتركا في كلمة من 3 أحرف فأكثر، ولا ✗ آلياً على نص حر أبداً */
@@ -163,12 +165,22 @@ export function detailCheck(d, said, truth){
   const a = detailValue(d, said), b = detailValue(d, truth);
   if (!a || !b) return '';
   if (d.type === 'num' || d.type === 'last4' || d.type === 'pick') return a === b ? OK : NO;
-  if (d.type === 'approx'){ const x = Number(a), y = Number(b); return Math.abs(x - y) <= Math.max(0.2 * Math.max(x, y), 20) ? OK : NO; }
+  if (d.type === 'approx'){ const x = Number(a), y = Number(b); return x === y ? OK : Math.abs(x - y) <= Math.max(0.2 * Math.max(x, y), 20) ? NEAR : NO; }
   const na = norm(a), nb = norm(b);
   if (na && nb && (na.includes(nb) || nb.includes(na))) return OK;
   if (sameNumber(a, b)) return OK;
   const tb = new Set(tokens(b).filter(w => w.length >= 3));
-  return tokens(a).some(w => w.length >= 3 && tb.has(w)) ? OK : '';
+  return tokens(a).some(w => w.length >= 3 && tb.has(w)) ? NEAR : '';
+}
+/* H23: الفئات بصيغة مقروءة: «2 200» أو «200×2» ← «2 × 200 ريال». كل جزء (مفصول بفاصلة أو «و») فيه عددان: الفئة المعروفة والعدد */
+const DENOMS = [1, 5, 10, 20, 50, 100, 200, 500];
+export function fmtDenoms(s){
+  return String(s || '').split(/[\u060C,\u061B;\n]+|\s+\u0648\s*/).map(p => p.trim()).filter(Boolean).map(p => {
+    const n = (latinDigits(p).match(/\d+/g) || []).map(Number);
+    if (n.length !== 2) return esc(p);
+    const [x, y] = n, v = DENOMS.includes(y) && (!DENOMS.includes(x) || y > x) ? y : x, k = v === y ? x : y;
+    return `<bdi>${t('df.denomsItem', {n: k, v})}</bdi>`;
+  }).join(t('c.listSep'));
 }
 // ما قاله صاحب الطلب في سؤال: من claims.details، أو من حقل موجود في الطلب (as: الاسم وآخر 4 أرقام)
 const saidOf = (c, d) => d.as ? c[d.as] || '' : c.details?.[d.k] || '';
@@ -192,7 +204,7 @@ export function claimChecks(c, f){
   // v7: بلاغ صاحب الطلب المسجَّل قبل العثور على الغرض: أقوى دليل. كل ✓ منه بوزن مضاعف في الملخص
   const rep = priorReport(c, f), rc = rep ? reportChecks(rep, f) : [];
   const repVals = rc.map(x => x.v);
-  const hits = all.filter(v => v === OK || v === OK2).length + 2 * repVals.filter(v => v === OKR).length;
+  const hits = all.filter(v => v === OK || v === OK2 || v === NEAR).length + 2 * repVals.filter(v => v === OKR).length;
   const total = all.filter(isRes).length + 2 * repVals.filter(v => v === OKR || v === NO).length;
   return {color, place, date, proof, det, rep, rc, hits, total};
 }
@@ -219,12 +231,15 @@ function claimCompare(c, f){
   // التاريخ: ظاهر للعامة، فلا ✓ له، و✗ فقط إن كان مستحيلاً
   // أسئلة التصنيف: إجابة صاحب الطلب بجانب ما سجّله الموظف (الغرض القديم بلا إجابات: «—» بلا نتيجة)
   const {color, place, date, proof, det, rep, rc, hits, total} = claimChecks(c, f);
+  // H23: تنبيه واضح إذا كان الفرق بين تاريخ الفقد وتاريخ تسجيل الغرض كبيراً (أكثر من أسبوع) أو فُقد بعد العثور
+  const gapDays = c.lostDate && f.foundDate ? dayNum(f.foundDate) - dayNum(c.lostDate) : null;
   const q = claimOf(f.cat), kind = conflictOf(c, f);
-  const row = (k, a, b, v = '') => `<div class="cmp-row"><b>${k}</b><span>${a}</span><span>${b}</span>${v || '<span class="v"></span>'}</div>`;
+  // H23: على الجوال يصبح كل صف بطاقة: اسم السؤال، ثم «وصف صاحب الطلب» و«بيانات الغرض المسجّل» تحت بعض (data-l)
+  const row = (k, a, b, v = '') => `<div class="cmp-row"><b>${k}</b><span data-l="${t('st.cmpSaid')}">${a}</span><span data-l="${t('st.cmpTruth')}">${b}</span>${v || '<span class="v"></span>'}</div>`;
   const card = `<span class="muted">${t('st.onCard')}</span>`;
   const asKeys = q.details.filter(d => d.as).map(d => d.as);
   // عرض الإجابة: اسم الخيار من القاموس، والأرقام من اليسار لليمين
-  const fmt = (d, v) => d.type === 'pick' ? ((d.opts || []).includes(v) ? dfOpt(d.k, v) : esc(v)) : d.type === 'text' ? esc(v) : `<span dir="ltr">${esc(v)}</span>`;
+  const fmt = (d, v) => d.k === 'denoms' ? fmtDenoms(v) : d.type === 'pick' ? ((d.opts || []).includes(v) ? dfOpt(d.k, v) : esc(v)) : d.type === 'text' ? esc(v) : `<span dir="ltr">${esc(v)}</span>`;
   const none = `<span class="muted">${t('st.notSaid')}</span>`;
   // H22: سؤال لم يُجب عنه صاحب الطلب ولم يُسجَّل له شيء في المكتب لا يفيد المقارنة: يُجمع في سطر واحد بدل صف «لم يحدد | —»
   const empty = [];
@@ -244,6 +259,7 @@ function claimCompare(c, f){
     ${c.question ? row(`${t('st.cmpQA')}: <span class="cmp-q">${esc(c.question)}</span>`, answered(c) ? esc(c.answer) : `<span class="muted">${t(c.status === 'pending' ? 'qa.waiting' : 'qa.none')}</span>`, '<span class="muted">—</span>') : ''}
     ${rep ? `<div class="cmp-row cmp-head cmp-rep"><b>${icon('bell')}${t('st.fromPrior')}</b><span>${t('st.cmpInReport')}</span><span>${t('st.cmpTruth')}</span><span class="v"></span></div>
       ${rc.map(x => row(x.label || t(x.k), x.said || '<span class="muted">—</span>', x.truth || '<span class="muted">—</span>', x.v ? x.v.replace('✓</span>', `✓ <small>${t('st.fromReport')}</small></span>`) : '')).join('')}` : ''}
+    ${gapDays !== null && (gapDays < 0 || gapDays > 7) ? `<p class="cmp-warn">${icon('alert')}<span>${t(gapDays < 0 ? 'st.gapBefore' : 'st.gapWarn', {days: tp('n.days', Math.abs(gapDays))})}</span></p>` : ''}
     ${empty.length ? `<p class="cmp-empty">${t('st.cmpEmpty', {list: empty.join(t('c.listSep'))})}</p>` : ''}
     <div class="cmp-sum">${t('st.cmpSum', {n: hits, total})}${rep ? ` <span class="muted">${t('st.priorWeight')}</span>` : ''}</div>
   </div>`;
@@ -256,20 +272,22 @@ const durText = ms => ms < 36e5 ? t('n.lessHour') : ms < 864e5 ? tp('n.hours', M
 function groupAnswers(c){
   // خيار الاختيار من القائمة فقط يُترجم؛ أي قيمة أخرى (بيانات تالفة) تُعرض نصاً مهرّباً
   const det = c.details && typeof c.details === 'object' ? c.details : {};
-  const rows = claimOf(c.cat).details.filter(d => !d.as && det[d.k]).map(d => [dfLabel(c.cat, d.k), d.type === 'pick' && (d.opts || []).includes(det[d.k]) ? dfOpt(d.k, det[d.k]) : esc(det[d.k])]);
+  const rows = claimOf(c.cat).details.filter(d => !d.as && det[d.k]).map(d => [dfLabel(c.cat, d.k), d.k === 'denoms' ? fmtDenoms(det[d.k]) : d.type === 'pick' && (d.opts || []).includes(det[d.k]) ? dfOpt(d.k, det[d.k]) : esc(det[d.k])]);
   if (c.lostSpot) rows.push([t('cl.where'), esc(spotText({spot: c.lostSpot, bldg: c.bldg, room: c.room}))]);
   if (c.lostDate) rows.push([t('cl.when'), fmtDate(c.lostDate)]);
   return `<dl class="facts grp-answers">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${c.proof ? `<div class="proof">${esc(c.proof)}</div>` : ''}`;
 }
 function groupBox(c, own){
-  const cands = groupCands(c), strong = groupStrong(c, cands), qk = strong ? '' : groupQuestion(c, cands);
+  // H23: «مطابقة مؤكدة» فقط من 85% فأكثر؛ دونها بالشروط نفسها «مطابقة محتملة»
+  const cands = groupCands(c), strong = groupStrong(c, cands), likely = strong ? null : groupStrong(c, cands, 0), qk = strong ? '' : groupQuestion(c, cands);
+  const what = groupKeyLabel(c);
   if (!cands.length) return `<div class="note">${icon('clock')}<span>${t('gc.noCands')}</span></div>`;
   const q = qk ? t(qk) : '';
-  return `<span class="label">${t(strong ? 'gc.strongTitle' : 'gc.candsTitle')}</span>
+  return `<span class="label">${t(strong ? 'gc.strongTitle' : likely ? 'gc.likelyTitle' : 'gc.candsTitle')}</span>
     <div class="list">${cands.map(({i, s}) => `<div class="cand">
       <div class="btn-row" style="align-items:center;flex-wrap:nowrap">${miniItem(i, `<span class="score">${s}%</span>`)}
         ${own ? '' : `<button class="btn sm ${strong?.i.id === i.id ? '' : 'soft'}" data-act="linkClaim" data-id="${esc(c.id)}" data-i="${esc(i.id)}">${icon('check')}${t(strong?.i.id === i.id ? 'gc.confirm' : 'gc.link')}</button>`}</div>
-      ${strong?.i.id === i.id ? `<span class="meta hit-line">${icon('shield')}${t('gc.strong')}</span>` : ''}</div>`).join('')}</div>
+      ${strong?.i.id === i.id ? `<span class="meta hit-line">${icon('shield')}${t('gc.strong', {what})}</span>` : likely?.i.id === i.id ? `<span class="meta hit-line near">${icon('info')}${t('gc.likely', {what})}</span>` : ''}</div>`).join('')}</div>
     ${q && !own ? `<div class="note info gq">${icon('question')}<span>${t('gc.qHint')}<br><b>${esc(q)}</b></span>
       <button class="btn sm soft" data-act="askSugg" data-id="${esc(c.id)}" data-q="${esc(q)}">${t('gc.qSend')}</button></div>` : ''}`;
 }
@@ -346,7 +364,7 @@ export function claimCardStaff(c, opts){
     // H17: بلاغ النقود قبل القبول = «قيد المطابقة» عند الموظف كما عند صاحبه
     pillHtml: c.status === 'pending' && c.grouped && isHiddenCat(c.cat) ? `<span class="pill info">${t('gc.matching')}</span>` : pill(CLAIM_STATUS, c.status), next,
     head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${orphan ? t('st.orphanTitle') : i ? esc(showTitle(i)) : c.grouped && !iid ? t('grp.' + c.cat + '.title') : t('c.loadingDots')}</h3>${c.grouped ? `<span class="pill info">${t('gc.pill')}</span>` : ''}${person(c.uid)}${prior ? `<span class="pill ok prior">${icon('bell')}${t('st.priorReport')}</span>` : ''}`,
-    body: `<div class="box-head"><div class="claim-who">${whenLine('c.sentAt', c.createdAt)}${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div></div>
+    body: `<div class="box-head"><div class="claim-who">${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div></div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
     ${c.editedAt ? `<div class="note info edited">${icon('edit')}<span>${t('st.editedAfter', {when: when(c.editedAt)})}</span></div>` : ''}
     ${claimTimeline(c, true)}
