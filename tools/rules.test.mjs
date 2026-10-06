@@ -65,6 +65,8 @@ const delItem = (db, id, o) => batch(db, (b, r) => b.delete(r('items/' + id)), o
 /* H7: إنشاء بلاغ أو إشعار تسليم أو طلب استلام كما في التطبيق: الوثيقة + rate/{uid} بوقت الخادم في batch واحد.
    قبل كل إنشاء نعيد rate/{uid} إلى وقت قديم (بلا قواعد)، لتختبر الحالات الأخرى قواعدها هي لا حدّ الـ 20 ثانية */
 const setRate = async (uid, ms) => env.withSecurityRulesDisabled(async c => { await setDoc(doc(c.firestore(), 'rate/' + uid), {at: Timestamp.fromMillis(ms)}); });
+// v16 (H22): rate فيه عداد النافذة اليومية: بعد setRate (بلا w) تبدأ نافذة جديدة: n = 1 وw = وقت الخادم
+const RATE = () => ({at: serverTimestamp(), n: 1, w: serverTimestamp()});
 /* v7: طلب الاستلام يحدّث claimQuota/{uid} في الـ batch نفسه (قائمة الطلبات الجارية + وقت آخر طلب في تصنيف الغرض).
    قبل كل إنشاء نفرّغ الحصة (بلا قواعد) حتى تختبر الحالات الأخرى قواعدها؛ حالات الحصة لها اختباراتها أدناه */
 const setQuota = (uid, q) => env.withSecurityRulesDisabled(async c => { await setDoc(doc(c.firestore(), 'claimQuota/' + uid), q); });
@@ -77,7 +79,7 @@ async function mk(db, path, data, {keepQuota = false, noCode = false} = {}){
   if (isClaim && !keepQuota) await setQuota(uid, {open: []});
   // v8: الطلب المجمّع تصنيفه مكتوب فيه (بلا غرض)
   const cat = isClaim ? (data.grouped ? data.cat : await itemCat(data.itemId)) : '';
-  return batch(db, (b, r) => { b.set(r(path), data); b.set(r('rate/' + uid), {at: serverTimestamp()});
+  return batch(db, (b, r) => { b.set(r(path), data); b.set(r('rate/' + uid), RATE());
     if (isClaim) b.set(r('claimQuota/' + uid), {open: arrayUnion(path.split('/')[1]), lastByCat: {[cat]: serverTimestamp()}}, {merge: true});
     if (isClaim && !noCode) b.set(r('claimCodes/' + path.split('/')[1]), {uid, hash: H(path.split('/')[1])}); });
 }
@@ -450,13 +452,13 @@ R.push('ℹ H7-7: سياسة CSP تُفحص في check-i18n.mjs وfuzz.mjs');
 await setRate('bob', Date.now() - 60000);
 await t('H7-8: إنشاء بلا rate في العملية نفسها مرفوض', setDoc(doc(bob, 'foundReports/h7f4'), {officeId: O, uid: 'bob', cat: 'keys', status: 'pending', createdAt: now}), false);
 await t('H7-8: rate بوقت الجهاز لا الخادم مرفوض', batch(bob, (b, r) => { b.set(r('foundReports/h7f5'), {officeId: O, uid: 'bob', cat: 'keys', status: 'pending', createdAt: now}); b.set(r('rate/bob'), {at: Timestamp.fromMillis(Date.now())}); }), false);
-await t('H7-8: الإنشاء الأول مع rate مقبول', batch(bob, (b, r) => { b.set(r('foundReports/h7f6'), {officeId: O, uid: 'bob', cat: 'keys', status: 'pending', createdAt: now}); b.set(r('rate/bob'), {at: serverTimestamp()}); }));
-await t('H7-8: إنشاء ثانٍ خلال 20 ثانية مرفوض', batch(bob, (b, r) => { b.set(r('foundReports/h7f7'), {officeId: O, uid: 'bob', cat: 'keys', status: 'pending', createdAt: now}); b.set(r('rate/bob'), {at: serverTimestamp()}); }), false);
+await t('H7-8: الإنشاء الأول مع rate مقبول', batch(bob, (b, r) => { b.set(r('foundReports/h7f6'), {officeId: O, uid: 'bob', cat: 'keys', status: 'pending', createdAt: now}); b.set(r('rate/bob'), RATE()); }));
+await t('H7-8: إنشاء ثانٍ خلال 20 ثانية مرفوض', batch(bob, (b, r) => { b.set(r('foundReports/h7f7'), {officeId: O, uid: 'bob', cat: 'keys', status: 'pending', createdAt: now}); b.set(r('rate/bob'), RATE()); }), false);
 await t('H7-8: حذف rate خلال 20 ثانية (لتجاوز الحدّ) مرفوض', deleteDoc(doc(bob, 'rate/bob')), false);
 await t('H7-8: صاحب الحساب يقرأ rate الخاص به', getDoc(doc(bob, 'rate/bob')));
 await t('H7-8: لا يقرأ rate حساب آخر', getDoc(doc(carol, 'rate/bob')), false);
 await setRate('bob', Date.now() - 30000);
-await t('H7-8: بعد 20 ثانية يُقبل الإنشاء', batch(bob, (b, r) => { b.set(r('foundReports/h7f8'), {officeId: O, uid: 'bob', cat: 'keys', status: 'pending', createdAt: now}); b.set(r('rate/bob'), {at: serverTimestamp()}); }));
+await t('H7-8: بعد 20 ثانية يُقبل الإنشاء', batch(bob, (b, r) => { b.set(r('foundReports/h7f8'), {officeId: O, uid: 'bob', cat: 'keys', status: 'pending', createdAt: now}); b.set(r('rate/bob'), RATE()); }));
 
 // ── v7: تقوية إثبات الملكية ──
 await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
@@ -477,7 +479,7 @@ await t('v7-2: الطلب الثاني (جوالات)', mk(qu, 'claims/q2_qu', c
 await t('v7-2: الطلب الثالث (نظارات)', mk(qu, 'claims/q3_qu', claim('q3', 'qu'), {keepQuota: true}));
 await t('v7-2: الطلب الرابع الجاري مرفوض (الحد 3)', mk(qu, 'claims/q4_qu', claim('q4', 'qu'), {keepQuota: true}), false);
 await setRate('qu', Date.now() - 60000);
-await t('v7-2: طلب دون تحديث الحصة في العملية نفسها مرفوض', batch(qu, (b, r) => { b.set(r('claims/q4_qu'), claim('q4', 'qu')); b.set(r('rate/qu'), {at: serverTimestamp()}); }), false);
+await t('v7-2: طلب دون تحديث الحصة في العملية نفسها مرفوض', batch(qu, (b, r) => { b.set(r('claims/q4_qu'), claim('q4', 'qu')); b.set(r('rate/qu'), RATE()); }), false);
 await t('v7-2: إضافة رقم إلى الحصة دون طلب حقيقي مرفوضة', updateDoc(doc(qu, 'claimQuota/qu'), {open: arrayUnion('fake_qu')}), false);
 await t('v7-2: صاحب الحساب لا يفرّغ حصته وطلبه ما زال جارياً', updateDoc(doc(qu, 'claimQuota/qu'), {open: arrayRemove('q1_qu')}), false);
 await t('v7-2: الموظف لا يزيل طلباً ما زال جارياً', updateDoc(doc(A, 'claimQuota/qu'), {open: arrayRemove('q1_qu')}), false);
@@ -490,7 +492,7 @@ await t('v7-2: حساب قديم بلا حصة: الموظف يغلق طلبه �
 // 3) صور الإثبات
 await setQuota('bob', {open: []}); await setRate('bob', Date.now() - 60000);
 await t('v7-3: طلب مع صورة إثبات في batch واحد', batch(bob, (b, r) => {
-  b.set(r('claims/p1_bob'), claim('p1', 'bob', {proofs: 1})); b.set(r('rate/bob'), {at: serverTimestamp()});
+  b.set(r('claims/p1_bob'), claim('p1', 'bob', {proofs: 1})); b.set(r('rate/bob'), RATE());
   b.set(r('claimQuota/bob'), {open: arrayUnion('p1_bob'), lastByCat: {bags: serverTimestamp()}}, {merge: true});
   b.set(r('claimProofs/p1_bob_0'), {claimId: 'p1_bob', officeId: O, uid: 'bob', data: IMG, createdAt: now});
   b.set(r('claimCodes/p1_bob'), {uid: 'bob', hash: H('p1_bob')}); }));
@@ -905,7 +907,7 @@ await t('v14-6: طلب مباشر على غرض عادي مسموح', mk(bob, 'c
 await t('v14-7: الموظف لا يغيّر اللون بعد 24 ساعة', updateDoc(doc(A, 'itemSecrets/x2'), {color: 'red'}), false);
 await t('v14-7: الموظف لا يغيّر المكان بعد 24 ساعة', updateDoc(doc(A, 'itemSecrets/x2'), {spot: 'الكافتيريا'}), false);
 await t('v14-7: الموظف يغيّر موضع الحفظ بعد 24 ساعة', updateDoc(doc(A, 'itemSecrets/x2'), {storage: 'الخزانة 2'}));
-await t('v14-7: الموظف يملأ وصفاً كان فارغاً', updateDoc(doc(A, 'itemSecrets/x2'), {desc: 'غلاف أحمر'}));
+await t('v14-7 → v16 (H22): الموظف لا يملأ وصفاً كان فارغاً بعد 24 ساعة', updateDoc(doc(A, 'itemSecrets/x2'), {desc: 'غلاف أحمر'}), false);
 await t('v14-7: المدير يغيّر اللون بعد 24 ساعة', updateDoc(doc(owner, 'itemSecrets/x2'), {color: 'red'}));
 await t('v14-7: الموظف يغيّر اللون خلال 24 ساعة', updateDoc(doc(A, 'itemSecrets/x3'), {color: 'blue'}));
 await t('v14-7: الموظف لا يحذف الصورة الأصلية لغرض قديم', deleteDoc(doc(A, 'itemPhotosPrivate/x2')), false);
@@ -915,7 +917,7 @@ await t('v14-8: طلب على x1', mk(alice, 'claims/x1_alice', claim('x1', 'ali
 await t('v14-8: صاحبه يحذفه قبل السؤال', deleteDoc(doc(alice, 'claims/x1_alice')));
 await setRate('alice', Date.now() - 60000); await setQuota('alice', {open: []});
 await t('v14-8: ويعيد إرساله برمز جديد (claimCodes تُعاد كتابتها)', batch(alice, (b, r) => {
-  b.set(r('claims/x1_alice'), claim('x1', 'alice')); b.set(r('rate/alice'), {at: serverTimestamp()});
+  b.set(r('claims/x1_alice'), claim('x1', 'alice')); b.set(r('rate/alice'), RATE());
   b.set(r('claimQuota/alice'), {open: arrayUnion('x1_alice'), lastByCat: {phones: serverTimestamp()}}, {merge: true});
   b.set(r('claimCodes/x1_alice'), {uid: 'alice', hash: H('x1_alice', 'NEWCODE1')}); }));
 await t('v14-8: لا تُعاد كتابة البصمة والطلب موجود', setDoc(doc(alice, 'claimCodes/x1_alice'), {uid: 'alice', hash: H('x1_alice', 'X')}), false);
@@ -997,10 +999,48 @@ await t('v15-9: وبقيد في مكتب الغرض مسموح', batch(M, (b, r)
 await t('v15-10: صورة إثبات لطلب موجود مرفوضة', setDoc(doc(alice, 'claimProofs/zq_alice_0'), {claimId: 'zq_alice', officeId: O, uid: 'alice', data: IMG, createdAt: now}), false);
 await setQuota('carol', {open: []}); await setRate('carol', Date.now() - 60000);
 await t('v15-10: صورة إثبات مع إنشاء الطلب في batch واحد مسموحة', batch(carol, (b, r) => {
-  b.set(r('claims/z6_carol'), claim('z6', 'carol', {proofs: 1})); b.set(r('rate/carol'), {at: serverTimestamp()});
+  b.set(r('claims/z6_carol'), claim('z6', 'carol', {proofs: 1})); b.set(r('rate/carol'), RATE());
   b.set(r('claimQuota/carol'), {open: arrayUnion('z6_carol'), lastByCat: {bags: serverTimestamp()}}, {merge: true});
   b.set(r('claimProofs/z6_carol_0'), {claimId: 'z6_carol', officeId: O, uid: 'carol', data: IMG, createdAt: now});
   b.set(r('claimCodes/z6_carol'), {uid: 'carol', hash: H('z6_carol')}); }));
+
+// ── v16 (H22): حد يومي للإنشاء، وملء الأدلة، وحدود config وprivate وpublicStats ──
+const setRateDoc = (uid, d) => env.withSecurityRulesDisabled(async c => { await setDoc(doc(c.firestore(), 'rate/' + uid), d); });
+const fr = id => ({officeId: O, uid: 'dave2', cat: 'keys', status: 'pending', createdAt: Date.now()});
+const dave2 = as('dave2');
+const W = Date.now() - 3600e3;   // نافذة بدأت قبل ساعة
+await setRateDoc('dave2', {at: Timestamp.fromMillis(Date.now() - 60000), n: 30, w: Timestamp.fromMillis(W)});
+await t('v16-1: الإنشاء الحادي والثلاثون في النافذة مرفوض', batch(dave2, (b, r) => { b.set(r('foundReports/c31'), fr()); b.set(r('rate/dave2'), {at: serverTimestamp(), n: 31, w: Timestamp.fromMillis(W)}); }), false);
+await t('v16-1: تصفير العداد داخل النافذة مرفوض', batch(dave2, (b, r) => { b.set(r('foundReports/c32'), fr()); b.set(r('rate/dave2'), RATE()); }), false);
+await t('v16-1: كتابة rate مباشرة لتصفيره مرفوضة', setDoc(doc(dave2, 'rate/dave2'), {at: serverTimestamp(), n: 1, w: serverTimestamp()}), false);
+await t('v16-1: حذف rate داخل النافذة مرفوض', deleteDoc(doc(dave2, 'rate/dave2')), false);
+await setRateDoc('dave2', {at: Timestamp.fromMillis(Date.now() - 60000), n: 5, w: Timestamp.fromMillis(W)});
+await t('v16-1: داخل النافذة وتحت الحد: n + 1 مسموح', batch(dave2, (b, r) => { b.set(r('foundReports/c33'), fr()); b.set(r('rate/dave2'), {at: serverTimestamp(), n: 6, w: Timestamp.fromMillis(W)}); }));
+await setRateDoc('dave2', {at: Timestamp.fromMillis(Date.now() - 60000), n: 5, w: Timestamp.fromMillis(W)});
+await t('v16-1: n غير متتالٍ مرفوض', batch(dave2, (b, r) => { b.set(r('foundReports/c34'), fr()); b.set(r('rate/dave2'), {at: serverTimestamp(), n: 5, w: Timestamp.fromMillis(W)}); }), false);
+await setRateDoc('dave2', {at: Timestamp.fromMillis(Date.now() - 60000), n: 30, w: Timestamp.fromMillis(Date.now() - 25 * 3600e3)});
+await t('v16-1: بعد انتهاء النافذة تبدأ نافذة جديدة (n = 1)', batch(dave2, (b, r) => { b.set(r('foundReports/c35'), fr()); b.set(r('rate/dave2'), RATE()); }));
+await setRateDoc('dave2', {at: Timestamp.fromMillis(Date.now() - 60000), n: 30, w: Timestamp.fromMillis(Date.now() - 25 * 3600e3)});
+await t('v16-1: حذف rate بعد انتهاء النافذة مسموح', deleteDoc(doc(dave2, 'rate/dave2')));
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  await setDoc(doc(d, 'items/ev1'), {...pub('ev1'), createdAt: Date.now() - 3 * DAY});
+  await setDoc(doc(d, 'itemSecrets/ev1'), {officeId: O, title: 'حقيبة', color: '', brand: '', desc: '', spot: '', bldg: '', room: '', storage: ''}); });
+await t('v16-2: الموظف لا يملأ الماركة الفارغة بعد 24 ساعة', updateDoc(doc(A, 'itemSecrets/ev1'), {brand: 'نايكي'}), false);
+await t('v16-2: ولا الإجابات الفارغة', updateDoc(doc(A, 'itemSecrets/ev1'), {details: {mark: 'ملصق'}}), false);
+await t('v16-2: مكان العثور الفارغ يُملأ (نقل المكان القديم)', updateDoc(doc(A, 'itemSecrets/ev1'), {spot: 'المكتبة'}));
+await t('v16-2: ولا يتغير بعد ملئه', updateDoc(doc(A, 'itemSecrets/ev1'), {spot: 'المواقف'}), false);
+await t('v16-2: موضع الحفظ يتغير', updateDoc(doc(A, 'itemSecrets/ev1'), {storage: 'الخزانة 3'}));
+await t('v16-2: المدير يملأ الماركة', updateDoc(doc(owner, 'itemSecrets/ev1'), {brand: 'نايكي'}));
+await t('v16-3: وثيقة private باسم آخر مرفوضة', setDoc(doc(alice, 'users/alice/private/notes'), {x: 1}), false);
+await t('v16-3: codes بمفتاح غريب مرفوضة', setDoc(doc(alice, 'users/alice/private/codes'), {codes: {a: 'X'}, other: 1}), false);
+await t('v16-3: codes خريطة رموز مسموحة', setDoc(doc(alice, 'users/alice/private/codes'), {codes: {a_alice: 'ABCD2345'}}, {merge: true}));
+await t('v16-4: المدير لا يضيف حقلاً غريباً إلى config/app', updateDoc(doc(owner, 'config/app'), {banner: '<b>x</b>'}), false);
+await t('v16-4: samplesOff غير منطقي مرفوض', updateDoc(doc(owner, 'config/app'), {samplesOff: 'yes'}), false);
+await t('v16-5: المُعاد أكثر من المُسجَّل مرفوض', setDoc(doc(A, 'publicStats/' + O), {...ps, updatedAt: Date.now(), totalReturned: 500}), false);
+await t('v16-5: رضا فوق 5 مرفوض', setDoc(doc(A, 'publicStats/' + O), {...ps, updatedAt: Date.now(), avgRating: 9}), false);
+await t('v16-5: رقم سالب مرفوض', setDoc(doc(A, 'publicStats/' + O), {...ps, updatedAt: Date.now(), monthReceived: -3}), false);
+await t('v16-5: وقت تحديث قديم مرفوض', setDoc(doc(A, 'publicStats/' + O), {...ps, updatedAt: Date.now() - 3 * DAY}), false);
+await t('v16-5: أرقام منطقية بوقت الآن مسموحة', setDoc(doc(A, 'publicStats/' + O), {...ps, updatedAt: Date.now()}));
 
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);
