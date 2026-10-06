@@ -1179,3 +1179,14 @@ html{scroll-padding-top:calc(var(--hdr-vh,64px) + 8px)}
   .cmp-row>span[data-l]{grid-column:1/-1}
   .cmp-row>span[data-l]::before{content:attr(data-l) ": ";color:var(--muted);font-size:11.5px;font-weight:600}
 }
+
+/* H23: النافذة: لوح سفلي في الجوال (حواف علوية مستديرة ومقبض، تحترم safe-area والكيبورد)، ونافذة وسط الشاشة في الكمبيوتر */
+html.sheet-open,html.sheet-open body{overflow:hidden}
+.sheet-panel{max-height:min(90dvh,calc(100dvh - var(--kb,0px) - 12px));margin-bottom:var(--kb,0px);overscroll-behavior:contain;padding-top:26px}
+.sheet-panel::before{content:"";position:absolute;top:9px;inset-inline-start:50%;width:40px;height:4px;border-radius:2px;background:var(--line);transform:translateX(-50%)}
+:root[dir=rtl] .sheet-panel::before{transform:translateX(50%)}
+@media (min-width:720px){
+  #sheet{align-items:center;padding:16px}
+  .sheet-panel{border-radius:20px;max-height:90vh;margin-bottom:0;padding:22px 20px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  .sheet-panel::before{display:none}
+}

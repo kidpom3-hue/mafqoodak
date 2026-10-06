@@ -114,6 +114,21 @@ export function back(){
   if (S.sheet){ S.sheet = null; renderSheet(); dropSheetEntry(); }
   histDo(() => { if (history.state?.mf) history.back(); else backStep(); });
 }
+document.addEventListener('keydown', e => {
+  if (!S.sheet) return;
+  if (e.key === 'Escape'){ e.preventDefault(); back(); return; }
+  if (e.key !== 'Tab') return;
+  const p = $('#sheet .sheet-panel'); if (!p) return;
+  const f = [...p.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(x => x.offsetParent !== null);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (!p.contains(document.activeElement)){ e.preventDefault(); first.focus(); }
+  else if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+});
+// الكيبورد في الجوال يصغّر الجزء الظاهر من الشاشة: نرفع اللوح السفلي بمقداره (--kb) فلا يغطي الحقول
+if (window.visualViewport){ const kb = () => document.documentElement.style.setProperty('--kb', Math.max(0, window.innerHeight - visualViewport.height - visualViewport.offsetTop) + 'px');
+  visualViewport.addEventListener('resize', kb); visualViewport.addEventListener('scroll', kb); }
 window.addEventListener('popstate', () => {
   if (skipPop){ skipPop = 0; afterPop.splice(0).forEach(f => f()); return; }
   if (SHARE_RE.test(location.hash.slice(1)) || OFFICE_RE.test(location.hash.slice(1))) return;   // رابط مشاركة أو مكتب: يعالجه مستمع hashchange في main.js
@@ -281,9 +296,14 @@ function renderNav(){
     return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}" ${on ? 'aria-current="page"' : ''}>${icon(n.i)}<span>${n.l}</span>${tabNum(n.b, 0)}</button>`;
   }).join('')}</div>`;
 }
+/* H23: النافذة: في الكمبيوتر وسط الشاشة (عرض 560 وارتفاع 90vh وتمرير داخلي)، وفي الجوال لوح سفلي بمقبض.
+   الخلفية لا تتمرر، وEsc يغلقها، والتركيز لا يخرج منها (Tab)، والكيبورد لا يغطيها (visualViewport)، ويعود التركيز بعد الإغلاق */
+let sheetFrom = null;
 export function renderSheet(){
   const el = $('#sheet');
-  if (!S.sheet){ el.hidden = true; el.innerHTML = ''; return; }
+  document.documentElement.classList.toggle('sheet-open', !!S.sheet);
+  if (!S.sheet){ el.hidden = true; el.innerHTML = ''; if (sheetFrom?.isConnected) sheetFrom.focus({preventScroll: true}); sheetFrom = null; return; }
+  if (el.hidden) sheetFrom = document.activeElement;
   el.hidden = false;
   el.innerHTML = `<div class="sheet-backdrop" data-act="closeSheet"></div><div class="sheet-panel" role="dialog" aria-modal="true">${S.sheet}</div>`;
   const f = el.querySelector('input,textarea'); if (f) setTimeout(() => f.focus(), 60);
