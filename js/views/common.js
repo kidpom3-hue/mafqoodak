@@ -50,7 +50,9 @@ export function brandLogo(o, on = 'light', cls = '', kind = 'logo'){
 }
 export function collegeLinks(o, cls = ''){
   const b = brandOf(o); if (!b?.links?.length) return '';
-  return `<ul class="br-links ${cls}">${b.links.map(l => `<li><a class="link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${icon(l.k === 'x' ? 'share' : l.k === 'lms' ? 'book' : l.k === 'rayat' ? 'idcard' : 'college')}<span>${t('br.link.' + l.k)}</span>${icon('ext', 'ext')}<span class="sr-only">${t('br.newTab')}</span></a></li>`).join('')}</ul>`;
+  // H23: في الشبكة (صفحة المكتب) اسم قصير ووصف صغير تحته، والبطاقات بارتفاع واحد
+  const grid = cls.includes('grid');
+  return `<ul class="br-links ${cls}">${b.links.map(l => `<li><a class="link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${icon(l.k === 'x' ? 'share' : l.k === 'lms' ? 'book' : l.k === 'rayat' ? 'idcard' : 'college')}${grid ? `<span class="grow"><b>${t('br.link.' + l.k)}</b><small>${t('br.linkD.' + l.k)}</small></span>` : `<span>${t('br.link.' + l.k)}</span>`}${icon('ext', 'ext')}<span class="sr-only">${t('br.newTab')}</span></a></li>`).join('')}</ul>`;
 }
 
 // H13a: حالة غرض طلبٍ لم يعد متاحاً، بنص واضح: حُذف من المستودع، أو حالته الفعلية (سُلّم، مؤرشف، تُصرّف فيه)

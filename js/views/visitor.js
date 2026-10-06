@@ -615,8 +615,8 @@ export function vOffice(){
     ${singleMode() ? '' : `<button class="btn ghost" data-act="pickOffice">${icon('pin')}${t('ui.changePlace')}</button>`}
     <div class="panel">
       <h2 class="section-title">${icon('grid')}${t('svc.indexTitle')}</h2>
-      <div class="svc-links" role="list">${['claim', 'report', 'handin'].map(id => `<button role="listitem" class="opt" data-act="nav" data-r="service" data-id="${id}">${icon(id === 'claim' ? 'shield' : id === 'report' ? 'bell' : 'tag')}<span class="grow">${t('svc.' + id + '.name')}</span>${icon('fwd')}</button>`).join('')}</div>
-      <button class="btn ghost" data-act="nav" data-r="numbers" style="align-self:flex-start">${icon('chart')}${t('num.title')}</button>
+      <div class="svc-links" role="list">${['claim', 'report', 'handin'].map(id => `<button role="listitem" class="opt" data-act="nav" data-r="service" data-id="${id}">${icon(id === 'claim' ? 'shield' : id === 'report' ? 'bell' : 'tag')}<span class="grow">${t('svc.' + id + '.name')}</span>${icon('fwd')}</button>`).join('')}
+        <button role="listitem" class="opt" data-act="nav" data-r="numbers">${icon('chart')}<span class="grow">${t('num.title')}</span>${icon('fwd')}</button></div>
     </div>
     <section class="home-sec">
       <div class="sec-head"><h2>${t('ofc.faq')}</h2></div>
