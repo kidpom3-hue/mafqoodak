@@ -27,7 +27,7 @@ export function vStaff(){
     <div id="s-body"></div>
   </div>`;
 }
-let toolsTab = null;
+let toolsTab = null, bodyTab = null;
 // أيام متبقية على نهاية مدة الحفظ (سالبة = تجاوزها). مدة التصنيف تتقدم على مدة المكتب إن كانت أقصر
 export const keepLeft = i => keepDaysOf(i.cat, curOffice()) - daysAgo(i.foundDate);
 // مدة حفظ خاصة بالتصنيف (أقصر من مدة المكتب)؟ نص قصير يوضحها
@@ -43,8 +43,7 @@ export function updateStaff(){
   const openR = S.reports.filter(r => r.status === 'open').length;
   const over = it.filter(i => i.status === 'available' && keepLeft(i) < 0).length;
   const late = S.claims.filter(pickupOver).length;
-  // H4: مربعات الأرقام في «المستودع» فقط
-  $('#s-stats').style.display = S.staffTab === 'items' ? '' : 'none';
+  // H23: مربعات الأرقام ظاهرة في كل التبويبات (لا يقفز شريط التبويبات عند التبديل)
   $('#s-stats').innerHTML = `
     <div class="stat"><b>${it.filter(i => i.status === 'available').length}</b><span>${t('home.statAvail')}</span></div>
     <div class="stat"><b>${it.filter(i => i.status === 'reserved').length}</b><span>${t('st.sReserved')}</span></div>
@@ -73,10 +72,14 @@ export function updateStaff(){
         <button class="btn sm ghost" data-act="stats">${icon('chart')}${t('sx.btn')}</button>
       </div>` : S.staffTab === 'claims' ? `<div class="filters">
         <label class="searchbar" style="flex:1;min-width:200px">${icon('search')}<input id="cq" type="search" dir="ltr" autocomplete="off" placeholder="REQ-7K3M" value="${esc(S.claimQ)}" aria-label="${t('st.claimSearch')}"></label>
-      </div>` : '';
+      </div>` : `<div class="filters">
+        <label class="searchbar" style="flex:1;min-width:200px">${icon('search')}<input id="rq" type="search" autocomplete="off" placeholder="${t('st.reportSearchPh')}" value="${esc(S.reportQ)}" aria-label="${t('st.reportSearch')}"></label>
+      </div>`;   // H23: البلاغات أيضاً فيها بحث بالمكان والحجم نفسيهما
     const ss = $('#sstatus'); if (ss) ss.value = S.staffStatus;
   }
   $('#s-body').innerHTML = S.staffTab === 'claims' ? staffClaims() : S.staffTab === 'reports' ? staffReports() : staffItems();
+  // H23: ظهور خفيف (150ms) عند تبديل التبويب فقط، لا مع كل تحديث حي (يحترم prefers-reduced-motion في CSS)
+  if (bodyTab !== S.staffTab){ bodyTab = S.staffTab; const b = $('#s-body'); b.classList.remove('tab-in'); void b.offsetWidth; b.classList.add('tab-in'); }
   hydrate();
   migrateItems();   // نقل تفاصيل الأغراض القديمة إلى الملف السري (مرة واحدة)
   migrateSpots();   // نقل مكان العثور من الإعلان العام إلى الملف السري (المرحلة E5)
@@ -440,14 +443,16 @@ export const CODE_SEARCH_MIN = 5;
 export function staffReports(){
   // H4: تبويبات فرعية: لها مرشّح | مفتوحة | مغلقة (المغلقة تُجلب عند الطلب). إشعارات التسليم في «الاستلام» (قادمة)
   // البلاغات القديمة (أكثر من 60 يوماً دون تجديد) مخفية افتراضياً
-  const open = S.reports.filter(r => r.status === 'open'), old = open.filter(isStale);
+  // H23: بحث في البلاغات (العنوان، والوصف، والنوع، والمكان)
+  const rq = norm(S.reportQ || ''), hit = r => !rq || norm([r.title, r.desc, r.sub, r.spot, catName(r.cat)].join(' ')).includes(rq);
+  const open = S.reports.filter(r => r.status === 'open' && hit(r)), old = open.filter(isStale);
   const rs = open.filter(r => S.showStale || !isStale(r)).sort(byLast);
   // H10: «مرشّح محتمل» = بلا ترشيح وأفضل مرشّح له يطابق تفصيلاً سرياً (المبلغ، آخر 4 أرقام، الماركة، المكان…)
   const picked = rs.filter(r => r.staffPick), likely = rs.filter(r => !r.staffPick && strongFor(r)), rest = rs.filter(r => !r.staffPick && !likely.includes(r));
   const oldBtn = old.length ? `<div class="btn-row"><button class="btn sm ghost" data-act="toggleStale" aria-pressed="${S.showStale}">${icon('clock')}${t(S.showStale ? 'st.hideOld' : 'st.showOld', {n: old.length})}</button></div>` : '';
   // أول بلاغ له مرشّحون ولم يُرشَّح له بعد يُفتح تلقائياً (يحتاج قراراً)
   const first = likely[0]?.id || rest.find(r => staffCands(r, 1).length)?.id;
-  const closed = S.closedReps ? S.closedReps.slice().sort(byLast).slice(0, 50) : null;
+  const closed = S.closedReps ? S.closedReps.filter(hit).sort(byLast).slice(0, 50) : null;
   const fresh = new Set(staffKeys().map(x => x.card));
   const defs = [['picked', picked.length], ['likely', likely.length], ['open', rest.length], ['closed', closed ? closed.length : null]];
   const cur = subTab('reports', defs);

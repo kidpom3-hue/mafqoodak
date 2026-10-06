@@ -469,7 +469,7 @@ h1,h2,h3,p,dd,.row-title,.card-body h3,.hero-title{overflow-wrap:anywhere}
   .stats::-webkit-scrollbar{display:none}
   .stat{flex:0 0 auto;min-width:118px;scroll-snap-align:start;padding:10px 12px}
   .stat b{font-size:22px}
-  #s-tabs{display:none}
+  /* H23: نُقل إخفاء التبويبات إلى max-width:899px أدناه (وسيلة تنقل أساسية واحدة) */
 }
 /* D5: خطوات «كيف يعمل» كخط زمني مدمج */
 .how.how3{grid-template-columns:1fr;gap:0}
@@ -1156,3 +1156,12 @@ html{scroll-padding-top:calc(var(--hdr-vh,64px) + 8px)}
 .step-nav{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;margin-block-start:4px}
 .step-nav .btn{flex:1 1 140px;justify-content:center}
 .step-nav .step-back,.step-nav [data-act=stepPrev]{flex:0 1 auto}
+
+/* H23: ظهور خفيف عند تبديل تبويب لوحة الموظف (لا وميض لصفحة فارغة)، وبلا حركة لمن يفضّل تقليلها */
+@keyframes tabin{from{opacity:.35}to{opacity:1}}
+#s-body.tab-in{animation:tabin .15s ease-out}
+@media (prefers-reduced-motion:reduce){ #s-body.tab-in{animation:none} }
+/* صف الأرقام بارتفاع ثابت في كل التبويبات، فلا يقفز شريط التبويبات */
+#s-stats{min-height:64px}
+/* H23: وسيلة تنقل أساسية واحدة: تحت 900px الشريط السفلي فقط، وفوقها تبويبات اللوحة (الترويسة لا تكررها في صفحة اللوحة) */
+@media (max-width:899px){ #s-tabs{display:none} }

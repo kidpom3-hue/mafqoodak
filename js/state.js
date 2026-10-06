@@ -9,6 +9,12 @@ import { SETTINGS } from './config.js';
 export const SHARE_RE = /^item\/([\w-]+)\/([\w-]+)$/;
 // رابط مكتب (من ملصق QR المعلّق في المبنى): ./#o/<رقم المكتب> يفتح مفقودات هذا المكتب
 export const OFFICE_RE = /^o\/([\w-]+)$/;
+/* H23: تبويب لوحة الموظف في الرابط (مصدر الحقيقة الواحد للترويسة والشريط السفلي والتبويبات): #/office/warehouse|inbox|reports.
+   زر الرجوع والتحديث يعيدان التبويب نفسه */
+export const STAFF_TABS = {items: 'warehouse', claims: 'inbox', reports: 'reports'};
+export const TAB_RE = /^\/office\/(warehouse|inbox|reports)$/;
+export const tabOfHash = h => { const m = TAB_RE.exec(h); return m ? Object.keys(STAFF_TABS).find(k => STAFF_TABS[k] === m[1]) : ''; };
+const HASH_TAB = tabOfHash(location.hash.slice(1));
 const SHARED = SHARE_RE.exec(location.hash.slice(1));
 const OFFICE_LINK = OFFICE_RE.exec(location.hash.slice(1));
 if (SHARED) LS.set('office', SHARED[1]);
@@ -42,12 +48,12 @@ export const S = {
   secrets: {},   // تفاصيل المفقودات السرية (للموظف فقط): رقم الغرض ← {title, color, brand, desc, bldg, room, storage}
   staffDoc: null, staffLoaded: false, staffList: [], invites: [], priv: {},
   officeId: LS.get('office', null),
-  mode: LS.get('mode', 'visitor'),
+  mode: HASH_TAB ? 'staff' : LS.get('mode', 'visitor'),   // H23: رابط تبويب الموظف يفتح وضع الموظف (fixMode يعيده زائراً إن لم يكن موظفاً)
   // فتح صفحة محددة من اختصارات أيقونة التطبيق (مثل ./#report)
-  route: SHARED ? {name: 'item', params: {id: SHARED[2]}} : {name: ['report', 'browse', 'mine', 'found', 'office', 'privacy', 'numbers', 'a11y', 'service'].includes(location.hash.slice(1)) ? location.hash.slice(1) : ({staff: 'staff', admin: 'admin'})[LS.get('mode', 'visitor')] || 'home', params: {}},
+  route: HASH_TAB ? {name: 'staff', params: {tab: HASH_TAB}} : SHARED ? {name: 'item', params: {id: SHARED[2]}} : {name: ['report', 'browse', 'mine', 'found', 'office', 'privacy', 'numbers', 'a11y', 'service'].includes(location.hash.slice(1)) ? location.hash.slice(1) : ({staff: 'staff', admin: 'admin'})[LS.get('mode', 'visitor')] || 'home', params: {}},
   hist: [],
   filter: {q: '', cat: 'all', status: 'available', range: 'all'},
-  staffTab: 'items', staffQ: '', claimQ: '', staffStatus: 'active', adminTab: 'overview',
+  staffTab: HASH_TAB || 'items', tabY: {}, staffQ: '', claimQ: '', reportQ: '', staffStatus: 'active', adminTab: 'overview',
   sheet: null,
 };
 

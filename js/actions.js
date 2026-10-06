@@ -3,7 +3,7 @@ import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, 
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when, fmtDateFull } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
-import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn } from './state.js';
+import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn, STAFF_TABS } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
@@ -33,6 +33,13 @@ function formErr(form, msg, field){
 }
 /* H19: نماذج الخطوات (البلاغ والطلب): خطوة واحدة ظاهرة، ومؤشر الخطوات يتبعها.
    «التالي» يفحص الخانات المطلوبة في الخطوة الحالية فقط؛ الفحص الكامل عند الإرسال، وخطؤه يعيد إلى خطوة الخانة */
+/* H23: تبديل تبويب لوحة الموظف: خطوة في سجل المتصفح (زر الرجوع يعيد التبويب السابق)، وموضع التمرير محفوظ لكل تبويب،
+   والبحث والفلتر والتبويب الفرعي والبطاقات المفتوحة في S فتبقى كما هي */
+function staffTabGo(tab){
+  if (!STAFF_TABS[tab]) return;
+  if (S.route.name === 'staff'){ if (S.staffTab === tab) return; S.tabY[S.staffTab] = window.scrollY; }
+  go('staff', {tab});
+}
 export function showStep(form, n, keepErr){
   const total = Number(form.dataset.steps) || 1; n = Math.max(1, Math.min(total, n));
   form.dataset.step = n;
@@ -849,7 +856,9 @@ function wipeDevice(){ ['codes', 'seen', 'staffSeen', 'notify'].forEach(k => { t
 const ACT = {
   nav(el){
     const r = el.dataset.r, tab = el.dataset.tab;
-    if (r === 'staff' && tab){ S.staffTab = tab; if (S.route.name === 'staff'){ SM()?.updateStaff(); renderNav(); window.scrollTo(0, 0); return; } }
+    // H23: تبويب اللوحة من الترويسة أو الشريط السفلي: الانتقال نفسه في كل مكان (الرابط والترويسة والتبويبات معاً)
+    if (r === 'staff' && tab && S.route.name === 'staff') return staffTabGo(tab);
+    if (r === 'staff' && tab) S.staffTab = tab;
     if (r === 'admin' && tab) S.adminTab = tab;
     const fromNav = !!el.closest('#nav, .top-links, .brand');
     if (fromNav) S.hist = [];
@@ -1003,7 +1012,7 @@ const ACT = {
   fcat(el){ S.filter.cat = el.dataset.id; updateBrowse(); },
   catGo(el){ S.filter.cat = el.dataset.id; S.filter.q = ''; S.filter.status = 'available'; go('browse'); },
   fstatus(el){ S.filter.status = el.dataset.v; updateBrowse(); },
-  sTab(el){ S.staffTab = el.dataset.v; SM()?.updateStaff(); renderNav(); },
+  sTab(el){ staffTabGo(el.dataset.v); },
   closeSheet(){ closeSheet(); },
   copy(el){ const v = el.dataset.v; navigator.clipboard?.writeText(v).then(() => toast(t('a.copied')), () => toast(v)); },
   removePhoto(el){ clearPhoto(el.closest('form')); },
@@ -1419,6 +1428,7 @@ export function bindEvents(){
     const t = e.target;
     if (t.id === 'q'){ S.filter.q = t.value; clearTimeout(qTimer); qTimer = setTimeout(updateBrowse, 120); }
     if (t.name === 'ratingNote'){ const f = t.closest('form'); if (f) (RATE_DRAFT[f.dataset.id] ||= {}).note = t.value; }
+    if (t.id === 'rq'){ S.reportQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffReports(); hydrate(); }, 120); }   // H23
     if (t.id === 'cq'){ S.claimQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffClaims(); hydrate(); }, 120); }
     if (t.id === 'sq'){ S.staffQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffItems(); hydrate(); }, 120); }
     // v9: رمز الاستلام: أحرف كبيرة وأرقام لاتينية، وشرطة بعد الأحرف الأربعة الأولى (الرموز القديمة: 6 أرقام)

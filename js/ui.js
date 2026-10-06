@@ -2,7 +2,7 @@
 import { icon, LOGO, statusLabel, MODE_LABEL, brandOf } from './constants.js';
 import { t } from './i18n.js';
 import { $, $$, esc, toast } from './utils.js';
-import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, getEmail, SHARE_RE, OFFICE_RE, singleMode } from './state.js';
+import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, getEmail, SHARE_RE, OFFICE_RE, singleMode, STAFF_TABS, TAB_RE } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice } from './views/visitor.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
 import { vHome, updateHome, vFound, vHandin } from './views/home.js';
@@ -78,14 +78,18 @@ function histDo(fn){ if (skipPop) afterPop.push(fn); else fn(); }
 function dropSheetEntry(){ if (history.state?.sheet && !skipPop){ skipPop = 1; history.back(); } }
 
 export function go(name, params = {}, push = true){
-  const pushed = push && S.route.name !== name;
+  // H23: تبويب لوحة الموظف جزء من الصفحة (params.tab): تغييره خطوة في السجل، فيعيده زر الرجوع
+  if (name === 'staff'){ params = {...params, tab: params.tab || S.staffTab}; S.staffTab = params.tab; }
+  const pushed = push && (S.route.name !== name || (name === 'staff' && S.route.params?.tab !== params.tab));
   // G6: نحفظ مكان التمرير مع الصفحة الحالية، فيعود إليه الرجوع (بلا قفزة للأعلى بعد السحب للرجوع في الآيفون)
   if (pushed){ S.route.y = window.scrollY; S.hist.push(S.route); }
   if (S.hist.length > 30) S.hist.shift();
   if (S.sheet) dropSheetEntry();
   S.route = {name, params}; S.sheet = null;
-  renderAll(); window.scrollTo(0, 0);
-  if (pushed) histDo(() => history.pushState({mf: 1}, ''));
+  GOING = true; try { renderAll(); } finally { GOING = false; }
+  // H23: كل تبويب في اللوحة يعود إلى موضع تمريره السابق (بقية الصفحات من الأعلى)
+  if (name === 'staff' && S.tabY[params.tab]) restoreScroll(S.tabY[params.tab]); else window.scrollTo(0, 0);
+  if (pushed) histDo(() => { history.pushState({mf: 1}, ''); syncUrl(); }); else syncUrl();
 }
 // الانتقال من الشريط السفلي لا يحفظ الصفحة في S.hist، لكن نضيف خطوة واحدة في سجل المتصفح
 // حتى يعود زر الرجوع إلى الرئيسية بدل الخروج من التطبيق
@@ -93,7 +97,7 @@ export function tabEntry(){ histDo(() => { if (!history.state?.mf) history.pushS
 // خطوة رجوع داخل التطبيق (بلا pushState)
 function backStep(){
   const prev = S.hist.pop(); S.sheet = null;
-  if (prev){ S.route = prev; renderAll(); restoreScroll(prev.y || 0); }
+  if (prev){ S.route = prev; if (prev.name === 'staff' && prev.params?.tab) S.staffTab = prev.params.tab; renderAll(); restoreScroll(prev.y || 0); }
   else go(homeRoute(), {}, false);
 }
 // G6: إعادة التمرير بعد رسم الصفحة السابقة. نعيده في إطار الرسم التالي، ومرة ثانية إن لم تكن الصفحة
@@ -114,9 +118,22 @@ window.addEventListener('popstate', () => {
   if (skipPop){ skipPop = 0; afterPop.splice(0).forEach(f => f()); return; }
   if (SHARE_RE.test(location.hash.slice(1)) || OFFICE_RE.test(location.hash.slice(1))) return;   // رابط مشاركة أو مكتب: يعالجه مستمع hashchange في main.js
   if (S.sheet){ S.sheet = null; renderSheet(); return; }   // نافذة مفتوحة: نغلقها فقط
+  // H23: الرابط بعد الرجوع/التقدم يحدد تبويب اللوحة (زر «التقدم» في المتصفح يصل إلى التبويب الصحيح أيضاً)
+  const urlTab = (TAB_RE.test(location.hash.slice(1)) && Object.keys(STAFF_TABS).find(k => '#/office/' + STAFF_TABS[k] === location.hash)) || '';
   backStep();
+  if (urlTab && !(S.route.name === 'staff' && S.staffTab === urlTab)){ S.staffTab = urlTab; S.route = {name: 'staff', params: {tab: urlTab}}; renderAll(); }
 });
-export function renderAll(){ renderHeader(); renderMain(); renderNav(); renderSheet(); hydrate(); }
+export function renderAll(){ renderHeader(); renderMain(); renderNav(); renderSheet(); hydrate(); if (!GOING) syncUrl(); }
+// H23: داخل go() يُكتب الرابط بعد pushState (وإلا كُتب التبويب الجديد على الخطوة السابقة في السجل)
+let GOING = false;
+/* H23: الرابط يتبع الصفحة: في لوحة الموظف #/office/<التبويب>، وفي غيرها بلا اختصار (replaceState: لا خطوة جديدة في السجل) */
+function syncUrl(){
+  const want = S.route.name === 'staff' && S.mode === 'staff' ? '#/office/' + (STAFF_TABS[S.staffTab] || 'warehouse') : '';
+  const cur = location.hash;
+  if (cur === want || (!want && (SHARE_RE.test(cur.slice(1)) || OFFICE_RE.test(cur.slice(1))))) return;
+  if (!want && !TAB_RE.test(cur.slice(1))) return;   // لا نلمس اختصاراً آخر (يعالجه main.js)
+  history.replaceState(history.state, '', location.pathname + location.search + want);
+}
 // H22: انقطاع الاتصال وعودته يغيّران الترويسة فقط (main.js)، فلا يُعاد رسم الصفحة ولا يضيع ما كُتب في نموذج مفتوح
 export { renderHeader };
 
@@ -181,11 +198,12 @@ function renderHeader(){
   // H15: هوية الكلية (ألوانها وشعارها) في مكتبها فقط، وليس في لوحة الإدارة التي تدير كل المواقع
   const bo = S.mode !== 'admin' ? o : null;
   applyBrand(bo);
+  // H23: في صفحة لوحة الموظف لا تكرر الترويسة تبويباتها (المستودع/الاستلام/البلاغات)؛ تظهر في غيرها للعودة إليها
   // H5: الترتيب: الشعار + «مفقودك» | Aa | اللغة | الحساب. أُزيل زر اسم المكتب (تغيير المكان في صفحة المكتب)
   // H15: بجانب «مفقودك» نجمة شعار المؤسسة بعد خط فاصل (تظهر في كل المقاسات؛ الشعار الكامل في الواجهة الرئيسية)
   setHeader($('#hdr'), `<div class="top-row">
       <div class="brand-wrap" data-keep="brand"><button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="${t('app.name')} — ${t('nav.home')}">${LOGO}<span class="wordmark">${t('app.name')}</span></button>${brandLogo(bo, 'light', 'hdr-logo', 'mark')}</div>
-      ${S.config && (o || S.mode === 'admin') ? `<nav class="top-links" aria-label="${t('ui.navigation')}">${navItems().map(n => {
+      ${S.config && (o || S.mode === 'admin') ? `<nav class="top-links" aria-label="${t('ui.navigation')}">${navItems().filter(n => !(n.r === 'staff' && n.tab && S.route.name === 'staff')).map(n => {
         const on = S.route.name === n.r && (!n.tab || (n.r === 'staff' ? S.staffTab : S.adminTab) === n.tab);
         return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}">${n.l}${tabNum(n.b, 0)}</button>`;
       }).join('')}</nav>` : ''}

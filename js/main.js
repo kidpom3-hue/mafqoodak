@@ -1,7 +1,7 @@
 // نقطة البداية: تربط الواجهة بالبيانات وتبدأ التطبيق
 // G6: التطبيق يدير مكان التمرير بنفسه عند الرجوع (ui.js)، فلا يتدخّل المتصفح ويعيده مكاناً آخر
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-import { S, start, onChange, onReset, setOffice, SHARE_RE, OFFICE_RE } from './state.js';
+import { S, start, onChange, onReset, setOffice, SHARE_RE, OFFICE_RE, TAB_RE, tabOfHash } from './state.js';
 import { renderAll, refresh, go, renderHeader } from './ui.js';
 import { bindEvents } from './actions.js';
 import { checkNotify } from './notify.js';
@@ -17,11 +17,14 @@ if (FRAMED){ document.body.innerHTML = ''; throw new Error('framed'); }
   if (pre){ const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = pre.href; document.head.appendChild(l); } })();
 
 // إزالة اختصار الصفحة من الرابط بعد قراءته حتى لا يتكرر عند التحديث
-if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+// H23: إلا رابط تبويب لوحة الموظف (#/office/…): يبقى ليعيد التحديث التبويب نفسه
+if (location.hash && !TAB_RE.test(location.hash.slice(1))) history.replaceState(null, '', location.pathname + location.search);
 
 // رابط مشاركة غرض يُفتح والتطبيق مفتوح (مثل لصقه في شريط العنوان)
 window.addEventListener('hashchange', () => {
   const h = location.hash.slice(1), m = SHARE_RE.exec(h), o = OFFICE_RE.exec(h);
+  // H23: رابط تبويب يُكتب في شريط العنوان والتطبيق مفتوح
+  if (TAB_RE.test(h)){ const tab = tabOfHash(h); if (S.route.name !== 'staff' || S.staffTab !== tab){ S.staffTab = tab; go('staff', {tab}); } return; }
   if (!m && !o) return;
   history.replaceState(history.state, '', location.pathname + location.search);
   if (o){ setOffice(o[1]); return; }   // رابط مكتب: مفقودات ذلك المكتب
