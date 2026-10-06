@@ -5,7 +5,7 @@ import { $, $$, esc, toast } from './utils.js';
 import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, getEmail, SHARE_RE, OFFICE_RE, singleMode, STAFF_TABS, TAB_RE } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice } from './views/visitor.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
-import { vHome, updateHome, vFound, vHandin } from './views/home.js';
+import { vHome, updateHome, vFound, vHandin, footer, fillFootQr } from './views/home.js';
 import { vPrivacy } from './views/privacy.js';
 import { tabNum, brandLogo } from './views/common.js';   // H6: كل شارة رقمية تمرّ بها (رقم واحد: أحمر للجديد أو رمادي للعدد)
 // H8: صفحات الموظف والإدارة والإحصاءات والسجل والطباعة والخدمات تُحمَّل عند أول فتح لها فقط (lazy.js)
@@ -195,10 +195,39 @@ function renderMain(){
   const r = routeFns(ROUTES[S.route.name] || ROUTES.home);
   if (!r){ main.innerHTML = loadingHtml(); return; }   // H8: الوحدة في الطريق
   main.innerHTML = r.v();
+  decorate(main);
   // H23: سطر التاريخ المقروء («15 أكتوبر 2026») تحت كل حقل تاريخ من البداية (checkDate في actions.js يستمع لـ change)
   main.querySelectorAll('input[type=date]').forEach(el => el.dispatchEvent(new Event('change', {bubbles: true})));
   if (r.update) r.update();
   if (r.after) r.after();
+}
+/* H24: مسار التنقل (أعلى الصفحة) والتذييل (أسفلها) في صفحات الزائر فقط، بأسلوب المنصات الحكومية.
+   يُضافان داخل أول عنصر في #main (العنصر ذو data-view يبقى أولاً لأن دوال update تبحث عنه) */
+const VISITOR_PAGES = ['found', 'handin', 'browse', 'item', 'claim', 'gclaim', 'report', 'mine', 'office', 'privacy', 'service', 'numbers', 'a11y', 'login'];
+// خطوة المسار: [النص، المسار، params] — الأخيرة هي الصفحة الحالية (بلا رابط)
+function trail(){
+  const {name, params: p = {}} = S.route;
+  const browse = [t('nav.browse'), 'browse'], svc = [t('svc.details'), 'service'], found = [t('term.handin'), 'found'];
+  const cur = {
+    found: [t('term.handin')], handin: [found, t('hi.title')], browse: [t('nav.browse')],
+    item: [browse, t('bc.item')], claim: [browse, t('cl.title')], gclaim: [browse, t('cl.title')],
+    report: [svc, t('rp.title')], mine: [t('nav.mine')], office: [t('foot.office')], privacy: [t('foot.legal')],
+    service: p.id ? [svc, t('svc.' + p.id + '.name')] : [t('svc.details')], numbers: [t('num.title')], a11y: [t('foot.a11y')], login: [t('login.titleIn')],
+  }[name];
+  return cur ? [[t('nav.home'), homeRoute()], ...cur] : null;
+}
+function crumbs(){
+  const tr = trail(); if (!tr) return '';
+  return `<nav class="crumbs" aria-label="${t('bc.aria')}"><ol>${tr.map(x => typeof x === 'string'
+    ? `<li><span aria-current="page">${x}</span></li>`
+    : `<li><button class="link" data-act="nav" data-r="${x[1]}">${x[0]}</button></li>`).join('')}</ol></nav>`;
+}
+function decorate(main){
+  const o = curOffice(), box = main.firstElementChild;
+  if (!o || !box || ['staff', 'admin'].includes(S.mode) || !VISITOR_PAGES.includes(S.route.name)) return;
+  box.insertAdjacentHTML('afterbegin', crumbs());
+  box.insertAdjacentHTML('beforeend', footer(o));
+  fillFootQr();
 }
 function renderHeader(){
   const o = curOffice(); const ms = S.config ? modes() : ['visitor'];
@@ -257,7 +286,7 @@ function applyBrand(o){
   if ((h.dataset.brand || '') === (b?.id || '')) return;
   if (b) h.dataset.brand = b.id; else delete h.dataset.brand;
   const m = document.querySelector('meta[name="theme-color"]');
-  if (m) m.content = b?.themeColor || '#0A6A5D';   // '#0A6A5D' = لون مفقودك في index.html
+  if (m) m.content = b?.themeColor || '#14573A';   // '#14573A' = لون مفقودك في index.html (H24)
 }
 function navItems(){
   if (S.mode === 'staff'){

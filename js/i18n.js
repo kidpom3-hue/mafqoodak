@@ -7,10 +7,11 @@ import { AR } from './i18n/ar.js';
 const DICTS = {ar: AR};
 const loadDict = async l => { if (!DICTS[l] && l === 'en') DICTS.en = (await import('./i18n/en.js')).EN; };
 const KEY = 'mfq:lang';
-// الافتراضي: الاختيار المحفوظ، ثم لغة المتصفح (عربي إذا بدأت بـ ar، وإلا إنجليزي)
+// الافتراضي: الاختيار المحفوظ، وإلا العربية دائماً (H24: ضابط هيئة الحكومة الرقمية 3-106-07.01 — اللغة العربية أولاً)؛
+// الإنجليزية بزر «EN» في الترويسة فقط، لا بلغة المتصفح
 function initial(){
   try { const v = JSON.parse(localStorage.getItem(KEY)); if (v === 'ar' || v === 'en') return v; } catch {}
-  return String(navigator.language || '').toLowerCase().startsWith('ar') ? 'ar' : 'en';
+  return 'ar';
 }
 export let LANG = initial();
 await loadDict(LANG);   // تنتظره الوحدات التي تستورد i18n.js قبل أول رسم

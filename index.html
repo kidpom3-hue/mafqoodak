@@ -7,8 +7,8 @@
        غير سكربت المظهر أدناه (بصمته sha256). إذا عدّلت ذلك السكربت فاحسب بصمته من جديد (tools/check-i18n.mjs يتحقق منها).
        frame-ancestors لا تعمل داخل meta، لذلك يمنع main.js عرض التطبيق داخل إطار (clickjacking) -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://apis.google.com https://www.google.com/recaptcha/ 'sha256-V4SyzImrP7dTHXCHWWZSv/seVG+y3wVG0HI/CbJdjgQ='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleusercontent.com; connect-src 'self' https://*.googleapis.com https://api.emailjs.com; frame-src https://mafqoodak-50269.firebaseapp.com https://www.google.com/recaptcha/ https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
-  <title>مفقودك — مكتب المفقودات | الكلية التقنية بالأحساء</title>
-  <meta name="description" content="مفقودك: مكتب المفقودات الإلكتروني في الكلية التقنية بالأحساء. ابحث عن غرضك المفقود بالصور والتصنيف، وسجّل بلاغاً، واستلمه من المكتب برمز تحقق.">
+  <title>مكتب المفقودات - الكلية التقنية بالأحساء | مفقودك</title>
+  <meta name="description" content="مكتب المفقودات الإلكتروني في الكلية التقنية بالأحساء: ابحث عن غرضك المفقود، وقدّم بلاغ فقد، واستلم غرضك من المكتب برمز تحقق.">
   <link rel="canonical" href="https://kidpom3-hue.github.io/mafqoodak/">
 
   <!-- معاينة الرابط عند مشاركته في واتساب وتويتر (X) وغيرها. الروابط هنا كاملة لأن هذه المواقع لا تفهم المسارات النسبية -->
@@ -16,18 +16,18 @@
   <meta property="og:site_name" content="مفقودك">
   <meta property="og:locale" content="ar_SA">
   <meta property="og:url" content="https://kidpom3-hue.github.io/mafqoodak/">
-  <meta property="og:title" content="مفقودك — مكتب المفقودات في الكلية التقنية بالأحساء">
-  <meta property="og:description" content="ابحث عن مفقوداتك، وسجّل بلاغاً، واستلم غرضك برمز تحقق.">
+  <meta property="og:title" content="مكتب المفقودات - الكلية التقنية بالأحساء | مفقودك">
+  <meta property="og:description" content="مكتب المفقودات الإلكتروني في الكلية التقنية بالأحساء: ابحث عن غرضك المفقود، وقدّم بلاغ فقد، واستلم غرضك من المكتب برمز تحقق.">
   <meta property="og:image" content="https://kidpom3-hue.github.io/mafqoodak/icons/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="شعار مفقودك مع عبارة: ابحث عن مفقوداتك، وسجّل بلاغاً، واستلم غرضك برمز تحقق">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="مفقودك — مكتب المفقودات في الكلية التقنية بالأحساء">
-  <meta name="twitter:description" content="ابحث عن مفقوداتك، وسجّل بلاغاً، واستلم غرضك برمز تحقق.">
+  <meta name="twitter:title" content="مكتب المفقودات - الكلية التقنية بالأحساء | مفقودك">
+  <meta name="twitter:description" content="مكتب المفقودات الإلكتروني في الكلية التقنية بالأحساء: ابحث عن غرضك المفقود، وقدّم بلاغ فقد، واستلم غرضك من المكتب برمز تحقق.">
   <meta name="twitter:image" content="https://kidpom3-hue.github.io/mafqoodak/icons/og-image.png">
 
-  <meta name="theme-color" content="#0A6A5D">
+  <meta name="theme-color" content="#14573A">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -38,8 +38,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- الخطوط لا تؤخر أول رسم للصفحة: يضيفها main.js عند تشغيله (H7: بلا onload مضمّن، لأن CSP يمنعه) -->
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Alexandria:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alexandria:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap"></noscript>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap"></noscript>
   <link rel="stylesheet" href="css/styles.css">
   <!-- تحميل ملفات التطبيق ومكتبة Firebase بالتوازي بدل انتظار كل ملف لما يستورده (أسرع فتحاً).
        رقم إصدار Firebase هنا يجب أن يطابق js/firebase.js وjs/ai.js -->
@@ -73,7 +73,7 @@
 </head>
 <body>
   <!-- رابط «تخطَّ إلى المحتوى»: أول عنصر في الصفحة لمستخدمي لوحة المفاتيح وقارئ الشاشة (نصه يُترجم في main.js) -->
-  <a class="skip" href="#main" id="skip">تخطَّ إلى المحتوى</a>
+  <a class="skip" href="#main" id="skip">الانتقال إلى المحتوى الرئيسي</a>
   <div id="app">
     <header class="top" id="hdr"></header>
     <main id="main" tabindex="-1"><div class="loading boot"><svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><path d="M9 6h17.5L35 14.5V33a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" fill="var(--primary)"/><circle cx="27.5" cy="12.5" r="2.6" fill="var(--bg)"/><circle cx="18" cy="21" r="5.6" fill="none" stroke="var(--primary-ink)" stroke-width="2.4"/><path d="m22.2 25.2 4.3 4.3" stroke="var(--primary-ink)" stroke-width="2.6" stroke-linecap="round"/><path d="M27.5 12.5C30 7 33 4.5 37 4" fill="none" stroke="var(--tag-line)" stroke-width="1.6" stroke-linecap="round"/></svg><span class="spin"></span></div></main>
