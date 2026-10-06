@@ -2,8 +2,8 @@
 import { icon, LOGO, brandOf, CATS, cat, catName, isGrouped, isHiddenCat, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
 import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, tAr, noteText } from '../i18n.js';
-import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode } from '../state.js';
-import { backBtn, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack } from './common.js';
+import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode, iHandedIn } from '../state.js';
+import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
 import { aiReady } from '../firebase.js';
@@ -82,7 +82,7 @@ export function groupCard(g){
     <div class="thumb">${icon(cat(g.group).icon)}</div>
     <div class="card-body">
       <h3>${t('grp.' + g.group + '.title')}</h3>
-      <div class="meta">${icon('box')}<span>${t('grp.count', {items: tp('n.item', g.n), date: g.last ? relDay(isoDay(g.last)) : '—'})}</span></div>
+      <div class="meta">${icon('box')}<span>${t('grp.count', {items: tp('n.item', g.n), date: g.last ? relDayT(isoDay(g.last)) : '—'})}</span></div>
       <span class="btn sm soft grp-cta">${icon('shield')}${t('grp.' + g.group + '.cta')}</span>
     </div>
   </div>`;
@@ -107,7 +107,7 @@ export function card(i){
     <div class="card-body">
       <span class="ref">${esc(i.ref)}</span>
       <h3>${esc(showTitle(i))}</h3>
-      <div class="meta">${icon('clock')}<span>${relDay(i.foundDate)}</span></div>
+      <div class="meta">${icon('clock')}<span>${relDayT(i.foundDate)}</span></div>
       ${i.status !== 'available' ? pill(ITEM_STATUS, i.status) : ''}
     </div>
   </div>`;
@@ -161,7 +161,9 @@ export function vItem(){
   if (staffMode && !SM) return loadingHtml();
   const keepDays = keepDaysOf(i.cat, o) - daysAgo(i.foundDate);   // مدة التصنيف إن كانت أقصر من مدة المكتب
   const mine = S.myClaims.find(cl => cl.itemId === i.id);   // طلب سابق (بأي حالة)
-  const claimBtn = S.uid ? `<button class="btn block" data-act="goClaim" data-id="${esc(i.id)}">${icon('shield')}${t('it.claim')}</button>
+  // H23: من سلّم الغرض للمكتب لا يرى «هذا غرضي»، بل سطراً يوضح ذلك
+  const claimBtn = iHandedIn(i) ? `<div class="note info">${icon('tag')}<span>${t('it.youHandedIn')}</span></div>`
+    : S.uid ? `<button class="btn block" data-act="goClaim" data-id="${esc(i.id)}">${icon('shield')}${t('it.claim')}</button>
       <p class="hint">${t('it.claimHint')}</p>`
     : `<button class="btn block" data-act="login">${icon('shield')}${t('it.loginToClaim')}</button>`;
   let actions = '';
@@ -215,7 +217,7 @@ export function vItem(){
           ${staffMode && f.color ? `<dt>${t('c.color')}</dt><dd>${colorDot(f.color)}${esc(colorName(f.color))}</dd>` : ''}
           ${staffMode && f.brand ? `<dt>${t('st.cmpBrand')}</dt><dd>${esc(f.brand)}</dd>` : ''}
           ${staffMode ? `<dt>${t('if.spot')}</dt><dd>${esc(spotText(f) || t('it.unknown'))}</dd>` : ''}
-          <dt>${t('if.date')}</dt><dd>${fmtDate(i.foundDate)} <span class="muted">(${relDay(i.foundDate)})</span></dd>
+          <dt>${t('if.date')}</dt><dd>${fmtDate(i.foundDate)} <span class="muted">(${relDayT(i.foundDate)})</span></dd>
           ${staffMode && f.storage ? `<dt>${t('if.storage')}</dt><dd>${esc(f.storage)}</dd>` : ''}
           ${i.status === 'disposed' && i.disposal ? `<dt>${t('a.method')}</dt><dd>${disposalLabel(i.disposal)}${i.disposedAt ? ` <span class="muted">(${fmtDate(isoDay(i.disposedAt))})</span>` : ''}</dd>` : ''}
           ${staffMode && f.disposalNote ? `<dt>${t('it.disposalNote')}</dt><dd>${esc(f.disposalNote)}</dd>` : ''}
@@ -247,6 +249,8 @@ function claimForm(p){
   if (i && !p.edit && isGrouped(i.cat)) return claimForm({cat: i.cat, report: p.report});
   const o = (i && S.offices.find(x => x.id === i.officeId)) || (edc && S.offices.find(x => x.id === edc.officeId)) || curOffice();
   const catId = gcat || i?.cat || '';
+  // H23: من سلّم الغرض لا يطلب استلامه (القواعد ترفضه أيضاً)
+  if (i && !p.edit && iHandedIn(i)) return `<div class="wrap" data-view="claim">${backBtn()}<div class="note info">${icon('tag')}<span>${t('it.youHandedIn')}</span></div></div>`;
   if (gcat ? !isGrouped(gcat) : (!i || !ACTIVE.includes(i.status))) return `<div class="wrap">${backBtn()}${emptyBox('box', t('cl.unavailable'), t('it.unavailableSub'), navBtn('browse', 'grid', t('home.ctaBrowse')))}</div>`;
   if (!S.uid) return `<div class="wrap">${backBtn()}${loginPrompt(t('gc.login'))}</div>`;
   if (!S.verified) return `<div class="wrap">${backBtn()}${verifyPrompt(t('cl.verifyWhat'))}</div>`;
@@ -470,10 +474,6 @@ export function foundCardMine(f, focus){
       <span class="meta">${icon('building')}${esc(officeName(f.officeId))}</span>${whenLine('c.sentAt', f.createdAt)}
       ${body}`});
 }
-export function claimSteps(st){
-  const s1 = true, s2 = st === 'approved' || st === 'done', s3 = st === 'done';
-  return `<div class="steps"><span class="${s1 ? 'done' : ''}"><i></i>${t('mine.stSent')}</span><span class="sep"></span><span class="${s2 ? 'done' : ''}"><i></i>${t('mine.stApproved')}</span><span class="sep"></span><span class="${s3 ? 'done' : ''}"><i></i>${t('mine.stDone')}</span></div>`;
-}
 export function claimCardMine(c){
   const i = item(c.itemId); if (!i) ensureItem(c.itemId);
   // H11: طلب مجمّع (بالوصف) لم يُقبل بعد: بلا غرض ظاهر لصاحبه، وحالته «قيد المطابقة»
@@ -491,18 +491,16 @@ export function claimCardMine(c){
     <div class="btn-row">${claimEditable(c) && (i || gw) ? `<button class="btn sm ghost" data-act="editClaim" data-id="${esc(c.id)}">${icon('edit')}${t('cl.edit')}</button>` : ''}
       <button class="btn sm ghost" data-act="withdrawClaim" data-id="${esc(c.id)}">${icon('x')}${t('cl.withdraw')}</button></div>`;
   else if (c.status === 'approved'){
-    // رمز الاستلام في مكان بارز أعلى البطاقة: خط كبير، وزر نسخ، وآخر موعد للاستلام
-    // v9: الرمز XXXX-XXXX ومعه QR بالرمز نفسه (يُرسم بعد تحميل qr.js في hydrate)
+    // رمز الاستلام في مكان بارز أعلى البطاقة: خط كبير، وزر نسخ، وآخر موعد للاستلام (H23: يظهر هنا فقط، وبلا QR)
     if (code) top = `<div class="code-tag code-hero"><small>${t('mine.code')}</small><span class="digits" dir="ltr">${esc(fmtPickup(code))}</span>
-      <div class="code-qr" data-qr="${esc(fmtPickup(code))}" aria-hidden="true"></div>
       <button class="btn sm ghost" data-act="copy" data-v="${esc(fmtPickup(code))}">${icon('copy')}${t('c.copy')}</button>
-      ${c.pickupBy ? `<small class="${late ? 'late' : ''}">${t(late ? 'st.pickupEnded' : 'mine.codeUntil', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`, when: when(c.pickupBy)})}</small>` : ''}
-      <small>${t('mine.codeHint')}</small></div>`;
+      ${c.pickupBy ? `<small class="${late ? 'late' : 'until'}">${t(late ? 'st.pickupEnded' : 'mine.codeUntil', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`, when: when(c.pickupBy)})}</small>` : ''}
+      <small class="hint">${t('mine.codeHint')}</small></div>`;
     body = code ? `<dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>`
       : `<div class="note warn">${icon('info')}<span>${t('mine.noCode')}</span></div>
          ${c.pickupBy ? `<div class="note ${late ? 'warn' : 'info'}">${icon('clock')}<span>${t(late ? 'st.pickupEnded' : 'mine.collectBy', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`})}</span></div>` : ''}`;
   }
-  else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>${t('mine.done', {when: relTime(c.doneAt)})}</span></div>${rateBox(c)}`;
+  else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>${t('mine.done', {when: relT(c.doneAt)})}</span></div>${rateBox(c)}`;
   else if (c.status === 'rejected') body = `<div class="note warn">${icon('info')}<span>${c.note ? t('mine.rejectedWhy', {note: esc(noteText(c.note))}) : t('mine.rejected')}</span></div>`;
   // H13a: أُغلق لأن الغرض لم يعد متاحاً (حُذف أو سُلّم أو أُرشف): سبب واضح بدل «انتهت مهلة الاستلام»
   // H20: سبب آخر غير انتهاء المهلة يظهر كما كتبه المكتب
@@ -512,9 +510,11 @@ export function claimCardMine(c){
   else if (c.status === 'cancelled') body = `<div class="note">${icon('info')}<span>${c.cancelledAt ? t('mine.withdrawn') : c.note ? t('mine.cancelledWhy', {note: esc(noteText(c.note))}) : t('mine.cancelled')}</span></div>`;
   // الخطوة التالية (سطر واحد في الملخّص)
   const need = claimNeed(c);
+  // H23: آخر موعد يظهر مرة واحدة داخل البطاقة؛ الملخّص يذكره فقط حين يقترب (يومان أو أقل)
+  const soon = c.pickupBy && !late && c.pickupBy - Date.now() <= 2 * 864e5;
   const next = gone && ['pending', 'approved'].includes(c.status) ? t('ns.gone')
     : c.status === 'pending' ? t(awaitingAnswer(c) ? 'ns.answer' : gw ? 'gc.nsMatching' : 'ns.review')
-    : c.status === 'approved' ? (late ? t('ns.late') : c.pickupBy ? t('ns.come', {date: esc(dateOf(c.pickupBy))}) : t('ns.comeNoDate'))
+    : c.status === 'approved' ? (late ? t('ns.late') : soon ? t('ns.come', {date: esc(dateOf(c.pickupBy))}) : t('ns.comeNoDate'))
     : c.status === 'done' ? t(c.rating ? 'ns.done' : 'ns.rate') : gw && c.status === 'expired' ? t('gc.nsExpired')
     : c.status === 'expired' && c.note === tAr('sys.itemUnavailable') ? t('ns.gone')
     : c.status === 'expired' && c.note && c.note !== tAr('sys.pickupEnded') ? t('ns.ended')
@@ -523,7 +523,6 @@ export function claimCardMine(c){
     head: `<span class="refs">${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<b dir="ltr" class="req-no">${esc(claimNo(c))}</b></span><h3>${i ? esc(showTitle(i)) : c.grouped ? t('grp.' + c.cat + '.title') : esc(t(gone ? 'mine.goneTitle' : 'c.loadingDots'))}</h3>`,
     body: `${top}
       <span class="meta">${icon('building')}${esc(officeName(c.officeId))}</span>
-      ${['pending', 'approved', 'done'].includes(c.status) && !gone ? claimSteps(c.status) : ''}
       ${claimTimeline(c)}
       ${body}`});
 }
@@ -560,14 +559,15 @@ export function reportCardMine(r, focus){
   const sugg = (it, extra = '') => `<div class="sugg">${miniItem(it)}${extra}${whenLine('rc.itemAt', it.createdAt)}
       ${active ? '' : `<div class="btn-row"><button class="btn sm" data-act="goClaim" data-id="${esc(it.id)}" data-report="${esc(r.id)}">${icon('check')}${t('rc.isMine')}</button>
         <button class="btn sm ghost" data-act="notMine" data-id="${esc(r.id)}" data-item="${esc(it.id)}">${icon('x')}${t('rc.notMine')}</button></div>`}</div>`;
-  const pickBox = pick ? `<div class="pick-box"><span class="t">${icon('shield')}${t('rc.staffPick')}</span>${sugg(pick, whenLine('rc.pickedAt', r.pickedAt))}</div>` : '';
+  const pickBox = pick && !iHandedIn(pick) ? `<div class="pick-box"><span class="t">${icon('shield')}${t('rc.staffPick')}</span>${sugg(pick, whenLine('rc.pickedAt', r.pickedAt))}</div>` : '';
   const need = reportNeed(r);
   const next = r.status !== 'open' ? t(r.closedReason === 'office' ? 'ns.closedOffice' : r.closedReason === 'self' ? 'ns.closedSelf' : 'ns.closed')
     : need === 'stale' ? t('ns.stale') : active ? t('ns.claim') : need === 'sugg' ? t('ns.sugg') : t('ns.search');
   return mcard({key: 'r:' + r.id, open: focus || !!need, fresh: FRESH.has('r:' + r.id), muted: r.status !== 'open', tone: need ? 'warn' : '', pillHtml: pill(REPORT_STATUS, r.status), next,
-    head: `<span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}</span><h3>${esc(r.title)}</h3>`,
-    body: `<div><span class="meta">${r.color ? colorDot(r.color) + esc(colorName(r.color)) + ' · ' : ''}${t('st.lostOn', {date: relDay(r.lostDate)})}</span><span class="meta">${icon('building')}${esc(officeName(r.officeId))}</span>
-      ${whenLine('c.sentAt', r.createdAt)}${whenLine('c.editedAt', r.editedAt)}</div>
+    // H23: وقت الإرسال في البطاقة المطوية نفسها
+    head: `<span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}</span><h3>${esc(r.title)}</h3>${whenLine('c.sentAt', r.createdAt)}`,
+    body: `<div><span class="meta">${r.color ? colorDot(r.color) + esc(colorName(r.color)) + ' · ' : ''}${t('st.lostOn', {date: relDayT(r.lostDate)})}</span><span class="meta">${icon('building')}${esc(officeName(r.officeId))}</span>
+      ${whenLine('c.editedAt', r.editedAt)}</div>
     ${r.status === 'open' && isStale(r) && !active ? `<div class="note warn stale">${icon('clock')}<span><b>${t('rc.stillQ')}</b> ${t('rc.stillHint')}</span></div>
       <div class="btn-row"><button class="btn sm" data-act="renewReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.stillYes')}</button>
         <button class="btn sm ghost" data-act="closeReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.stillFound')}</button></div>`
@@ -577,7 +577,7 @@ export function reportCardMine(r, focus){
       ${auto ? `<div class="pick-box maybe-box"><span class="t">${icon('search')}${t('rc.maybe')}</span>${sugg(auto)}<p class="hint">${t('rc.maybeHint')}</p></div>`
         : !pick && !active ? `<div class="note">${icon('clock')}<span>${t('rc.none')}</span></div>` : ''}
       ${ai.length ? `<span class="label">${icon('spark')} ${t('rc.ai')}</span><div class="list">${ai.map(m => { const it = item(m.id); return it && ACTIVE.includes(it.status) && !no.has(it.id) ? `<div>${miniItem(it)}<div class="reason">${esc(m.reason || '')}</div></div>` : ''; }).join('')}</div>`
-        : r.ai ? `<div class="note">${icon('spark')}<span>${t('rc.aiNone', {when: relTime(r.ai.at)})}</span></div>` : ''}
+        : r.ai ? `<div class="note">${icon('spark')}<span>${t('rc.aiNone', {when: relT(r.ai.at)})}</span></div>` : ''}
       <div class="btn-row">
         ${aiReady() ? `<button class="btn sm soft" data-act="aiMatch" data-id="${esc(r.id)}">${icon('spark')}${t('rc.aiMatch')}</button>` : ''}
         ${closeBtn}
@@ -615,8 +615,8 @@ export function vOffice(){
     ${singleMode() ? '' : `<button class="btn ghost" data-act="pickOffice">${icon('pin')}${t('ui.changePlace')}</button>`}
     <div class="panel">
       <h2 class="section-title">${icon('grid')}${t('svc.indexTitle')}</h2>
-      <div class="svc-links" role="list">${['claim', 'report', 'handin'].map(id => `<button role="listitem" class="opt" data-act="nav" data-r="service" data-id="${id}">${icon(id === 'claim' ? 'shield' : id === 'report' ? 'bell' : 'tag')}<span class="grow">${t('svc.' + id + '.name')}</span>${icon('fwd')}</button>`).join('')}</div>
-      <button class="btn ghost" data-act="nav" data-r="numbers" style="align-self:flex-start">${icon('chart')}${t('num.title')}</button>
+      <div class="svc-links" role="list">${['claim', 'report', 'handin'].map(id => `<button role="listitem" class="opt" data-act="nav" data-r="service" data-id="${id}">${icon(id === 'claim' ? 'shield' : id === 'report' ? 'bell' : 'tag')}<span class="grow">${t('svc.' + id + '.name')}</span>${icon('fwd')}</button>`).join('')}
+        <button role="listitem" class="opt" data-act="nav" data-r="numbers">${icon('chart')}<span class="grow">${t('num.title')}</span>${icon('fwd')}</button></div>
     </div>
     <section class="home-sec">
       <div class="sec-head"><h2>${t('ofc.faq')}</h2></div>

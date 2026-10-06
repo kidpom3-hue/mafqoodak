@@ -1,9 +1,9 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
 import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf } from './constants.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
-import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when } from './utils.js';
+import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when, fmtDateFull } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
-import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId } from './state.js';
+import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn, STAFF_TABS } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
@@ -33,6 +33,13 @@ function formErr(form, msg, field){
 }
 /* H19: نماذج الخطوات (البلاغ والطلب): خطوة واحدة ظاهرة، ومؤشر الخطوات يتبعها.
    «التالي» يفحص الخانات المطلوبة في الخطوة الحالية فقط؛ الفحص الكامل عند الإرسال، وخطؤه يعيد إلى خطوة الخانة */
+/* H23: تبديل تبويب لوحة الموظف: خطوة في سجل المتصفح (زر الرجوع يعيد التبويب السابق)، وموضع التمرير محفوظ لكل تبويب،
+   والبحث والفلتر والتبويب الفرعي والبطاقات المفتوحة في S فتبقى كما هي */
+function staffTabGo(tab){
+  if (!STAFF_TABS[tab]) return;
+  if (S.route.name === 'staff'){ if (S.staffTab === tab) return; S.tabY[S.staffTab] = window.scrollY; }
+  go('staff', {tab});
+}
 export function showStep(form, n, keepErr){
   const total = Number(form.dataset.steps) || 1; n = Math.max(1, Math.min(total, n));
   form.dataset.step = n;
@@ -44,9 +51,28 @@ export function showStep(form, n, keepErr){
   form.querySelector(`.step[data-step="${n}"] .step-h`)?.focus({preventScroll: true});
   form.scrollIntoView({block: 'start', behavior: 'smooth'});
 }
+/* H23: حقل التاريخ يُفحص فوراً (عند التغيير والخروج منه): لا تاريخ بعد اليوم (Safari يتجاهل max أحياناً).
+   الخطأ تحت الحقل مباشرة، وتحته التاريخ مكتوباً بالشهر والسنة («15 أكتوبر 2026») بعزل الاتجاه (<bdi>) */
+export function checkDate(el){
+  if (!el || el.type !== 'date') return true;
+  const bad = !!el.value && el.value > today(), box = el.closest('.field') || el.parentElement;
+  let show = box.querySelector('.date-show');
+  if (!show){ show = document.createElement('span'); show.className = 'hint date-show'; el.after(show); }
+  show.innerHTML = el.value && !bad ? `<bdi>${esc(fmtDateFull(el.value))}</bdi>` : '';
+  show.hidden = !show.innerHTML;
+  let e = box.querySelector('.date-err');
+  if (bad){
+    if (!e){ e = document.createElement('span'); e.className = 'field-err date-err'; e.id = (el.id || el.name) + '-err'; e.setAttribute('role', 'alert'); show.after(e); }
+    e.textContent = t('a.futureDate'); el.setAttribute('aria-invalid', 'true'); el.setAttribute('aria-describedby', e.id);
+  } else { e?.remove(); el.removeAttribute('aria-invalid'); el.removeAttribute('aria-describedby'); }
+  return !bad;
+}
 function stepMissing(form){
   const st = form.querySelector(`.step[data-step="${form.dataset.step || 1}"]`); if (!st) return null;
   if (st.querySelector('input[name=cat]') && !st.querySelector('input[name=cat]:checked')) return {msg: t('a.needCat'), el: st.querySelector('input[name=cat]')};
+  // H23: تاريخ بعد اليوم يمنع «التالي» (لا يُترك للإرسال الأخير)
+  const badDate = [...st.querySelectorAll('input[type=date]')].find(el => !checkDate(el));
+  if (badDate) return {msg: t('a.futureDate'), el: badDate};
   for (const el of st.querySelectorAll('[required]')){
     if (el.disabled || el.closest('[hidden]')) continue;
     const empty = el.type === 'radio' ? !st.querySelector(`input[name="${el.name}"]:checked`) : el.type === 'checkbox' ? !el.checked : !String(el.value || '').trim();
@@ -56,7 +82,8 @@ function stepMissing(form){
 }
 function stepNext(form){
   const m = stepMissing(form);
-  if (m){ formErr(form, m.msg); const d = m.el.closest('details'); if (d) d.open = true; m.el.focus({preventScroll: true}); m.el.scrollIntoView({block: 'center', behavior: 'smooth'}); return; }
+  // H23: خطأ التاريخ يظهر تحت الحقل نفسه (checkDate)، فلا نكرره أعلى النموذج
+  if (m){ if (m.el.type !== 'date') formErr(form, m.msg); else formErr(form, ''); const d = m.el.closest('details'); if (d) d.open = true; m.el.focus({preventScroll: true}); m.el.scrollIntoView({block: 'center', behavior: 'smooth'}); return; }
   showStep(form, (Number(form.dataset.step) || 1) + 1);
 }
 function busy(form, on){ const b = form.querySelector('button[type=submit]'); if (b) b.disabled = on; }
@@ -352,6 +379,7 @@ async function submitForm(form){
     if (form.dataset.edit && !claimEditable(ed)) return formErr(form, t('cl.noEdit'));
     // المتاح والمحجوز يقبلان الطلب (المحجوز: طلب منافس يراجعه المكتب قبل التسليم)
     if (gcat ? !isGrouped(gcat) : (!i || !ACTIVE.includes(i.status))) return formErr(form, t('cl.unavailable'));
+    if (i && iHandedIn(i)) return formErr(form, t('it.youHandedIn'));   // H23: من سلّم الغرض لا يطلب استلامه (القواعد v17 ترفضه أيضاً)
     const catId = gcat || i.cat, officeId = i?.officeId || ed?.officeId || S.officeId;
     if (!S.verified) return formErr(form, t('a.verifyFirst'));
     // هوية صاحب الطلب: الاسم كما في البطاقة وآخر 4 أرقام منها (يطابقها الموظف عند التسليم)
@@ -828,7 +856,9 @@ function wipeDevice(){ ['codes', 'seen', 'staffSeen', 'notify'].forEach(k => { t
 const ACT = {
   nav(el){
     const r = el.dataset.r, tab = el.dataset.tab;
-    if (r === 'staff' && tab){ S.staffTab = tab; if (S.route.name === 'staff'){ SM()?.updateStaff(); renderNav(); window.scrollTo(0, 0); return; } }
+    // H23: تبويب اللوحة من الترويسة أو الشريط السفلي: الانتقال نفسه في كل مكان (الرابط والترويسة والتبويبات معاً)
+    if (r === 'staff' && tab && S.route.name === 'staff') return staffTabGo(tab);
+    if (r === 'staff' && tab) S.staffTab = tab;
     if (r === 'admin' && tab) S.adminTab = tab;
     const fromNav = !!el.closest('#nav, .top-links, .brand');
     if (fromNav) S.hist = [];
@@ -982,7 +1012,7 @@ const ACT = {
   fcat(el){ S.filter.cat = el.dataset.id; updateBrowse(); },
   catGo(el){ S.filter.cat = el.dataset.id; S.filter.q = ''; S.filter.status = 'available'; go('browse'); },
   fstatus(el){ S.filter.status = el.dataset.v; updateBrowse(); },
-  sTab(el){ S.staffTab = el.dataset.v; SM()?.updateStaff(); renderNav(); },
+  sTab(el){ staffTabGo(el.dataset.v); },
   closeSheet(){ closeSheet(); },
   copy(el){ const v = el.dataset.v; navigator.clipboard?.writeText(v).then(() => toast(t('a.copied')), () => toast(v)); },
   removePhoto(el){ clearPhoto(el.closest('form')); },
@@ -1383,6 +1413,9 @@ export function bindEvents(){
       e.preventDefault(); tabs[n].click();
     }
   });
+  // H23: فحص التاريخ فوراً عند تغييره أو الخروج من الحقل
+  app.addEventListener('change', e => { if (e.target.type === 'date') checkDate(e.target); });
+  app.addEventListener('focusout', e => { if (e.target.type === 'date') checkDate(e.target); });
   app.addEventListener('submit', e => {
     const f = e.target.closest('form[data-form]'); if (!f) return;
     e.preventDefault();
@@ -1395,6 +1428,7 @@ export function bindEvents(){
     const t = e.target;
     if (t.id === 'q'){ S.filter.q = t.value; clearTimeout(qTimer); qTimer = setTimeout(updateBrowse, 120); }
     if (t.name === 'ratingNote'){ const f = t.closest('form'); if (f) (RATE_DRAFT[f.dataset.id] ||= {}).note = t.value; }
+    if (t.id === 'rq'){ S.reportQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffReports(); hydrate(); }, 120); }   // H23
     if (t.id === 'cq'){ S.claimQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffClaims(); hydrate(); }, 120); }
     if (t.id === 'sq'){ S.staffQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffItems(); hydrate(); }, 120); }
     // v9: رمز الاستلام: أحرف كبيرة وأرقام لاتينية، وشرطة بعد الأحرف الأربعة الأولى (الرموز القديمة: 6 أرقام)

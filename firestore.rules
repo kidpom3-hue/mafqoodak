@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v16 (H22: حد يومي للإنشاء لكل حساب، والأدلة الفارغة لا تُملأ بعد 24 ساعة إلا مكان العثور، وحدود config وprivate وpublicStats؛ v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
+// قواعد حماية بيانات مفقودك — الإصدار v17 (H23: من سلّم الغرض لا يطلب استلامه ولا يُربط طلبه به؛ v16 (H22: حد يومي للإنشاء لكل حساب، والأدلة الفارغة لا تُملأ بعد 24 ساعة إلا مكان العثور، وحدود config وprivate وpublicStats؛ v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -94,6 +94,13 @@ service cloud.firestore {
     // (نفس القائمة GROUP_CATS في js/constants.js — عدّلهما معاً)
     function groupCats() { return ['cash', 'ids', 'wallets', 'keys']; }
     function linkDoc(id) { return /databases/$(database)/documents/claimLinks/$(id); }
+    // v17 (H23): من سلّم الغرض للمكتب (صاحب إشعار التسليم fromFound) لا يطلب استلامه ولا يُربط طلب له به.
+    // إن كان هو المالك فعلاً يسلّمه الموظف تسليماً مباشراً من لوحته (لا عبر طلب عادي)
+    function notFinder(item, uid) {
+      return item.get('fromFound', '') == ''
+        || !exists(/databases/$(database)/documents/foundReports/$(item.fromFound))
+        || get(/databases/$(database)/documents/foundReports/$(item.fromFound)).data.uid != uid;
+    }
     // ── v11 (H16): تصنيفات لا تُعرض للزائر أبداً (نفس القائمة HIDDEN_CATS في js/constants.js — عدّلهما معاً)
     // كل غرض فيه حقل public: true للعادي، و false لهذه التصنيفات (القواعد تفرضه عند الكتابة).
     // الغرض القديم بلا الحقل: عام إلا إن كان من هذه التصنيفات. الزائر يستعلم بـ public == true فقط
@@ -508,6 +515,7 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.status in ['available', 'reserved']
             // v14 (H19): التصنيفات المجمّعة تُطلب بالوصف فقط (لا طلب مباشر على غرض بعينه منها)
             && !(get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.cat in groupCats())
+            && notFinder(get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data, me())
             && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.officeId == request.resource.data.officeId)
           // v8: طلب مجمّع بالوصف: بلا غرض، لتصنيف مجمّع فقط، ورقمه g_<المستخدم>_<التصنيف>_<وقت الإنشاء>
           // (يربطه الموظف بغرض لاحقاً في claimLinks، ولا يُكتب itemId في الطلب إلا عند القبول)
@@ -739,7 +747,8 @@ service cloud.firestore {
         && request.resource.data.itemId is string && request.resource.data.itemId.size() > 0 && request.resource.data.itemId.size() <= 100
         && cl().get('grouped', false) == true && cl().itemId == '' && cl().status == 'pending'
         && cl().officeId == request.resource.data.officeId && (cl().uid != me() || isOwner())
-        && it().officeId == request.resource.data.officeId && it().cat == cl().cat && it().status == 'available';
+        && it().officeId == request.resource.data.officeId && it().cat == cl().cat && it().status == 'available'
+        && notFinder(it(), cl().uid);
       allow update: if false;
       allow delete: if isAdmin();
     }

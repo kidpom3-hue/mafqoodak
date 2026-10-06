@@ -1042,5 +1042,18 @@ await t('v16-5: رقم سالب مرفوض', setDoc(doc(A, 'publicStats/' + O), 
 await t('v16-5: وقت تحديث قديم مرفوض', setDoc(doc(A, 'publicStats/' + O), {...ps, updatedAt: Date.now() - 3 * DAY}), false);
 await t('v16-5: أرقام منطقية بوقت الآن مسموحة', setDoc(doc(A, 'publicStats/' + O), {...ps, updatedAt: Date.now()}));
 
+// ── v17 (H23): من سلّم الغرض لا يطلب استلامه ولا يُربط طلبه به ──
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  await setDoc(doc(d, 'foundReports/hff1'), {officeId: O, uid: 'bob', cat: 'bags', status: 'received', createdAt: now});
+  await setDoc(doc(d, 'items/hf1'), {...pub('hf1'), fromFound: 'hff1'}); await setDoc(doc(d, 'itemSecrets/hf1'), sec);
+  await setDoc(doc(d, 'foundReports/hff2'), {officeId: O, uid: 'bob', cat: 'wallets', status: 'received', createdAt: now});
+  await setDoc(doc(d, 'items/hw1'), {...pub('hw1', 'wallets'), fromFound: 'hff2'}); await setDoc(doc(d, 'itemSecrets/hw1'), sec);
+  await setDoc(doc(d, 'claims/' + gid('bob', 'wallets', T1)), gc('bob', 'wallets', T1));
+  await setDoc(doc(d, 'claims/' + gid('carol', 'wallets', T1)), gc('carol', 'wallets', T1)); });
+await t('v17-1: من سلّم الغرض لا يطلب استلامه', mk(bob, 'claims/hf1_bob', claim('hf1', 'bob')), false);
+await t('v17-1: غيره يطلب استلامه', mk(carol, 'claims/hf1_carol', claim('hf1', 'carol')));
+await t('v17-2: لا يُربط طلب بالوصف بغرض سلّمه صاحب الطلب', setDoc(doc(A, 'claimLinks/' + gid('bob', 'wallets', T1)), {officeId: O, itemId: 'hw1', by: 'staffA', at: Date.now()}), false);
+await t('v17-2: ويُربط طلب غيره', setDoc(doc(A, 'claimLinks/' + gid('carol', 'wallets', T1)), {officeId: O, itemId: 'hw1', by: 'staffA', at: Date.now()}));
+
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

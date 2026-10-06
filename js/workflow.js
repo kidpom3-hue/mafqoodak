@@ -112,6 +112,13 @@ async function freshItem(id){
 const SELF = new Set();
 const notMine = c => { if (c.uid !== S.uid) return; if (!isOwner()) fail(t('wf.own')); SELF.add(c.id); };
 /* H13a: الغرض كما هو على الخادم (أو null إن حُذف فعلاً)، لا من S.items (النشطة فقط) */
+// H23: صاحب إشعار التسليم الذي جاء منه الغرض = صاحب الطلب؟ (قراءة واحدة؛ تُحفظ في S.finders)
+async function finderIs(i, uid){
+  if (!i?.fromFound || !uid) return false;
+  if (!(i.fromFound in S.finders) || S.finders[i.fromFound] === null)
+    S.finders[i.fromFound] = (await dbx.get('foundReports/' + i.fromFound).catch(() => null))?.uid || '';
+  return S.finders[i.fromFound] === uid;
+}
 export async function fetchItem(id){
   if (!id) return null;
   return item(id) || await dbx.get('items/' + id).then(d => d ? {id, ...d} : null);
@@ -159,6 +166,7 @@ export async function linkClaim(c, itemId, {silent = false} = {}){
   if (S.links[c.id]) fail(t('wf.alreadyLinked'));
   const i = await freshItem(itemId);
   if (i.status !== 'available' || i.officeId !== c.officeId || i.cat !== c.cat) fail(t('wf.notAvailable'));
+  if (await finderIs(i, c.uid)) fail(t('wf.finderClaim'));   // H23 (v17): من سلّم الغرض لا يُربط طلبه به
   const b = dbx.batch(), link = {officeId: c.officeId, itemId: i.id, by: S.uid, at: Date.now()};
   b.set(dbx.ref('claimLinks/' + c.id), link);
   if (!silent) log(b, c.officeId, 'link', {itemId: i.id, claimId: c.id});   // H17: القبول المباشر للنقود يكتب قيداً واحداً
@@ -233,6 +241,7 @@ export async function approveClaim(c, {reason = '', action = 'approve', direct =
   const linked = c.grouped && !c.itemId ? S.links[c.id]?.itemId || '' : '';
   if (c.grouped && !c.itemId && !linked) fail(t('wf.needLink'));
   const i = await freshItem(c.itemId || linked);
+  if (await finderIs(i, c.uid)) fail(t('wf.finderClaim'));   // H23: طلب قديم من الشخص نفسه الذي سلّم الغرض
   // H14: القبول بموظف واحد لكل التصنيفات (لا موافقة ثانية ولا حقل approvals)
   const holder = i.status === 'reserved' && S.claims.find(x => x.id === i.reservedFor && x.status === 'approved');
   if (!(i.status === 'available' || (i.status === 'reserved' && !holder))) fail(t('wf.notAvailable'));

@@ -178,6 +178,12 @@ textarea.input{min-height:92px;resize:vertical}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:14px}
 .check input{width:18px;height:18px;margin-top:3px;accent-color:var(--primary);flex:none}
 .form-err{color:var(--bad);font-weight:600;font-size:14px}
+/* H23: خطأ تحت الحقل مباشرة (التاريخ بعد اليوم)، والتاريخ مكتوباً بالشهر والسنة */
+.field-err{display:block;color:var(--bad);font-weight:600;font-size:13px;margin-top:4px}
+.date-show{display:block;margin-top:4px}
+input[type=date][aria-invalid=true]{border-color:var(--bad)}
+/* حقل التاريخ في الواجهة العربية: ترتيب «يوم/شهر/سنة» من اليسار كما يعرضه المتصفح (بلا خلط اتجاهات)، ومحاذاته لبداية السطر */
+:root[dir=rtl] input[type=date]{direction:ltr;text-align:right}
 .ai-status{font-size:13px;color:var(--primary);font-weight:600;display:flex;align-items:center;gap:6px}
 
 /* item detail */
@@ -230,14 +236,7 @@ dl.facts dd{margin:0;font-weight:600;display:flex;align-items:center;gap:6px;fle
 .maybe-box .hint{margin:0}
 .hit-line{color:var(--ok);font-weight:700;margin-top:-4px}
 .reason{font-size:12.5px;color:var(--muted)}
-.steps{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted);flex-wrap:wrap}
-.steps span{display:inline-flex;align-items:center;gap:5px}
-.steps i{width:8px;height:8px;border-radius:50%;background:var(--line);display:inline-block}
-.steps .done{color:var(--ok)}
-.steps .done i{background:var(--ok)}
-.steps .sep{width:18px;height:1px;background:var(--line)}
 .code-tag{position:relative;align-self:stretch;display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--tag);color:var(--tag-ink);border:1.5px dashed var(--tag-line);border-radius:14px;padding:14px 12px 12px}
-.code-tag::before{content:"";position:absolute;top:10px;inset-inline-start:12px;width:10px;height:10px;border-radius:50%;background:var(--surface);border:1.5px solid var(--tag-line)}
 .code-tag .digits{font-family:var(--f-mono);font-size:32px;font-weight:600;letter-spacing:.28em;direction:ltr;padding-inline-start:.28em}
 .code-tag small{font-size:12.5px;font-weight:600}
 
@@ -374,7 +373,6 @@ form.hero-search{flex-direction:row;align-items:center;gap:8px;background:var(--
 .cat-tile svg{width:26px;height:26px;color:var(--primary)}
 .cat-tile b{font-size:14px;line-height:1.35}
 .cat-tile span{font-size:12px;color:var(--muted)}
-.how.how3{grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))}
 .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:10px}
 .feat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:6px}
 .feat svg{width:26px;height:26px;color:var(--primary)}
@@ -463,15 +461,29 @@ h1,h2,h3,p,dd,.row-title,.card-body h3,.hero-title{overflow-wrap:anywhere}
   .stats::-webkit-scrollbar{display:none}
   .stat{flex:0 0 auto;min-width:118px;scroll-snap-align:start;padding:10px 12px}
   .stat b{font-size:22px}
-  #s-tabs{display:none}
+  /* H23: نُقل إخفاء التبويبات إلى max-width:899px أدناه (وسيلة تنقل أساسية واحدة) */
 }
 /* D5: خطوات «كيف يعمل» كخط زمني مدمج */
-.how.how3{grid-template-columns:1fr;gap:0}
-@media (min-width:720px){.how.how3{grid-template-columns:repeat(3,1fr);gap:18px}}
-.how.how3 li{background:none;border:0;border-radius:0;padding:0 0 18px;display:grid;grid-template-columns:32px 1fr;column-gap:12px;row-gap:2px;position:relative}
-.how.how3 li::before{grid-row:1 / span 2;width:32px;height:32px;font-size:13px;z-index:1}
-.how.how3 li:not(:last-child)::after{content:"";position:absolute;inset-inline-start:15.5px;top:34px;bottom:2px;border-inline-start:2px dashed var(--line)}
-@media (min-width:720px){.how.how3 li::after{display:none}}
+/* H23: خطوات «كيف يعمل»: الخط الواصل يمر بين الدوائر فقط (::after خلفها) ولا يقطع النص أبداً.
+   أقل من 640px: عمودي، الدائرة على الجانب وخط جانبي نحو الدائرة التالية.
+   640px فأكثر: 3 أعمدة متساوية، الدائرة في الأعلى، والعنوان والوصف تحتها (12px على الأقل) */
+.how.how3{grid-template-columns:1fr;gap:0;--how-c:32px;--how-gap:24px}
+.how.how3 li{background:none;border:0;border-radius:0;padding:0 0 20px;display:grid;grid-template-columns:var(--how-c) 1fr;column-gap:12px;row-gap:4px;position:relative;align-content:start}
+.how.how3 li:last-child{padding-bottom:0}
+.how.how3 li::before{grid-row:1 / span 2;width:var(--how-c);height:var(--how-c);font-size:13px;position:relative;z-index:1}
+.how.how3 li > *{grid-column:2}
+.how.how3 b{line-height:1.5;padding-top:5px}
+.how.how3 span{line-height:1.75}
+.how.how3 li:not(:last-child)::after{content:"";position:absolute;z-index:0;inset-inline-start:calc(var(--how-c) / 2 - 1px);top:calc(var(--how-c) + 6px);bottom:6px;border-inline-start:var(--how-line,2px dashed var(--line))}
+@media (min-width:640px){
+  .how.how3{grid-template-columns:repeat(3,minmax(0,1fr));column-gap:var(--how-gap)}
+  .how.how3 li{grid-template-columns:1fr;justify-items:center;text-align:center;padding:0;row-gap:0}
+  .how.how3 li::before{grid-row:auto;margin-bottom:12px}
+  .how.how3 li > *{grid-column:1}
+  .how.how3 b{padding-top:0;margin-bottom:6px}
+  /* الخط من حافة دائرتي إلى حافة الدائرة التالية (بفراغ 8px) على مستوى منتصف الدوائر */
+  .how.how3 li:not(:last-child)::after{border:0;border-top:var(--how-line,2px dashed var(--line));top:calc(var(--how-c) / 2 - 1px);bottom:auto;inset-inline-start:calc(50% + var(--how-c) / 2 + 8px);inline-size:calc(100% + var(--how-gap) - var(--how-c) - 16px)}
+}
 
 /* أهداف اللمس: روابط التذييل وزر «رجوع» و«نسيت كلمة المرور» بارتفاع مريح للإصبع دون تغيير شكلها */
 .back,[data-act="resetPass"]{min-height:36px;display:inline-flex;align-items:center}
@@ -766,7 +778,6 @@ html[data-text] .pill{white-space:normal}
 .ctl li{position:relative;font-size:13px;color:var(--muted);line-height:1.5}
 .ctl li::before{content:'';position:absolute;inset-inline-start:-21px;top:.35em;width:8px;height:8px;border-radius:50%;background:var(--surface);border:2px solid var(--primary)}
 .ctl li b{color:var(--ink);font-weight:600}
-.ctl li.future::before{border-color:var(--muted);border-style:dashed}
 /* كل غرض مقترح في بطاقة البلاغ: البطاقة المصغّرة + وقت تسجيله + «هذا غرضي» و«ليس غرضي» */
 .sugg{display:flex;flex-direction:column;gap:6px}
 .list>.sugg+.sugg{border-top:1px dashed var(--line);padding-top:10px}
@@ -951,15 +962,9 @@ html[data-text] .pill{white-space:normal}
 /* «كيف يعمل»: الخطوات في لوحة خضراء فاتحة جداً، ودوائر ممتلئة بالأخضر وأرقام بيضاء، وخط وصل متصل */
 .how-panel{background:var(--primary-faint);border:1px solid var(--primary-soft);border-radius:16px;padding:16px;gap:10px}
 .how-panel .sec-head h2{font-size:20px}
-.how-panel .how.how3 li{padding-bottom:12px}
-.how-panel .how.how3 li:last-child{padding-bottom:0}
 .how-panel .how li::before{background:var(--primary);color:var(--primary-ink);border-color:var(--primary)}
-.how-panel .how.how3 li:not(:last-child)::after{border-inline-start:2px solid var(--primary-line)}
-.how-panel .how span{font-size:13px;line-height:1.55}
-@media (min-width:720px){
-  .how-panel .how.how3 li{padding-bottom:0}
-  .how-panel .how.how3 li:not(:last-child)::after{display:block;border:0;border-top:2px solid var(--primary-line);top:15px;bottom:auto;inset-inline-start:40px;inset-inline-end:-14px}
-}
+.how-panel .how.how3{--how-line:2px solid var(--primary-line)}
+.how-panel .how span{font-size:13px}
 /* «خصوصيتك أولاً»: أيقونة في دائرة خضراء فاتحة، وارتفاع متساوٍ للبطاقات.
    H5: الخط الأخضر شريط مستقيم داخل البطاقة (عنصر ::before بعرض 3px على الحافة الأولى)، بعيد عن الزوايا 16px أعلى وأسفل،
    بدل حدّ border-inline-start الذي كان يلتف مع استدارة الزوايا */
@@ -1046,9 +1051,6 @@ label.check, .box-head, .box-head b{min-width:0;overflow-wrap:anywhere}
 .note.gq .btn{margin-inline-start:auto}
 /* v9 (H12): رمز الاستلام 8 أحرف XXXX-XXXX ومعه QR (خلفية بيضاء دائماً ليُقرأ) */
 .code-hero .digits{font-size:clamp(24px,8vw,36px);letter-spacing:.04em;white-space:nowrap}
-.code-qr{inline-size:132px;block-size:132px;padding:6px;border-radius:10px;background:var(--qr-bg);align-self:center}
-.code-qr:empty{display:block}
-.code-qr svg{inline-size:100%;block-size:100%;display:block}
 /* H13a: التمرير إلى أي عنصر يُبقيه تحت الترويسة الملتصقة (ارتفاعها الظاهر --hdr-vh يحدّثه syncHeader في ui.js) */
 html{scroll-padding-top:calc(var(--hdr-vh,64px) + 8px)}
 /* H13a: تنبيه الطلبات على أغراض غير متاحة أعلى «قراري» */
@@ -1150,3 +1152,47 @@ html{scroll-padding-top:calc(var(--hdr-vh,64px) + 8px)}
 .step-nav{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;margin-block-start:4px}
 .step-nav .btn{flex:1 1 140px;justify-content:center}
 .step-nav .step-back,.step-nav [data-act=stepPrev]{flex:0 1 auto}
+
+/* H23: ظهور خفيف عند تبديل تبويب لوحة الموظف (لا وميض لصفحة فارغة)، وبلا حركة لمن يفضّل تقليلها */
+@keyframes tabin{from{opacity:.35}to{opacity:1}}
+#s-body.tab-in{animation:tabin .15s ease-out}
+@media (prefers-reduced-motion:reduce){ #s-body.tab-in{animation:none} }
+/* صف الأرقام بارتفاع ثابت في كل التبويبات، فلا يقفز شريط التبويبات */
+#s-stats{min-height:64px}
+/* H23: وسيلة تنقل أساسية واحدة: تحت 900px الشريط السفلي فقط، وفوقها تبويبات اللوحة (الترويسة لا تكررها في صفحة اللوحة) */
+@media (max-width:899px){ #s-tabs{display:none} }
+
+/* H23: جدول المقارنة: ≈ قريب بالأصفر، وتنبيه فرق التاريخ، وعلى الجوال بطاقة لكل صف (بلا تمرير أفقي) */
+.cmp .v.near{color:var(--warn)}
+.cmp-warn{display:flex;gap:8px;align-items:flex-start;margin:0;padding:8px 10px;background:var(--warn-soft);color:var(--warn);font-size:12.5px;font-weight:600;border-top:1px solid var(--line)}
+.cmp-warn svg{width:16px;height:16px;flex:none;margin-top:2px}
+.hit-line.near{color:var(--warn)}
+@media (max-width:640px){
+  .cmp-head{display:none!important}
+  .cmp-row{grid-template-columns:minmax(0,1fr) auto;row-gap:4px}
+  .cmp-row>b{grid-column:1;grid-row:1}
+  .cmp-row>.v{grid-column:2;grid-row:1;min-width:32px}
+  .cmp-row>span[data-l]{grid-column:1/-1}
+  .cmp-row>span[data-l]::before{content:attr(data-l) ": ";color:var(--muted);font-size:11.5px;font-weight:600}
+}
+
+/* H23: النافذة: لوح سفلي في الجوال (حواف علوية مستديرة ومقبض، تحترم safe-area والكيبورد)، ونافذة وسط الشاشة في الكمبيوتر */
+html.sheet-open,html.sheet-open body{overflow:hidden}
+.sheet-panel{max-height:min(90dvh,calc(100dvh - var(--kb,0px) - 12px));margin-bottom:var(--kb,0px);overscroll-behavior:contain;padding-top:26px}
+.sheet-panel::before{content:"";position:absolute;top:9px;inset-inline-start:50%;width:40px;height:4px;border-radius:2px;background:var(--line);transform:translateX(-50%)}
+:root[dir=rtl] .sheet-panel::before{transform:translateX(50%)}
+@media (min-width:720px){
+  #sheet{align-items:center;padding:16px}
+  .sheet-panel{border-radius:20px;max-height:90vh;margin-bottom:0;padding:22px 20px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  .sheet-panel::before{display:none}
+}
+/* H23: بطاقة رمز الاستلام: الرمز هو الأبرز، ورقم الطلب والقيد صغيران ثانويان، وآخر موعد مرة واحدة هنا */
+.code-hero .until{font-size:13px}
+.code-hero .hint{font-weight:500;opacity:.85;text-align:center}
+.mcard-h .refs .ref{font-size:11.5px;opacity:.8}
+.mcard-h .refs .req-no{font-size:11.5px;font-weight:500}
+/* H23: روابط الكلية في صفحة المكتب: بطاقات بارتفاع واحد (الشبكة تمدّ العناصر)، واسم قصير ووصف صغير */
+.br-links.grid li{display:flex}
+.br-links.grid .link{flex:1;align-items:center}
+.br-links.grid .link .grow{display:flex;flex-direction:column;gap:2px;min-width:0}
+.br-links.grid .link small{font-size:12px;font-weight:500;color:var(--muted);line-height:1.5}

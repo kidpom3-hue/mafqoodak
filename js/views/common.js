@@ -1,7 +1,7 @@
 // عناصر واجهة مشتركة بين الصفحات
 import { icon, otype, otypeName, oCity, brandOf, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf, statusLabel, ITEM_STATUS } from '../constants.js';
 import { t, hasKey } from '../i18n.js';
-import { LS, esc, relDay, colorDot, isBuilding, roomWord, spotText, showTitle, when, fmtDate, isoDay } from '../utils.js';
+import { LS, esc, relDay, relTime, colorDot, isBuilding, roomWord, spotText, showTitle, when, fullWhen, fmtDate, fmtDateFull, isoDay, okMs, isoMs } from '../utils.js';
 import { aiReady } from '../firebase.js';   // H8: ai.js يُحمَّل عند الحاجة فقط
 import { THEMES, theme, TEXTS, textSize } from '../theme.js';
 import { S, isStaffHere, answered, singleMode } from '../state.js';
@@ -50,7 +50,9 @@ export function brandLogo(o, on = 'light', cls = '', kind = 'logo'){
 }
 export function collegeLinks(o, cls = ''){
   const b = brandOf(o); if (!b?.links?.length) return '';
-  return `<ul class="br-links ${cls}">${b.links.map(l => `<li><a class="link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${icon(l.k === 'x' ? 'share' : l.k === 'lms' ? 'book' : l.k === 'rayat' ? 'idcard' : 'college')}<span>${t('br.link.' + l.k)}</span>${icon('ext', 'ext')}<span class="sr-only">${t('br.newTab')}</span></a></li>`).join('')}</ul>`;
+  // H23: في الشبكة (صفحة المكتب) اسم قصير ووصف صغير تحته، والبطاقات بارتفاع واحد
+  const grid = cls.includes('grid');
+  return `<ul class="br-links ${cls}">${b.links.map(l => `<li><a class="link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${icon(l.k === 'x' ? 'share' : l.k === 'lms' ? 'book' : l.k === 'rayat' ? 'idcard' : 'college')}${grid ? `<span class="grow"><b>${t('br.link.' + l.k)}</b><small>${t('br.linkD.' + l.k)}</small></span>` : `<span>${t('br.link.' + l.k)}</span>`}${icon('ext', 'ext')}<span class="sr-only">${t('br.newTab')}</span></a></li>`).join('')}</ul>`;
 }
 
 // H13a: حالة غرض طلبٍ لم يعد متاحاً، بنص واضح: حُذف من المستودع، أو حالته الفعلية (سُلّم، مؤرشف، تُصرّف فيه)
@@ -78,9 +80,12 @@ export function thumbHtml(i, cls = 'row-thumb'){
 // الموظف يمرّر full(i) فيظهر اللون ومكان العثور والمبنى والقاعة. الزائر يرى النوع والتاريخ فقط:
 // مكان العثور سري (المرحلة E5) لأنه جواب «أين فقدته؟» في طلب الاستلام
 export const miniItem = (i, extra = '') => { const place = staffView() ? spotText(i) : '';
-  return `<button class="mini" data-act="openItem" data-id="${esc(i.id)}">${thumbHtml(i)}<span class="grow"><b>${esc(showTitle(i))}</b><span class="meta">${i.color ? colorDot(i.color) + esc(colorName(i.color)) + ' · ' : ''}${place ? esc(place) + ' · ' : ''}${relDay(i.foundDate)}</span></span>${extra}</button>`; };
+  return `<button class="mini" data-act="openItem" data-id="${esc(i.id)}">${thumbHtml(i)}<span class="grow"><b>${esc(showTitle(i))}</b><span class="meta">${i.color ? colorDot(i.color) + esc(colorName(i.color)) + ' · ' : ''}${place ? esc(place) + ' · ' : ''}${relDayT(i.foundDate)}</span></span>${extra}</button>`; };
 // G2: سطر وقت دقيق صغير، مثل «أُرسل: الأحد 27 سبتمبر · 9:31 م»
-export const whenLine = (key, ms) => ms ? `<span class="meta when">${icon('clock')}<span>${t(key, {when: when(ms)})}</span></span>` : '';
+export const whenLine = (key, ms) => okMs(ms) ? `<span class="meta when">${icon('clock')}<time datetime="${isoMs(ms)}" title="${esc(fullWhen(ms))}">${t(key, {when: when(ms)})}</time></span>` : '';
+// H23: وقت نسبي («قبل 3 أيام»، «اليوم») وعليه التاريخ الكامل تلميحاً عند المرور أو اللمس
+export const relT = ms => okMs(ms) ? `<time title="${esc(fullWhen(ms))}">${relTime(ms)}</time>` : '';
+export const relDayT = s => s ? `<time datetime="${esc(s)}" title="${esc(fmtDateFull(s))}">${relDay(s)}</time>` : '';
 /* G2: مسار طلب الاستلام: خط عمودي صغير بالأحداث الموجودة فقط، مرتّبة بالوقت
    staff: نص «أجاب صاحب الطلب» بدل «أجبت» */
 export function claimTimeline(c, staff = false){
@@ -93,10 +98,9 @@ export function claimTimeline(c, staff = false){
   // H20: سحبه صاحبه
   if (c.cancelledAt) ev.push([staff ? 'ctl.withdrawnStaff' : 'ctl.withdrawn', c.cancelledAt]);
   ev.sort((a, b) => a[1] - b[1]);
-  // آخر موعد للاستلام: للطلب المقبول (أو الذي انتهت مهلته)، وقد يكون في المستقبل
-  if (c.pickupBy && ['approved', 'expired'].includes(c.status)) ev.push(['ctl.pickupBy', c.pickupBy, c.pickupBy > Date.now()]);
+  // H23: آخر موعد للاستلام لا يُكرَّر هنا: يظهر في بطاقة الرمز (صاحب الطلب) وفي سطر المهلة (الموظف)
   return `<ol class="ctl" aria-label="${t('ctl.title')}">${ev.filter(e => typeof e[1] === 'number' && e[1] > 0)
-    .map(([k, ms, future]) => `<li${future ? ' class="future"' : ''}><b>${t(k)}</b> <span>${when(ms)}</span></li>`).join('')}</ol>`;
+    .map(([k, ms]) => `<li><b>${t(k)}</b> <span>${when(ms)}</span></li>`).join('')}</ol>`;
 }
 // حالة الفتح والطي التي اختارها المستخدم (تبقى عند إعادة الرسم الحيّ): مفتاح البطاقة ← مفتوحة؟ (actions.js يحدّثها)
 export const CARD_OPEN = new Map(), ENDED_OPEN = new Map();

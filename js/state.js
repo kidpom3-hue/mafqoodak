@@ -1,7 +1,7 @@
 // حالة التطبيق والاشتراك في البيانات من Firestore
 import { auth, db, dbx, configured, onAuthStateChanged, getRedirectResult, deleteField } from './firebase.js';
 import { LS, matchScore, toast, dayNum, subKey, setSpotHook, tokens, norm, when } from './utils.js';
-import { t, LANG, saved, setLang } from './i18n.js';
+import { t, LANG, saved, setLang, hasKey } from './i18n.js';
 import { oName, spotLabel, cat, catName, COLORS, autoSuggestOk, SUGG_STOP, claimOf, GROUP_DAYS, AMOUNT_TOL } from './constants.js';
 import { SETTINGS } from './config.js';
 
@@ -9,6 +9,12 @@ import { SETTINGS } from './config.js';
 export const SHARE_RE = /^item\/([\w-]+)\/([\w-]+)$/;
 // رابط مكتب (من ملصق QR المعلّق في المبنى): ./#o/<رقم المكتب> يفتح مفقودات هذا المكتب
 export const OFFICE_RE = /^o\/([\w-]+)$/;
+/* H23: تبويب لوحة الموظف في الرابط (مصدر الحقيقة الواحد للترويسة والشريط السفلي والتبويبات): #/office/warehouse|inbox|reports.
+   زر الرجوع والتحديث يعيدان التبويب نفسه */
+export const STAFF_TABS = {items: 'warehouse', claims: 'inbox', reports: 'reports'};
+export const TAB_RE = /^\/office\/(warehouse|inbox|reports)$/;
+export const tabOfHash = h => { const m = TAB_RE.exec(h); return m ? Object.keys(STAFF_TABS).find(k => STAFF_TABS[k] === m[1]) : ''; };
+const HASH_TAB = tabOfHash(location.hash.slice(1));
 const SHARED = SHARE_RE.exec(location.hash.slice(1));
 const OFFICE_LINK = OFFICE_RE.exec(location.hash.slice(1));
 if (SHARED) LS.set('office', SHARED[1]);
@@ -42,12 +48,12 @@ export const S = {
   secrets: {},   // تفاصيل المفقودات السرية (للموظف فقط): رقم الغرض ← {title, color, brand, desc, bldg, room, storage}
   staffDoc: null, staffLoaded: false, staffList: [], invites: [], priv: {},
   officeId: LS.get('office', null),
-  mode: LS.get('mode', 'visitor'),
+  mode: HASH_TAB ? 'staff' : LS.get('mode', 'visitor'),   // H23: رابط تبويب الموظف يفتح وضع الموظف (fixMode يعيده زائراً إن لم يكن موظفاً)
   // فتح صفحة محددة من اختصارات أيقونة التطبيق (مثل ./#report)
-  route: SHARED ? {name: 'item', params: {id: SHARED[2]}} : {name: ['report', 'browse', 'mine', 'found', 'office', 'privacy', 'numbers', 'a11y', 'service'].includes(location.hash.slice(1)) ? location.hash.slice(1) : ({staff: 'staff', admin: 'admin'})[LS.get('mode', 'visitor')] || 'home', params: {}},
+  route: HASH_TAB ? {name: 'staff', params: {tab: HASH_TAB}} : SHARED ? {name: 'item', params: {id: SHARED[2]}} : {name: ['report', 'browse', 'mine', 'found', 'office', 'privacy', 'numbers', 'a11y', 'service'].includes(location.hash.slice(1)) ? location.hash.slice(1) : ({staff: 'staff', admin: 'admin'})[LS.get('mode', 'visitor')] || 'home', params: {}},
   hist: [],
   filter: {q: '', cat: 'all', status: 'available', range: 'all'},
-  staffTab: 'items', staffQ: '', claimQ: '', staffStatus: 'active', adminTab: 'overview',
+  staffTab: HASH_TAB || 'items', tabY: {}, staffQ: '', claimQ: '', reportQ: '', staffStatus: 'active', adminTab: 'overview',
   sheet: null,
 };
 
@@ -107,6 +113,9 @@ export function ensureFinder(i){
   S.finders[f] = null;
   dbx.get('foundReports/' + f).then(d => { S.finders[f] = d?.uid || ''; }).catch(() => { S.finders[f] = ''; }).finally(changed);
 }
+/* H23: الزائر سلّم هذا الغرض للمكتب بنفسه (إشعار تسليم له مرتبط بالغرض): لا يطلب استلامه ولا يُقترح عليه.
+   القواعد v17 ترفض الطلب أيضاً (notFinder). إن كان هو المالك فعلاً يسلّمه الموظف تسليماً مباشراً */
+export const iHandedIn = i => !!(S.uid && i && S.myFound.some(f => (i.fromFound && f.id === i.fromFound) || (f.itemId && f.itemId === i.id)));
 export function conflictOf(c, i){
   if (!c || !i || !c.uid || c.uid === 'deleted') return '';
   if (i.fromFound){ ensureFinder(i); if (S.finders[i.fromFound] === c.uid) return 'finder'; }
@@ -135,7 +144,9 @@ export function pickOf(r){
 export function candidatesFor(r, n = 3, view = x => x){
   if (isStale(r)) return [];
   const no = rejectedOf(r);
-  return S.items.filter(i => (i.status === 'available' || i.status === 'reserved') && !no.has(i.id))
+  // H23: لا يُرشَّح لصاحب البلاغ غرضٌ سلّمه هو (صاحب إشعار التسليم معروف للموظف عبر ensureFinder)
+  const own = i => !!i.fromFound && (ensureFinder(i), S.finders[i.fromFound] === r.uid);
+  return S.items.filter(i => (i.status === 'available' || i.status === 'reserved') && !no.has(i.id) && !(isStaffHere() && own(i)))
     .map(i => ({i: view(i), s: matchScore(r, view(i))})).filter(x => x.s >= MATCH_MIN)
     .sort((a, b) => b.s - a.s).slice(0, n);
 }
@@ -174,7 +185,7 @@ function autoRanked(r){
   const no = rejectedOf(r);
   const rej = [...no].map(id => item(id)).filter(Boolean);
   const like = i => rej.some(x => x.cat === i.cat && subKey(x.sub) === subKey(i.sub) && x.foundDate === i.foundDate) ? 1 : 0;
-  return S.items.filter(i => ACTIVE.includes(i.status) && !no.has(i.id) && i.id !== r.staffPick && mayBeYours(r, i))
+  return S.items.filter(i => ACTIVE.includes(i.status) && !no.has(i.id) && i.id !== r.staffPick && mayBeYours(r, i) && !iHandedIn(i))
     .map(i => ({i, like: like(i), n: publicClues(r, i)}))
     .sort((a, b) => a.like - b.like || b.n - a.n || (b.i.createdAt || 0) - (a.i.createdAt || 0)).map(x => x.i);
 }
@@ -243,10 +254,15 @@ export function groupCands(c, n = 3){
     .map(i => ({i, s: matchScore(r, i)})).sort((x, y) => y.s - x.s).slice(0, n);
 }
 // الإجابة الرقمية الأساسية للتصنيف (المبلغ، عدد المفاتيح، آخر 4 أرقام من الوثيقة)
+// H23: اسم الإجابة الرقمية الأساسية للعرض («المبلغ»، «عدد المفاتيح»…)
+const dfLabelOf = (catId, k) => t(hasKey(`df.${catId}.${k}`) ? `df.${catId}.${k}` : `df.${k}`);   // كـ dfLabel في common.js
+export const groupKeyLabel = c => { const k = keyNum(c)?.[0]; return k ? dfLabelOf(c.cat, k) : t('gc.keyAny'); };
 const keyNum = c => { const r = groupRep(c); for (const k of ['amount', 'keyCount', 'docLast4']) if (r.details[k]) return [k, r.details[k]]; return null; };
 /* «مطابقة مؤكدة»: مرشّح واحد قوي فقط: إجابته الرقمية مطابقة تماماً + نفس المبنى أو المكان السري، ولا منافس ضمن 15 نقطة */
-export function groupStrong(c, cands = groupCands(c)){
-  const [top, second] = cands; if (!top) return null;
+// H23: min = أقل نسبة لـ«مطابقة مؤكدة» (85%)؛ groupStrong(c, cands, 0) = الشروط نفسها بأي نسبة («مطابقة محتملة»)
+export const STRONG_MIN = 85;
+export function groupStrong(c, cands = groupCands(c), min = STRONG_MIN){
+  const [top, second] = cands; if (!top || top.s < min) return null;
   const kn = keyNum(c); if (!kn || String(top.i.details?.[kn[0]] || '') !== String(kn[1])) return null;
   const r = groupRep(c);
   const place = (r.spot && top.i.spot && r.spot === top.i.spot) || (r.bldg && top.i.bldg && r.bldg === top.i.bldg);
