@@ -373,7 +373,6 @@ form.hero-search{flex-direction:row;align-items:center;gap:8px;background:var(--
 .cat-tile svg{width:26px;height:26px;color:var(--primary)}
 .cat-tile b{font-size:14px;line-height:1.35}
 .cat-tile span{font-size:12px;color:var(--muted)}
-.how.how3{grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))}
 .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:10px}
 .feat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:6px}
 .feat svg{width:26px;height:26px;color:var(--primary)}
@@ -465,12 +464,26 @@ h1,h2,h3,p,dd,.row-title,.card-body h3,.hero-title{overflow-wrap:anywhere}
   /* H23: نُقل إخفاء التبويبات إلى max-width:899px أدناه (وسيلة تنقل أساسية واحدة) */
 }
 /* D5: خطوات «كيف يعمل» كخط زمني مدمج */
-.how.how3{grid-template-columns:1fr;gap:0}
-@media (min-width:720px){.how.how3{grid-template-columns:repeat(3,1fr);gap:18px}}
-.how.how3 li{background:none;border:0;border-radius:0;padding:0 0 18px;display:grid;grid-template-columns:32px 1fr;column-gap:12px;row-gap:2px;position:relative}
-.how.how3 li::before{grid-row:1 / span 2;width:32px;height:32px;font-size:13px;z-index:1}
-.how.how3 li:not(:last-child)::after{content:"";position:absolute;inset-inline-start:15.5px;top:34px;bottom:2px;border-inline-start:2px dashed var(--line)}
-@media (min-width:720px){.how.how3 li::after{display:none}}
+/* H23: خطوات «كيف يعمل»: الخط الواصل يمر بين الدوائر فقط (::after خلفها) ولا يقطع النص أبداً.
+   أقل من 640px: عمودي، الدائرة على الجانب وخط جانبي نحو الدائرة التالية.
+   640px فأكثر: 3 أعمدة متساوية، الدائرة في الأعلى، والعنوان والوصف تحتها (12px على الأقل) */
+.how.how3{grid-template-columns:1fr;gap:0;--how-c:32px;--how-gap:24px}
+.how.how3 li{background:none;border:0;border-radius:0;padding:0 0 20px;display:grid;grid-template-columns:var(--how-c) 1fr;column-gap:12px;row-gap:4px;position:relative;align-content:start}
+.how.how3 li:last-child{padding-bottom:0}
+.how.how3 li::before{grid-row:1 / span 2;width:var(--how-c);height:var(--how-c);font-size:13px;position:relative;z-index:1}
+.how.how3 li > *{grid-column:2}
+.how.how3 b{line-height:1.5;padding-top:5px}
+.how.how3 span{line-height:1.75}
+.how.how3 li:not(:last-child)::after{content:"";position:absolute;z-index:0;inset-inline-start:calc(var(--how-c) / 2 - 1px);top:calc(var(--how-c) + 6px);bottom:6px;border-inline-start:var(--how-line,2px dashed var(--line))}
+@media (min-width:640px){
+  .how.how3{grid-template-columns:repeat(3,minmax(0,1fr));column-gap:var(--how-gap)}
+  .how.how3 li{grid-template-columns:1fr;justify-items:center;text-align:center;padding:0;row-gap:0}
+  .how.how3 li::before{grid-row:auto;margin-bottom:12px}
+  .how.how3 li > *{grid-column:1}
+  .how.how3 b{padding-top:0;margin-bottom:6px}
+  /* الخط من حافة دائرتي إلى حافة الدائرة التالية (بفراغ 8px) على مستوى منتصف الدوائر */
+  .how.how3 li:not(:last-child)::after{border:0;border-top:var(--how-line,2px dashed var(--line));top:calc(var(--how-c) / 2 - 1px);bottom:auto;inset-inline-start:calc(50% + var(--how-c) / 2 + 8px);inline-size:calc(100% + var(--how-gap) - var(--how-c) - 16px)}
+}
 
 /* أهداف اللمس: روابط التذييل وزر «رجوع» و«نسيت كلمة المرور» بارتفاع مريح للإصبع دون تغيير شكلها */
 .back,[data-act="resetPass"]{min-height:36px;display:inline-flex;align-items:center}
@@ -949,15 +962,9 @@ html[data-text] .pill{white-space:normal}
 /* «كيف يعمل»: الخطوات في لوحة خضراء فاتحة جداً، ودوائر ممتلئة بالأخضر وأرقام بيضاء، وخط وصل متصل */
 .how-panel{background:var(--primary-faint);border:1px solid var(--primary-soft);border-radius:16px;padding:16px;gap:10px}
 .how-panel .sec-head h2{font-size:20px}
-.how-panel .how.how3 li{padding-bottom:12px}
-.how-panel .how.how3 li:last-child{padding-bottom:0}
 .how-panel .how li::before{background:var(--primary);color:var(--primary-ink);border-color:var(--primary)}
-.how-panel .how.how3 li:not(:last-child)::after{border-inline-start:2px solid var(--primary-line)}
-.how-panel .how span{font-size:13px;line-height:1.55}
-@media (min-width:720px){
-  .how-panel .how.how3 li{padding-bottom:0}
-  .how-panel .how.how3 li:not(:last-child)::after{display:block;border:0;border-top:2px solid var(--primary-line);top:15px;bottom:auto;inset-inline-start:40px;inset-inline-end:-14px}
-}
+.how-panel .how.how3{--how-line:2px solid var(--primary-line)}
+.how-panel .how span{font-size:13px}
 /* «خصوصيتك أولاً»: أيقونة في دائرة خضراء فاتحة، وارتفاع متساوٍ للبطاقات.
    H5: الخط الأخضر شريط مستقيم داخل البطاقة (عنصر ::before بعرض 3px على الحافة الأولى)، بعيد عن الزوايا 16px أعلى وأسفل،
    بدل حدّ border-inline-start الذي كان يلتف مع استدارة الزوايا */
