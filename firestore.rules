@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v17 (H23: من سلّم الغرض لا يطلب استلامه ولا يُربط طلبه به؛ v16 (H22: حد يومي للإنشاء لكل حساب، والأدلة الفارغة لا تُملأ بعد 24 ساعة إلا مكان العثور، وحدود config وprivate وpublicStats؛ v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
+// قواعد حماية بيانات مفقودك — الإصدار v18 (H25: «هل كانت هذه الصفحة مفيدة؟» عدّادات مجمّعة بلا بيانات شخصية؛ v17 (H23: من سلّم الغرض لا يطلب استلامه ولا يُربط طلبه به؛ v16 (H22: حد يومي للإنشاء لكل حساب، والأدلة الفارغة لا تُملأ بعد 24 ساعة إلا مكان العثور، وحدود config وprivate وpublicStats؛ v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -645,6 +645,39 @@ service cloud.firestore {
         && request.resource.data.get('avgRating', 0) >= 0 && request.resource.data.get('avgRating', 0) <= 5
         && request.resource.data.get('ratings', 0) >= 0
         && fresh(request.resource.data, 'updatedAt');
+    }
+
+    // v18 (H25): «هل كانت هذه الصفحة مفيدة؟» — وثيقة واحدة لكل صفحة في كل مكتب ({officeId}__{page})، فيها عدّادات فقط:
+    // yes / no، وأسباب «لا»: rUnclear (غير واضحة)، rMissing (ناقصة)، rError (خطأ تقني)، rOther (سبب آخر). بلا أي بيانات شخصية.
+    // يكتبها أي زائر ولو بلا حساب: كل كتابة تزيد عدّاداً واحداً بمقدار 1 فقط، فلا يكبر حجم البيانات مهما تكرر الإرسال.
+    // يقرؤها موظفو المكتب والإدارة فقط، ويحذفها المدير (تصفير)
+    function fbPages() { return ['home', 'found', 'handin', 'browse', 'item', 'claim', 'gclaim', 'report', 'mine', 'office',
+                                 'privacy', 'numbers', 'a11y', 'login', 'svc', 'svc-claim', 'svc-report', 'svc-handin']; }
+    function fbCounters() { return ['yes', 'no', 'rUnclear', 'rMissing', 'rError', 'rOther']; }
+    // عدّاد عند الإنشاء: غير موجود أو 1
+    function fbStart(d, k) { return d.get(k, 0) == 0 || d.get(k, 0) == 1; }
+    // عدّاد عند التحديث: كما هو أو زاد 1
+    function fbStep(k) { return request.resource.data.get(k, 0) == resource.data.get(k, 0)
+                             || request.resource.data.get(k, 0) == resource.data.get(k, 0) + 1; }
+    match /pageFeedback/{fbId} {
+      allow read: if isAdmin() || isStaffOf(resource.data.officeId);
+      allow create: if request.resource.data.keys().hasOnly(['officeId', 'page', 'updatedAt', 'yes', 'no', 'rUnclear', 'rMissing', 'rError', 'rOther'])
+        && request.resource.data.keys().hasAll(['officeId', 'page', 'updatedAt'])
+        && request.resource.data.keys().size() == 4
+        && officeExists(request.resource.data.officeId)
+        && request.resource.data.page in fbPages()
+        && fbId == request.resource.data.officeId + '__' + request.resource.data.page
+        && request.resource.data.updatedAt == request.time
+        && fbStart(request.resource.data, 'yes') && fbStart(request.resource.data, 'no')
+        && fbStart(request.resource.data, 'rUnclear') && fbStart(request.resource.data, 'rMissing')
+        && fbStart(request.resource.data, 'rError') && fbStart(request.resource.data, 'rOther');
+      allow update: if request.resource.data.officeId == resource.data.officeId
+        && request.resource.data.page == resource.data.page
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt', 'yes', 'no', 'rUnclear', 'rMissing', 'rError', 'rOther'])
+        && request.resource.data.diff(resource.data).affectedKeys().size() <= 2
+        && fbStep('yes') && fbStep('no') && fbStep('rUnclear') && fbStep('rMissing') && fbStep('rError') && fbStep('rOther');
+      allow delete: if isAdmin();
     }
 
     // سجل العمليات (سلسلة الحيازة): يُضاف إليه فقط، ولا يُعدَّل

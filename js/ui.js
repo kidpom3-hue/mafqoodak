@@ -7,7 +7,7 @@ import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vO
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
 import { vHome, updateHome, vFound, vHandin, footer, fillFootQr } from './views/home.js';
 import { vPrivacy } from './views/privacy.js';
-import { tabNum, brandLogo } from './views/common.js';   // H6: كل شارة رقمية تمرّ بها (رقم واحد: أحمر للجديد أو رمادي للعدد)
+import { tabNum, brandLogo, feedbackBox, fbKey } from './views/common.js';   // H6: كل شارة رقمية تمرّ بها (رقم واحد: أحمر للجديد أو رمادي للعدد)
 // H8: صفحات الموظف والإدارة والإحصاءات والسجل والطباعة والخدمات تُحمَّل عند أول فتح لها فقط (lazy.js)
 import { need, load, loadingHtml, setLazyHooks } from './lazy.js';
 import { SETTINGS } from './config.js';
@@ -222,11 +222,14 @@ function crumbs(){
     ? `<li><span aria-current="page">${x}</span></li>`
     : `<li><button class="link" data-act="nav" data-r="${x[1]}">${x[0]}</button></li>`).join('')}</ol></nav>`;
 }
+// H25: «هل كانت هذه الصفحة مفيدة؟» قبل التذييل في كل صفحات الزائر، وفي الرئيسية (تذييلها في صفحتها) قبل تذييلها
 function decorate(main){
   const o = curOffice(), box = main.firstElementChild;
-  if (!o || !box || ['staff', 'admin'].includes(S.mode) || !VISITOR_PAGES.includes(S.route.name)) return;
+  if (!o || !box || ['staff', 'admin'].includes(S.mode)) return;
+  if (S.route.name === 'home'){ box.querySelector(':scope > .site-foot')?.insertAdjacentHTML('beforebegin', feedbackBox(o, 'home')); return; }
+  if (!VISITOR_PAGES.includes(S.route.name)) return;
   box.insertAdjacentHTML('afterbegin', crumbs());
-  box.insertAdjacentHTML('beforeend', footer(o));
+  box.insertAdjacentHTML('beforeend', feedbackBox(o, fbKey()) + footer(o));
   fillFootQr();
 }
 function renderHeader(){

@@ -248,3 +248,25 @@ export function claimEmailOk(o, email){
 export const cleanDomain = d => { d = String(d || '').trim().toLowerCase().replace(/^@/, ''); return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d) ? d : ''; };
 // النمط الذي تتحقق به القواعد (claimDomainRe): البريد كاملاً ينتهي بأحد النطاقات أو نطاق فرعي منها
 export const domainRe = ds => ds.length ? `.*@([a-z0-9-]+[.])*(${ds.map(d => d.replace(/\./g, '[.]')).join('|')})` : '';
+
+/* H25: «هل كانت هذه الصفحة مفيدة؟» (ضوابط هيئة الحكومة الرقمية): نعم / لا، وبعد «لا» سبب واحد اختياري.
+   تُحفظ عدّادات مجمّعة فقط في pageFeedback/{officeId}__{page} (بلا بيانات شخصية)، والإجابة على هذا الجهاز في LS pageFb
+   فلا يُسأل الزائر عن الصفحة نفسها مرة أخرى قبل 30 يوماً. FB_LABEL: اسم كل صفحة في جدول الإحصاءات للموظف */
+export const FB_REASONS = ['rUnclear', 'rMissing', 'rError', 'rOther'];
+export const FB_LABEL = {home: 'nav.home', found: 'term.handin', handin: 'hi.title', browse: 'nav.browse', item: 'bc.item', claim: 'cl.title',
+  gclaim: 'fb.p.gclaim', report: 'rp.title', mine: 'nav.mine', office: 'foot.office', privacy: 'foot.legal', numbers: 'num.title', a11y: 'foot.a11y',
+  login: 'login.titleIn', svc: 'svc.details', 'svc-claim': 'svc.claim.name', 'svc-report': 'svc.report.name', 'svc-handin': 'svc.handin.name'};
+const FB_DAYS = 30 * 864e5;
+export const fbKey = (route = S.route) => route.name === 'service' ? (['claim', 'report', 'handin'].includes(route.params?.id) ? 'svc-' + route.params.id : 'svc') : route.name;
+export const fbState = (officeId, page) => { const v = LS.get('pageFb', {})[officeId + '__' + page]; return v && Date.now() - (v.at || 0) < FB_DAYS ? v.s : ''; };
+export function feedbackBox(o, page){
+  if (!o || !FB_LABEL[page]) return '';
+  const st = fbState(o.id, page);
+  const body = st === 'no' ? `<p class="fb-q" id="fb-q">${t('fb.why')}</p>
+      <div class="fb-row" role="group" aria-labelledby="fb-q">${FB_REASONS.map(r => `<button class="btn sm ghost" data-act="fbWhy" data-v="${r}">${t('fb.' + r)}</button>`).join('')}
+        <button class="link" data-act="fbWhy" data-v="">${t('fb.skip')}</button></div>`
+    : st ? `<p class="fb-thanks" tabindex="-1">${icon('check')}<span>${t('fb.thanks')}</span></p>`
+    : `<p class="fb-q" id="fb-q">${t('fb.q')}</p>
+      <div class="fb-row" role="group" aria-labelledby="fb-q"><button class="btn sm ghost" data-act="fbVote" data-v="yes">${t('fb.yes')}</button><button class="btn sm ghost" data-act="fbVote" data-v="no">${t('fb.no')}</button></div>`;
+  return `<section class="page-fb no-print" data-office="${esc(o.id)}" data-page="${esc(page)}" aria-label="${t('fb.aria')}" aria-live="polite">${body}</section>`;
+}
