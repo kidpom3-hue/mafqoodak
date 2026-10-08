@@ -1265,3 +1265,12 @@ ul.sf-links{list-style:none;margin:0;padding:0;display:flex;flex-direction:colum
 /* صفحات النماذج الضيقة (.wrap.narrow): التذييل بعرض التطبيق كاملاً من 600px */
 @media (min-width:600px){ .wrap.narrow>.site-foot{width:min(100vw - 32px,1048px);margin-inline:calc((100% - min(100vw - 32px,1048px)) / 2)} }
 @media (min-width:720px){ .wrap.narrow>.site-foot{width:min(100vw - 48px,1032px);margin-inline:calc((100% - min(100vw - 48px,1032px)) / 2)} }
+
+/* H25: «هل كانت هذه الصفحة مفيدة؟» صندوق هادئ قبل التذييل: السؤال ثم زرّان، وبعد «لا» أسباب اختيارية، ثم شكر */
+.page-fb{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin-top:8px;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.page-fb .fb-q{margin:0;font-weight:600;font-size:14.5px}
+.page-fb .fb-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.page-fb .fb-row .btn{min-width:72px}
+.page-fb .fb-thanks{margin:0;display:flex;align-items:center;gap:8px;font-weight:600;color:var(--ok)}
+.page-fb .fb-thanks svg{width:18px;height:18px;flex:none}
+.page-fb .fb-thanks:focus{outline:none}

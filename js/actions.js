@@ -14,7 +14,7 @@ import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor
 // (أزرار لوحة الموظف لا تظهر إلا بعد تحميلها، فهي موجودة عند النقر)
 import { mod, load } from './lazy.js';
 const SM = () => mod('staff');
-import { FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, dfOpt, detailReq } from './views/common.js';
+import { feedbackBox, FB_REASONS, FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, dfOpt, detailReq } from './views/common.js';
 import { setTheme, setTextSize } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
 import { aiReady } from './firebase.js';
@@ -853,6 +853,17 @@ async function doApprove(c, reason = ''){
 // ونسخة Firestore المحفوظة (IndexedDB)، ثم نعيد تحميل الصفحة حتى لا يبقى شيء من بيانات الحساب في الذاكرة
 function wipeDevice(){ ['codes', 'seen', 'staffSeen', 'notify'].forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} }); }
 
+// H25: يرسل عدّاد تقييم الصفحة ويحدّث صندوقها مكانه (بلا إعادة رسم الصفحة)
+function fbSend(el, field, state){
+  const box = el.closest('.page-fb'); if (!box) return;
+  const {office, page} = box.dataset, all = LS.get('pageFb', {});
+  all[office + '__' + page] = {s: state, at: Date.now()};
+  LS.set('pageFb', Object.fromEntries(Object.entries(all).slice(-100)));
+  if (field) dbx.bump('pageFeedback/' + office + '__' + page, {officeId: office, page}, field).catch(e => console.warn('pageFeedback', e?.code || e));
+  const o = S.offices.find(x => x.id === office);
+  box.outerHTML = feedbackBox(o, page);
+  document.querySelector('.page-fb button, .page-fb .fb-thanks')?.focus({preventScroll: true});   // يبقى التركيز داخل الصندوق
+}
 const ACT = {
   nav(el){
     const r = el.dataset.r, tab = el.dataset.tab;
@@ -1007,6 +1018,10 @@ const ACT = {
     markStaffSeen(staffKeys().filter(x => x.sub === g + ':' + v).map(x => x.k));
     SM()?.updateStaff(); renderNav(); document.getElementById(`st-${g}-${v}`)?.focus({preventScroll: true});   // H13a: بلا قفزة تحت الترويسة
   },
+  // H25: «هل كانت هذه الصفحة مفيدة؟» — نعم/لا ثم سبب اختياري. عدّاد مجمّع فقط، والإخفاق صامت (لا يعطّل الزائر).
+  // الإجابة تُحفظ على الجهاز (LS pageFb) فيبقى الشكر ظاهراً عند إعادة الرسم ولا يُسأل عنها مجدداً قبل 30 يوماً
+  fbVote(el){ fbSend(el, el.dataset.v === 'yes' ? 'yes' : 'no', el.dataset.v === 'yes' ? 'yes' : 'no'); },
+  fbWhy(el){ fbSend(el, FB_REASONS.includes(el.dataset.v) ? el.dataset.v : '', 'done'); },
   attLater(el){ LS.set('snoozed', [...new Set([...LS.get('snoozed', []), el.dataset.k])].slice(-200)); renderAll(); },
   openCard(el){ openCard(el.dataset.tab, el.dataset.card, el.dataset.ended === '1'); },
   fcat(el){ S.filter.cat = el.dataset.id; updateBrowse(); },
