@@ -139,8 +139,14 @@ export function updateBrowse(){
   // بحث عن «نقود/مبلغ…»: الرسالة نفسها فوق النتائج (لا نتيجة نقود أبداً)
   const hint = S.filter.cat === 'all' && q.length ? CATS.filter(c => hiddenHere(c.id) && groupHit(q, c.id)).map(c => hiddenNote(c.id)).join('') : '';
   const any = pubActive().length;
+  // H26: بحث بلا نتيجة: «لم تجده؟» وزر يفتح البلاغ واسم الغرض مملوء بكلمة البحث (ACT.reportFromSearch)
+  const noHit = q.length ? emptyBox('search', t('br.searchNone'), t('br.searchNoneSub'),
+    `<button class="btn" data-act="reportFromSearch">${icon('bell')}${t('br.searchReport')}</button>`, 'search-none') : '';
+  // صندوق «غرضك غير موجود في القائمة» أسفل الصفحة يُخفى ما دام صندوق «لم تجده؟» ظاهراً (لا تكرار)
+  const showNoHit = !arr.length && !hint && !!noHit;
+  const cl = $('.cta-lost'); if (cl) cl.hidden = showNoHit;
   res.innerHTML = hint + (arr.length ? `<div class="grid">${arr.join('')}</div>`
-    : hint ? '' : emptyBox('search', t(any ? 'br.noResults' : 'home.empty'), t(any ? 'br.noResultsSub' : 'home.emptySub'), navBtn('report', 'bell', t('home.ctaLost'))));
+    : hint ? '' : noHit || emptyBox('search', t(any ? 'br.noResults' : 'home.empty'), t(any ? 'br.noResultsSub' : 'home.emptySub'), navBtn('report', 'bell', t('home.ctaLost'))));
   hydrate();
 }
 
@@ -334,8 +340,10 @@ function claimForm(p){
 
 /* ---------- visitor: report lost ---------- */
 export function vReportForm(){
-  if (!S.uid) return `<div class="wrap">${loginPrompt(t('rp.login'))}</div>`;
-  if (!S.verified) return `<div class="wrap">${verifyPrompt(t('rp.verifyWhat'))}</div>`;
+  // H26: البلاغ الجديد يُعبّأ بلا دخول (الدخول والتوثيق يُطلبان عند «إرسال» فقط، والمسودة تبقى: draftGate في actions.js).
+  // تعديل بلاغ قائم يحتاج حساب صاحبه كما كان
+  if (S.route.params.id && !S.uid) return `<div class="wrap">${loginPrompt(t('rp.login'))}</div>`;
+  if (S.route.params.id && !S.verified) return `<div class="wrap">${verifyPrompt(t('rp.verifyWhat'))}</div>`;
   // G3: «تعديل» البلاغ (params.id): النموذج نفسه معبّأً بكل حقوله، والحفظ تحديث للبلاغ نفسه
   const r = S.route.params.id ? S.myReports.find(x => x.id === S.route.params.id && x.status === 'open') : null;
   if (S.route.params.id && !r) return `<div class="wrap">${backBtn()}${emptyBox('bell', t('rp.gone'), '', navBtn('mine', 'inbox', t('it.follow')))}</div>`;
@@ -346,6 +354,7 @@ export function vReportForm(){
   return `<div class="wrap" data-view="report">${r ? backBtn() : ''}
     <section class="hero"><div class="hero-kicker">${icon('bell')}${t('rp.kicker', {office: esc(oName(o))})}</div><h1 class="hero-title">${t(r ? 'rp.editTitle' : 'rp.title')}</h1>
       <p class="hero-sub">${t(r ? 'rp.editSub' : 'rp.sub')}</p></section>
+    ${!S.uid ? `<div class="note info">${icon('info')}<span>${t('dr.hint')}</span></div>` : ''}
     <form data-form="report" class="panel" novalidate data-steps="3" data-step="1" ${r ? `data-id="${esc(r.id)}"` : ''}>
       ${stepper([t('step.what'), t('step.where'), t('step.desc')])}
       <div class="form-err" hidden></div>
@@ -354,7 +363,7 @@ export function vReportForm(){
       <div class="field"><span class="label">${t('c.category')}</span>${catPicker(r?.cat || '')}</div>
       <div class="field" id="subs-field" ${hasSubs ? '' : 'hidden'}><span class="label">${t('c.type')}</span><div id="subs">${hasSubs ? subsPicker(r.cat, r.sub) : ''}</div></div>
       <div id="cat-fields" data-mode="report">${r ? catFields(r.cat, r, 'report') : ''}</div>
-      <div class="field"><label for="r-title">${t('rp.name')}</label><input id="r-title" name="title" class="input" required placeholder="${t('rp.namePh')}" maxlength="80" value="${esc(r?.title || '')}"></div>
+      <div class="field"><label for="r-title">${t('rp.name')}</label><input id="r-title" name="title" class="input" required placeholder="${t('rp.namePh')}" maxlength="80" value="${esc(r?.title || String(S.route.params.q || '').slice(0, 80))}"></div>
       ${stepNav(1, 3)}`)}
       ${step(2, 3, t('step.whereQ'), `
       <div class="two">
@@ -612,6 +621,15 @@ export function vOffice(){
       <p class="muted">${t('br.about')}</p>
       ${collegeLinks(o, 'grid')}
     </div>` : ''}
+    <section class="home-sec" id="privacy-details">
+      <div class="sec-head"><h2>${t('ofc.privacy')}</h2></div>
+      <div class="features compact">
+        <div class="feat">${icon('lock')}<b>${t('ofc.f1')}</b><span>${t('ofc.f1d')}</span></div>
+        <div class="feat">${icon('idcard')}<b>${t('ofc.f2')}</b><span>${t('ofc.f2d')}</span></div>
+        <div class="feat">${icon('shield')}<b>${t('ofc.f3')}</b><span>${t('ofc.f3d')}</span></div>
+        <div class="feat">${icon('spark')}<b>${t('ofc.f4')}</b><span>${t('ofc.f4d')}</span></div>
+      </div>
+    </section>
     ${singleMode() ? '' : `<button class="btn ghost" data-act="pickOffice">${icon('pin')}${t('ui.changePlace')}</button>`}
     <div class="panel">
       <h2 class="section-title">${icon('grid')}${t('svc.indexTitle')}</h2>

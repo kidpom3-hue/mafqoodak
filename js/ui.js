@@ -1,7 +1,7 @@
 // هيكل الواجهة: التنقل بين الصفحات، الشريط العلوي، الشريط السفلي، النوافذ المنبثقة
 import { icon, LOGO, statusLabel, MODE_LABEL, brandOf } from './constants.js';
 import { t } from './i18n.js';
-import { $, $$, esc, toast } from './utils.js';
+import { $, $$, esc, toast, SS } from './utils.js';
 import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, getEmail, SHARE_RE, OFFICE_RE, singleMode, STAFF_TABS, TAB_RE } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice } from './views/visitor.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
@@ -62,7 +62,12 @@ export function initForm(){
   const n = f.querySelector('#sens-note'), p = f.querySelector('#photo-field');
   if (n) n.hidden = !sens; if (p) p.hidden = sens;
   lockEvidence(f);
+  FORM_HOOKS.forEach(h => h(f));   // H26: إعادة مسودة البلاغ أو إشعار التسليم (actions.js)
 }
+// H26: دوال تعمل بعد رسم نموذج (يضيفها actions.js، لأن ui.js لا يستورد منه)
+export const FORM_HOOKS = [];
+// H26: مسودة تنتظر الإرسال بعد الدخول (draft:<kind>.pending): بعد الرجوع من دخول Google بإعادة التوجيه نعود إلى نموذجها
+export const pendingDraft = () => ['report', 'handin'].find(k => SS.get('draft:' + k, null)?.pending) || '';
 // v14 (H19): غرض مضى على تسجيله 24 ساعة: حقول الأدلة للعرض فقط للموظف (workflow.editItem يبقي قيمها كما سُجّلت)
 export function lockEvidence(f){
   if (!f?.dataset.locked) return;
@@ -187,6 +192,7 @@ function renderMain(){
   if (!S.configured){ main.innerHTML = vNotConfigured(); return; }
   if (!S.authReady || !S.configLoaded || !S.officesLoaded){ main.innerHTML = `<div class="loading"><span class="spin"></span></div>`; return; }
   if (S.route.name === 'login' && S.uid) S.route = S.route.params.next || {name: homeRoute(), params: {}};
+  if (S.uid && S.route.name === homeRoute() && pendingDraft()) S.route = {name: pendingDraft(), params: {}};
   if (!S.config){ main.innerHTML = S.route.name === 'login' ? vLogin() : S.route.name === 'privacy' ? vPrivacy() : vSetup(); return; }
   // لا مكان مختار (أو لم يصل بعد من قاعدة البيانات): نعرض قائمة الأماكن دون تغيير الصفحة المطلوبة
   // H19: وضع المكتب الواحد: صفحة اختيار المكان لا تظهر للزائر
@@ -235,13 +241,14 @@ function decorate(main){
 function renderHeader(){
   const o = curOffice(); const ms = S.config ? modes() : ['visitor'];
   const acct = !S.configured || !S.authReady ? ''
-    : S.uid ? `<button class="avatar-btn" data-keep="acct" data-act="account" aria-label="${t('ui.account')}">${safeAvatar(S.me?.photo) ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span>${esc((S.me?.name || '?').trim().charAt(0))}</span>`}</button>`
+    : S.uid ? `<button class="avatar-btn" data-keep="acct" data-act="account" aria-label="${t('ui.accountOf', {name: esc(S.me?.name || '')})}" title="${t('ui.accountOf', {name: esc(S.me?.name || '')})}">${safeAvatar(S.me?.photo) ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span>${esc((S.me?.name || '?').trim().charAt(0))}</span>`}</button>`
     // H3: تحت 400px يصبح زر الدخول أيقونة فقط (النص مخفي بصرياً ويبقى اسمه في aria-label)، فيتسع اسم المكتب
-    : `<button class="btn sm ghost login-btn" data-act="login" aria-label="${t('ui.signIn')}">${icon('users')}<span class="login-txt">${t('ui.signIn')}</span></button>`;
+    // H26: غير المسجّل يرى كلمة «دخول» نصاً في كل المقاسات (لا أيقونة وحدها)
+    : `<button class="btn sm ghost login-btn" data-act="login" aria-label="${t('ui.signIn')}" title="${t('ui.signIn')}">${icon('users')}<span class="login-txt">${t('ui.signInShort')}</span></button>`;
   // زر اللغة: يعرض اللغة الأخرى («EN» في العربية، «عربي» في الإنجليزية)
-  const langBtn = `<button class="lang-btn" data-act="lang" lang="${t('lang.otherCode')}" aria-label="${t('lang.switch')}"><span class="lang-txt">${t('lang.other')}</span>${icon('globe')}</button>`;
+  const langBtn = `<button class="lang-btn" data-act="lang" lang="${t('lang.otherCode')}" aria-label="${t('lang.switch')}" title="${t('lang.switch')}"><span class="lang-txt">${t('lang.other')}</span>${icon('globe')}</button>`;
   // H4: «Aa» يفتح نافذة العرض (المظهر وحجم الخط)
-  const aaBtn = `<button class="aa-btn" data-act="displaySheet" aria-label="${t('ui.display')}"><span aria-hidden="true">Aa</span></button>`;
+  const aaBtn = `<button class="aa-btn" data-act="displaySheet" aria-label="${t('ui.display')}" title="${t('ui.display')}"><span aria-hidden="true">Aa</span></button>`;
   // H15: هوية الكلية (ألوانها وشعارها) في مكتبها فقط، وليس في لوحة الإدارة التي تدير كل المواقع
   const bo = S.mode !== 'admin' ? o : null;
   applyBrand(bo);

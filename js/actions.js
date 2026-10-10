@@ -1,14 +1,14 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
 import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf } from './constants.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
-import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when, fmtDateFull } from './utils.js';
-import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
+import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when, fmtDateFull, SS } from './utils.js';
+import { claimEmailOk, cleanDomain, domainRe, verifyPrompt } from './views/common.js';
 import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn, STAFF_TABS } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification } from './firebase.js';
-import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar, lockEvidence } from './ui.js';
+import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar, lockEvidence, FORM_HOOKS } from './ui.js';
 import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor.js';
 // H8: لوحة الموظف والإحصاءات والذكاء الاصطناعي والأمثلة تُحمَّل عند الحاجة (lazy.js). SM() = وحدة staff.js المحمّلة
 // (أزرار لوحة الموظف لا تظهر إلا بعد تحميلها، فهي موجودة عند النقر)
@@ -87,6 +87,61 @@ function stepNext(form){
   showStep(form, (Number(form.dataset.step) || 1) + 1);
 }
 function busy(form, on){ const b = form.querySelector('button[type=submit]'); if (b) b.disabled = on; }
+
+/* H26: بلاغ وإشعار تسليم بلا حاجز دخول مسبق. الزائر يعبّئ النموذج كاملاً، وعند «إرسال» وهو غير مسجّل تُحفظ المسودة
+   في sessionStorage (SS: الحقول والصورة والخطوة) ثم يذهب إلى الدخول، وبعده تعود المسودة إلى النموذج مع تنبيه «أكمل إرسال بلاغك».
+   والبريد غير الموثّق: تبقى المسودة وتظهر نافذة التوثيق عند الإرسال فقط. شرط التوثيق في القواعد كما هو.
+   المسودة تنتهي بعد يوم، وتُمسح بعد الإرسال الناجح */
+const DRAFT_MS = 864e5, DRAFT_KINDS = ['report', 'handin'];
+const draftKey = kind => 'draft:' + kind;
+function saveDraft(form, pending){
+  const v = {};
+  for (const [k, x] of new FormData(form)) if (typeof x === 'string') (v[k] ||= []).push(x);
+  const photo = typeof FORM.photo === 'string' && FORM.photo.startsWith('data:image/') ? FORM.photo : null;
+  // الصورة قد تكبر على مساحة الجلسة: نحفظ بلا صورة إن تعذّر
+  if (!SS.set(draftKey(form.dataset.form), {v, photo, step: form.dataset.step || '', at: Date.now(), pending}))
+    SS.set(draftKey(form.dataset.form), {v, photo: null, step: form.dataset.step || '', at: Date.now(), pending});
+}
+const clearDraft = kind => SS.del(draftKey(kind));
+function restoreDraft(form){
+  const kind = form.dataset.form;
+  if (!DRAFT_KINDS.includes(kind) || form.dataset.id) return;
+  const d = SS.get(draftKey(kind), null);
+  if (!d?.v || Date.now() - (d.at || 0) > DRAFT_MS){ if (d) clearDraft(kind); return; }
+  const v = d.v, one = k => v[k]?.[0] ?? '';
+  // التصنيف أولاً: يرسم الأنواع وأسئلة التصنيف، ثم بقية الخانات بقيمها
+  const c = [...form.querySelectorAll('input[name=cat]')].find(x => x.value === one('cat'));
+  if (c){ c.checked = true; onCatChange(form, c.value, one('sub')); if (!form.isConnected) return; }
+  const fill = () => Object.entries(v).forEach(([k, vals]) => {
+    if (k === 'cat') return;
+    form.querySelectorAll('[name]').forEach(el => {
+      if (el.name !== k || el.type === 'file') return;
+      if (el.type === 'radio' || el.type === 'checkbox') el.checked = vals.includes(el.value);
+      else el.value = vals[0] ?? '';
+    });
+  });
+  fill();
+  const sp = form.querySelector('[name=spot]'); if (sp){ onSpotChange(form, sp.value); fill(); }   // المبنى والقاعة بعد إظهار خاناتهما
+  if (d.photo && !cat(one('cat')).sensitive && form.querySelector('#pv')){
+    FORM.photo = d.photo; form.querySelector('#pv').innerHTML = `<img src="${d.photo}" alt="">`;
+    const rm = form.querySelector('#rm-photo'); if (rm) rm.hidden = false;
+  }
+  form.querySelectorAll('input[type=date]').forEach(el => el.dispatchEvent(new Event('change', {bubbles: true})));
+  if (form.dataset.steps && Number(d.step) > 1) showStep(form, Number(d.step));
+  if (d.pending){ SS.set(draftKey(kind), {...d, pending: false}); toast(t(kind === 'report' ? 'dr.resumeReport' : 'dr.resumeHandin')); }
+}
+FORM_HOOKS.push(restoreDraft);
+// عند الإرسال: غير مسجّل ← حفظ المسودة والذهاب إلى الدخول؛ غير موثّق ← حفظها ونافذة التوثيق. يرجع true إن توقّف الإرسال
+function draftGate(form){
+  const kind = form.dataset.form;
+  if (!S.uid){ saveDraft(form, true); toast(t('dr.loginFirst')); go('login', {next: {name: kind, params: {}}}); return true; }
+  if (!S.verified){
+    saveDraft(form, false);
+    openSheet(`${verifyPrompt(t(kind === 'report' ? 'rp.verifyWhat' : 'hi.verifyWhat'))}<button class="btn ghost" data-act="closeSheet">${t('c.close')}</button>`);
+    return true;
+  }
+  return false;
+}
 
 export function onCatChange(form, catId, sub){
   // H16: بلاغ جديد بتصنيف مخفي (النقود): يتحول إلى البلاغ بالتفاصيل (طلب مجمّع يطابقه الموظف)، فلا بلاغ عادي للنقود
@@ -469,6 +524,7 @@ async function submitForm(form){
     if (kind === 'report'){
       // H16: احتياط: لا بلاغ عادي لتصنيف مخفي (النقود)؛ بلاغه بالتفاصيل يطابقه الموظف
       if (!form.dataset.id && isHiddenCat(catId)){ busy(form, false); go('gclaim', {cat: catId}); return; }
+      if (!form.dataset.id && draftGate(form)){ busy(form, false); return; }   // H26
       if (!S.verified){ busy(form, false); return formErr(form, t('a.verifyFirst')); }
       if (form.dataset.id) return saveReportEdit(form, val, catId, sens, bldg, room);
       const id = dbx.newId('reports');
@@ -482,7 +538,7 @@ async function submitForm(form){
         cachePhoto('r_' + id, FORM.photo);
         if (await write(() => dbx.set('reportPhotos/' + id, {data: FORM.photo}))) await write(() => dbx.update('reports/' + id, {photo: true}));
       }
-      busy(form, false); if (ok){ S.hist = []; go('mine', {focus: id}, false); }
+      busy(form, false); if (ok){ clearDraft('report'); S.hist = []; go('mine', {focus: id}, false); }
       return;
     }
 
@@ -708,14 +764,14 @@ async function submitForm(form){
   if (kind === 'handin'){
     const catId = val('cat');
     if (!catId) return formErr(form, t('a.needCat'));
-    if (!S.verified) return formErr(form, t('a.verifyFirst'));
+    if (draftGate(form)) return;   // H26: بلا دخول أو بلا توثيق: المسودة باقية
     busy(form, true);
     const id = dbx.newId('foundReports');
     // كود قصير يُريه الواجد لموظف المكتب فيفتح إشعاره مباشرة (بحروف رقم القيد نفسها)
     const code = refCode(6);
     const ok = await write(() => createLimited('foundReports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), spot: val('spot'), bldg, room,
       foundDate: val('foundDate') || today(), note: val('note').slice(0, 500), code, status: 'pending', createdAt: Date.now()}), t('hi.sent'));
-    busy(form, false); if (ok){ S.hist = []; go('mine', {focus: id}, false); }
+    busy(form, false); if (ok){ clearDraft('handin'); S.hist = []; go('mine', {focus: id}, false); }
     return;
   }
   // قياس الرضا: تقييم الطلب المكتمل مرة واحدة (القواعد تمنع التقييم الثاني)
@@ -1022,6 +1078,8 @@ const ACT = {
   // الإجابة تُحفظ على الجهاز (LS pageFb) فيبقى الشكر ظاهراً عند إعادة الرسم ولا يُسأل عنها مجدداً قبل 30 يوماً
   fbVote(el){ fbSend(el, el.dataset.v === 'yes' ? 'yes' : 'no', el.dataset.v === 'yes' ? 'yes' : 'no'); },
   fbWhy(el){ fbSend(el, FB_REASONS.includes(el.dataset.v) ? el.dataset.v : '', 'done'); },
+  // H26: من بحث بلا نتيجة إلى بلاغ جديد، واسم الغرض = كلمة البحث (يعدّلها الزائر)
+  reportFromSearch(){ go('report', {q: String(S.filter.q || '').trim().slice(0, 80)}); },
   attLater(el){ LS.set('snoozed', [...new Set([...LS.get('snoozed', []), el.dataset.k])].slice(-200)); renderAll(); },
   openCard(el){ openCard(el.dataset.tab, el.dataset.card, el.dataset.ended === '1'); },
   fcat(el){ S.filter.cat = el.dataset.id; updateBrowse(); },
