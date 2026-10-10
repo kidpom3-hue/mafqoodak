@@ -70,13 +70,39 @@
   <link rel="modulepreload" href="js/views/privacy.js">
   <!-- المظهر واللغة المحفوظان على الجهاز يُطبَّقان قبل رسم الصفحة، حتى لا يومض المظهر أو الاتجاه الآخر -->
   <script>try{var h=document.documentElement,s=localStorage,t=JSON.parse(s.getItem('mfq:theme')||'null'),l=JSON.parse(s.getItem('mfq:lang')||'null'),x=JSON.parse(s.getItem('mfq:text')||'null');if(t==='light'||t==='dark')h.setAttribute('data-theme',t);if(l==='en'){h.lang='en';h.dir='ltr'}if(x==='l'||x==='xl')h.setAttribute('data-text',x)}catch(e){}</script>
+  <!-- H26: بيانات منظَّمة لمحركات البحث (لا تُنفَّذ كسكربت، فلا تحتاج بصمة في CSP): الجهة والأسئلة الشائعة من خطوات الخدمة -->
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@graph": [
+    {"@type": "Organization", "name": "مفقودك", "alternateName": "Mafqoodak", "url": "https://kidpom3-hue.github.io/mafqoodak/",
+     "logo": "https://kidpom3-hue.github.io/mafqoodak/icons/icon-512.png",
+     "description": "مكتب المفقودات الإلكتروني في الكلية التقنية بالأحساء: ابحث عن غرضك المفقود، وقدّم بلاغ فقد، واستلم غرضك من المكتب برمز تحقق."},
+    {"@type": "FAQPage", "inLanguage": "ar", "mainEntity": [
+      {"@type": "Question", "name": "كيف أبحث عن غرض فقدته في الكلية التقنية بالأحساء؟",
+       "acceptedAnswer": {"@type": "Answer", "text": "ابحث في المفقودات المسجّلة في مفقودك، أو قدّم بلاغ فقد بوصف غرضك لتقارنه المنصة بكل ما يُسلَّم للمكتب، ويصلك تنبيه عند تسجيل غرض مشابه."}},
+      {"@type": "Question", "name": "كيف أثبت أن الغرض لي؟",
+       "acceptedAnswer": {"@type": "Answer", "text": "اختر «هذا غرضي — طلب الاستلام» واكتب تفاصيل لا يعرفها إلا صاحب الغرض، ويراجعها موظف مكتب المفقودات."}},
+      {"@type": "Question", "name": "كيف أستلم غرضي من المكتب؟",
+       "acceptedAnswer": {"@type": "Answer", "text": "عند قبول طلبك يظهر لك رمز استلام من 8 أحرف في «طلباتي». قدّمه في مكتب المفقودات مع بطاقتك واستلم غرضك."}}
+    ]}
+  ]}
+  </script>
 </head>
 <body>
   <!-- رابط «تخطَّ إلى المحتوى»: أول عنصر في الصفحة لمستخدمي لوحة المفاتيح وقارئ الشاشة (نصه يُترجم في main.js) -->
   <a class="skip" href="#main" id="skip">الانتقال إلى المحتوى الرئيسي</a>
   <div id="app">
     <header class="top" id="hdr"></header>
-    <main id="main" tabindex="-1"><div class="loading boot"><svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><path d="M9 6h17.5L35 14.5V33a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" fill="var(--primary)"/><circle cx="27.5" cy="12.5" r="2.6" fill="var(--bg)"/><circle cx="18" cy="21" r="5.6" fill="none" stroke="var(--primary-ink)" stroke-width="2.4"/><path d="m22.2 25.2 4.3 4.3" stroke="var(--primary-ink)" stroke-width="2.6" stroke-linecap="round"/><path d="M27.5 12.5C30 7 33 4.5 37 4" fill="none" stroke="var(--tag-line)" stroke-width="1.6" stroke-linecap="round"/></svg><span class="spin"></span></div></main>
+    <!-- H26: محتوى ثابت لمحركات البحث ولمن يصل قبل تشغيل التطبيق (عربي فقط، ويُخفى بـ CSS إن كانت اللغة المحفوظة إنجليزية).
+         يستبدله التطبيق كاملاً عند أول رسم (renderMain في ui.js) -->
+    <main id="main" tabindex="-1"><section class="boot-seo" lang="ar" dir="rtl">
+      <h1>مكتب المفقودات – الكلية التقنية بالأحساء</h1>
+      <p>مكتب المفقودات الإلكتروني في الكلية التقنية بالأحساء: ابحث عن غرضك المفقود، وقدّم بلاغ فقد، واستلم غرضك من المكتب برمز تحقق.</p>
+      <ol>
+        <li><b>البحث أو تقديم بلاغ:</b> ابحث في المفقودات المسجّلة، أو قدّم بلاغاً بوصف غرضك لتقارنه المنصة بكل ما يُسلَّم.</li>
+        <li><b>إثبات الملكية:</b> اكتب تفاصيل لا يعرفها إلا صاحب الغرض، ويراجعها موظف المكتب.</li>
+        <li><b>الاستلام من المكتب:</b> عند قبول طلبك يظهر لك رمز استلام من 8 أحرف تقدّمه في المكتب.</li>
+      </ol>
+    </section><div class="loading boot"><svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><path d="M9 6h17.5L35 14.5V33a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" fill="var(--primary)"/><circle cx="27.5" cy="12.5" r="2.6" fill="var(--bg)"/><circle cx="18" cy="21" r="5.6" fill="none" stroke="var(--primary-ink)" stroke-width="2.4"/><path d="m22.2 25.2 4.3 4.3" stroke="var(--primary-ink)" stroke-width="2.6" stroke-linecap="round"/><path d="M27.5 12.5C30 7 33 4.5 37 4" fill="none" stroke="var(--tag-line)" stroke-width="1.6" stroke-linecap="round"/></svg><span class="spin"></span></div></main>
     <nav class="bottom" id="nav" hidden aria-label="Main"></nav>
     <div id="sheet" hidden></div>
     <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
