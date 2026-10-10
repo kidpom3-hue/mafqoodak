@@ -1,12 +1,12 @@
 // الصفحة الرئيسية للمكان المختار + صفحة «وجدت غرضاً»
-import { icon, LOGO, otype, otypeName, oName, oPlace, oHours, oCity, brandOf } from '../constants.js';
-import { $, esc, today } from '../utils.js';
+import { icon, LOGO, otype, otypeName, oName, oPlace, oHours, oCity, brandOf, cat } from '../constants.js';
+import { $, esc, today, isoDay, showTitle } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, curOffice } from '../state.js';
 import { card, skelCards, groupCard, groupEntries, groupedHere, pubActive } from './visitor.js';
-import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt } from './common.js';
+import { backBtn, catPicker, spotOptions, spotExtra } from './common.js';
 import { APP_VERSION } from '../config.js';
-import { officeUrl, brandLogo, collegeLinks, oKicker, emptyBox, navBtn } from './common.js';
+import { officeUrl, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, relDayT } from './common.js';
 import { load } from '../lazy.js';   // H8: رمز QR في التذييل يُحمَّل بعد الرسم
 import { hydrate } from '../ui.js';
 
@@ -39,6 +39,7 @@ export function vHome(){
           ${icon('search')}<input id="hq" name="q" type="search" placeholder="${t('home.searchPh')}" autocomplete="off" aria-label="${t('home.searchAria')}">
           <button class="btn" type="submit">${t('home.search')}</button>
         </form>
+        ${officeLine(o)}
       </div>
       ${TAG_ART}
       <div class="cta3 cta2">
@@ -62,17 +63,15 @@ export function vHome(){
     </section>
 
     <section class="home-sec">
-      <div class="sec-head"><h2>${t('ofc.privacy')}</h2></div>
-      <div class="features compact">
-        <div class="feat">${icon('lock')}<b>${t('ofc.f1')}</b><span>${t('ofc.f1d')}</span></div>
-        <div class="feat">${icon('idcard')}<b>${t('ofc.f2')}</b><span>${t('ofc.f2d')}</span></div>
-        <div class="feat">${icon('shield')}<b>${t('ofc.f3')}</b><span>${t('ofc.f3d')}</span></div>
-        <div class="feat">${icon('spark')}<b>${t('ofc.f4')}</b><span>${t('ofc.f4d')}</span></div>
-      </div>
+      <div class="sec-head"><h2>${t('ofc.privacy')}</h2><button class="link" data-act="nav" data-r="office">${t('home.privacyMore')} ${icon('fwd')}</button></div>
+      <ul class="trust-row">
+        <li>${icon('lock')}<span>${t('ofc.f1')}</span></li>
+        <li>${icon('idcard')}<span>${t('ofc.f2')}</span></li>
+        <li>${icon('shield')}<span>${t('ofc.f3')}</span></li>
+      </ul>
     </section>
 
     <nav class="link-rows" aria-label="${t('home.moreAria')}">
-      <button class="link-row" data-act="nav" data-r="browse"><span class="lr-ic">${icon('grid')}</span><span class="grow"><b>${t('home.ctaBrowse')}</b><small id="cta-count">${t('home.ctaBrowseSub')}</small></span>${icon('fwd')}</button>
       <button class="link-row" data-act="nav" data-r="service"><span class="lr-ic">${icon('book')}</span><span class="grow"><b>${t('svc.details')}</b><small>${t('home.svcDesc')}</small></span>${icon('fwd')}</button>
       <button class="link-row" data-act="nav" data-r="numbers"><span class="lr-ic">${icon('chart')}</span><span class="grow"><b>${t('num.title')}</b><small>${t('home.numDesc')}</small></span>${icon('fwd')}</button>
     </nav>
@@ -81,6 +80,15 @@ export function vHome(){
   </div>`;
 }
 
+// H26: سطر معلومات المكتب تحت البحث: المكان · ساعات العمل · الهاتف (كل عنصر فقط إن كانت بياناته موجودة)
+function officeLine(o){
+  const parts = [oPlace(o) && `<span>${icon('pin')}${esc(oPlace(o))}</span>`, oHours(o) && `<span>${icon('clock')}${esc(oHours(o))}</span>`,
+    o?.phone && `<span>${icon('phone')}<a href="tel:${esc(String(o.phone).replace(/[^\d+]/g, ''))}" dir="ltr">${esc(o.phone)}</a></span>`].filter(Boolean);
+  return parts.length ? `<p class="hh-info" aria-label="${t('home.officeInfo')}">${parts.join('<span class="dot" aria-hidden="true">·</span>')}</p>` : '';
+}
+// H26: صف مضغوط في «أحدث المفقودات» (أيقونة التصنيف + العنوان + سطر صغير)، زرّ يفتح الغرض أو طلب الوصف
+const miniRow = ({act, ic, title, sub, ref = ''}) => `<li><button class="mini-row" ${act}><span class="mr-ic">${icon(ic)}</span>
+  <span class="grow"><b>${esc(title)}</b><small>${ref ? `<span class="ref">${esc(ref)}</span> ` : ''}${sub}</small></span>${icon('fwd')}</button></li>`;
 export function updateHome(){
   const o = curOffice(); if (!o) return;
   const avail = pubActive();   // H16: بلا النقود (لا تظهر للزائر)
@@ -90,10 +98,14 @@ export function updateHome(){
     if (!S.itemsLoaded) latest.innerHTML = `<div class="hscroll" aria-busy="true" aria-label="${t('c.loading')}">${skelCards()}</div>`;
     else {
       // H11: أغراض التصنيفات المجمّعة (نقود، بطاقات…) بطاقة واحدة لكل تصنيف، مرتّبة مع غيرها بآخر تسجيل
-      const rows = [...groupEntries(avail).map(g => ({at: g.last, html: groupCard(g)})),
-        ...avail.filter(i => !groupedHere(i.cat)).map(i => ({at: i.createdAt || 0, html: card(i)}))];
+      const rows = [...groupEntries(avail).map(g => ({at: g.last, html: groupCard(g), mini: miniRow({act: `data-act="gclaim" data-cat="${esc(g.group)}"`, ic: cat(g.group).icon,
+          title: t('grp.' + g.group + '.title'), sub: t('grp.count', {items: tp('n.item', g.n), date: g.last ? relDayT(isoDay(g.last)) : '—'})})})),
+        ...avail.filter(i => !groupedHere(i.cat)).map(i => ({at: i.createdAt || 0, html: card(i), mini: miniRow({act: `data-act="openItem" data-id="${esc(i.id)}"`, ic: cat(i.cat).icon,
+          title: showTitle(i), sub: relDayT(i.foundDate), ref: i.ref})}))];
       const arr = rows.sort((a, b) => b.at - a.at).slice(0, 8);
-      latest.innerHTML = arr.length ? `<div class="hscroll">${arr.map(x => x.html).join('')}</div>`
+      // H26: أقل من 3 أغراض: قائمة مضغوطة بلا مساحة صور كبيرة (البطاقات الكبيرة تبدو فارغة مع غرض أو اثنين)
+      latest.innerHTML = arr.length && arr.length < 3 ? `<ul class="latest-mini">${arr.map(x => x.mini).join('')}</ul>`
+        : arr.length ? `<div class="hscroll">${arr.map(x => x.html).join('')}</div>`
         : emptyBox('box', t('home.empty'), t('home.emptySub'), navBtn('report', 'bell', t('home.ctaLost')));
     }
   }
@@ -122,11 +134,11 @@ export function footer(o){
       </div>
       <nav class="sf-col sf-imp" aria-labelledby="sf-links">
         <h2 class="sf-h" id="sf-links">${t('foot.links')}</h2>
-        <ul class="sf-links">${fLink('service', t('svc.details'))}${fLink('browse', t('nav.browse'))}${fLink('numbers', t('num.title'))}${fLink('office', t('foot.office'))}</ul>
+        <ul class="sf-links">${fLink('service', t('svc.details'))}${fLink('browse', t('nav.browse'))}${fLink('numbers', t('num.title'))}</ul>
       </nav>
       <nav class="sf-col sf-help" aria-labelledby="sf-support">
         <h2 class="sf-h" id="sf-support">${t('foot.support')}</h2>
-        <ul class="sf-links">${fLink('office', t('foot.faq'))}${fLink('privacy', t('foot.legal'))}${fLink('a11y', t('foot.a11y'))}</ul>
+        <ul class="sf-links">${fLink('office', t('foot.officeFaq'))}${fLink('privacy', t('foot.legal'))}${fLink('a11y', t('foot.a11y'))}</ul>
       </nav>
       <div class="sf-col sf-contact">
         <h2 class="sf-h">${t('foot.officeGroup')}</h2>
@@ -181,11 +193,11 @@ export function vFound(){
 /* إشعار تسليم: من وجد غرضاً يسجّله قبل أن يسلّمه للمكتب، فيعرف الموظف ما سيصله ويتابع الواجد حالته */
 export function vHandin(){
   const o = curOffice();
-  if (!S.uid) return `<div class="wrap">${backBtn()}${loginPrompt(t('hi.login'))}</div>`;
-  if (!S.verified) return `<div class="wrap">${backBtn()}${verifyPrompt(t('hi.verifyWhat'))}</div>`;
+  // H26: يُعبّأ بلا دخول؛ الدخول والتوثيق عند «إرسال الإشعار» فقط، والمسودة تبقى (draftGate في actions.js)
   return `<div class="wrap" data-view="handin">${backBtn()}
     <section class="hero"><div class="hero-kicker">${icon('tag')}${t('hi.kicker', {office: esc(oName(o))})}</div><h1 class="hero-title">${t('hi.title')}</h1>
       <p class="hero-sub">${t('hi.sub')}</p></section>
+    ${!S.uid ? `<div class="note info">${icon('info')}<span>${t('dr.hintHandin')}</span></div>` : ''}
     <form data-form="handin" class="panel" novalidate>
       <div class="field"><span class="label">${t('c.category')}</span>${catPicker('')}</div>
       <div class="field" id="subs-field" hidden><span class="label">${t('c.type')}</span><div id="subs"></div></div>

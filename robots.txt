@@ -1,0 +1,5 @@
+# H26: يُسمح لكل محركات البحث، وخريطة الموقع في sitemap.xml
+User-agent: *
+Allow: /
+
+Sitemap: https://kidpom3-hue.github.io/mafqoodak/sitemap.xml

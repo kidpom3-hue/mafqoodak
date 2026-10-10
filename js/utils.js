@@ -14,6 +14,12 @@ export const LS = {
   get(k, d){ try { const v = localStorage.getItem('mfq:'+k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v){ try { localStorage.setItem('mfq:'+k, JSON.stringify(v)); } catch {} },
 };
+// H26: تخزين الجلسة (يبقى في التبويب نفسه حتى بعد الرجوع من دخول Google، ويُمسح بإغلاقه). داخل try/catch: قد يُمنع في التصفح الخاص
+export const SS = {
+  get(k, d){ try { const v = sessionStorage.getItem('mfq:'+k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v){ try { sessionStorage.setItem('mfq:'+k, JSON.stringify(v)); return true; } catch { return false; } },
+  del(k){ try { sessionStorage.removeItem('mfq:'+k); } catch {} },
+};
 export const pad = n => String(n).padStart(2,'0');
 
 /* ---------- الوقت: بتوقيت الرياض دائماً (G2) ---------- */
