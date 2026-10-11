@@ -131,7 +131,8 @@ export function fillFootQr(){
 }
 
 /* التذييل (H24، بأسلوب المنصات الحكومية): شريط بعرض الصفحة بالأخضر الداكن (--hero-bg) ونص أبيض، في كل صفحات الزائر.
-   الأعمدة: الهوية (الشعار، والوصف، ورمز QR للمكتب) · «روابط مهمة» · «الدعم والمساعدة» · «تواصل معنا» (المكان والأوقات والهاتف)
+   الأعمدة: الهوية (الشعار، والوصف، ورمز QR للمكتب) · «روابط مهمة» · «الدعم والمساعدة» (H28: حُذف عمود «تواصل معنا»،
+   ومعلومات المكتب في صفحة المكتب وسطر الواجهة)
    · «روابط الكلية» (مكتب الكلية فقط، H15) · شريط أخير: الحقوق، وسطر إذن الكلية، ورقم الإصدار.
    بلا ختم «موقع حكومي رسمي» ولا شعار الهيئة أو رؤية 2030: المنصة ليست جهة حكومية، والشعار الوحيد شعار الكلية */
 const fLink = (r, label, extra = '') => `<li><button class="link" data-act="nav" data-r="${r}"${extra}>${label}</button></li>`;
@@ -149,16 +150,8 @@ export function footer(o){
       </nav>
       <nav class="sf-col sf-help" aria-labelledby="sf-support">
         <h2 class="sf-h" id="sf-support">${t('foot.support')}</h2>
-        <ul class="sf-links">${fLink('office', t('foot.officeFaq'))}${fLink('privacy', t('foot.legal'))}${fLink('a11y', t('foot.a11y'))}</ul>
+        <ul class="sf-links">${fLink('office', t('foot.faq'))}${fLink('privacy', t('foot.legal'))}${fLink('a11y', t('foot.a11y'))}</ul>
       </nav>
-      <div class="sf-col sf-contact">
-        <h2 class="sf-h">${t('foot.officeGroup')}</h2>
-        <ul class="sf-info">
-          <li>${icon('pin')}<span>${esc(oPlace(o) || oName(o))}</span></li>
-          ${oHours(o) ? `<li>${icon('clock')}<span>${esc(oHours(o))}</span></li>` : ''}
-          ${o.phone ? `<li>${icon('call')}${telLink(o.phone)}</li>` : ''}
-        </ul>
-      </div>
       ${brandOf(o) ? `<nav class="sf-col sf-college" aria-labelledby="sf-college">
         <h2 class="sf-h" id="sf-college">${t('br.links')}</h2>
         <div class="sf-cl-row">${brandLogo(o, 'dark', 'sf-logo')}${collegeLinks(o)}</div>
