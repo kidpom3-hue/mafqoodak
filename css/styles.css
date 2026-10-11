@@ -920,9 +920,6 @@ html[data-text] .pill{white-space:normal}
 .sf-links{display:flex;flex-wrap:wrap;gap:4px 18px}
 .site-foot .link{color:var(--hero-ink);font-size:14px;min-height:36px;display:inline-flex;align-items:center;text-decoration:underline;text-decoration-color:var(--hero-line);text-underline-offset:4px}
 .site-foot .link:hover{text-decoration-color:currentColor}
-.sf-info{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13.5px;color:var(--hero-muted)}
-.sf-info li{display:flex;gap:8px;align-items:flex-start}
-.sf-info svg{width:16px;height:16px;margin-top:2px;flex:none;color:var(--hero-accent)}
 .sf-bottom{border-top:1px solid var(--hero-line);padding-top:14px;display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center}
 .sf-copy{font-size:12.5px;color:var(--hero-muted)}
 .sf-legal{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:0 10px;color:var(--hero-muted)}
@@ -1259,17 +1256,16 @@ h1,h2,h3{font-weight:700}
 /* التذييل: في الجوال الهوية، ثم «روابط مهمة» و«الدعم والمساعدة» جنباً إلى جنب، ثم «تواصل معنا» و«روابط الكلية» بعرض كامل.
    من 900px: الهوية + 3 أعمدة، و«روابط الكلية» صف كامل (الشعار والروابط أفقياً). خط قصير فاتح تحت عنوان كل عمود */
 .sf-top{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 20px}
-.sf-brand,.sf-contact,.sf-college{grid-column:1 / -1}
+.sf-brand,.sf-college{grid-column:1 / -1}
 .sf-h{border-bottom:0;padding-bottom:10px;position:relative}
 .sf-h::after{content:"";position:absolute;bottom:0;inset-inline-start:0;width:28px;height:3px;border-radius:2px;background:var(--hero-hl)}
 ul.sf-links{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0}
-.sf-info svg,.site-foot .br-links svg:first-child{color:var(--hero-hl)}
+.site-foot .br-links svg:first-child{color:var(--hero-hl)}
 .site-foot :focus-visible{outline-color:var(--hero-hl)}
 .sf-cl-row{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 @media (min-width:900px){
-  .sf-top{grid-template-columns:1.3fr repeat(3,minmax(0,1fr))}
+  .sf-top{grid-template-columns:minmax(0,1.4fr) repeat(2,minmax(0,1fr))}
   .sf-brand{grid-column:auto}
-  .sf-contact{grid-column:auto}
   .sf-college{grid-column:1 / -1}
   .sf-cl-row{flex-direction:row;align-items:center;gap:28px;flex-wrap:wrap}
   .sf-college .br-links{flex-direction:row;flex-wrap:wrap;gap:4px 24px}
@@ -1278,14 +1274,6 @@ ul.sf-links{list-style:none;margin:0;padding:0;display:flex;flex-direction:colum
 @media (min-width:600px){ .wrap.narrow>.site-foot{width:min(100vw - 32px,1048px);margin-inline:calc((100% - min(100vw - 32px,1048px)) / 2)} }
 @media (min-width:720px){ .wrap.narrow>.site-foot{width:min(100vw - 48px,1032px);margin-inline:calc((100% - min(100vw - 48px,1032px)) / 2)} }
 
-/* H25: «هل كانت هذه الصفحة مفيدة؟» صندوق هادئ قبل التذييل: السؤال ثم زرّان، وبعد «لا» أسباب اختيارية، ثم شكر */
-.page-fb{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin-top:8px;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
-.page-fb .fb-q{margin:0;font-weight:600;font-size:14.5px}
-.page-fb .fb-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-.page-fb .fb-row .btn{min-width:72px}
-.page-fb .fb-thanks{margin:0;display:flex;align-items:center;gap:8px;font-weight:600;color:var(--ok)}
-.page-fb .fb-thanks svg{width:18px;height:18px;flex:none}
-.page-fb .fb-thanks:focus{outline:none}
 
 /* ================= H26 (طُلب باسم H25): رئيسية أقصر، وبلاغ بلا حاجز، وبحث فارغ يقود إلى البلاغ ================= */
 /* سطر معلومات المكتب تحت البحث في الواجهة: المكان · الساعات · الهاتف */
@@ -1372,8 +1360,6 @@ nav.bottom button:active svg{transform:scale(.94)}
 
 /* هاتف المكتب: رابط اتصال بلمسة (tel:) */
 a.tel{color:var(--primary);font-weight:600;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px;display:inline-flex;align-items:center;min-height:36px;padding-block:4px;margin-block:-4px}
-.site-foot a.tel{color:var(--hero-ink);font-weight:500;text-decoration-color:var(--hero-line)}
-.site-foot a.tel:hover{text-decoration-color:currentColor}
 
 /* رمز الاستلام: زرّا النسخ والتقويم في صف واحد */
 .code-btns{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
@@ -1383,3 +1369,12 @@ a.tel{color:var(--primary);font-weight:600;text-decoration:underline;text-decora
 .hscroll{scroll-padding-inline:16px}
 @media (min-width:720px){ .hscroll{scroll-padding-inline:24px} }
 .stats{scroll-padding-inline:16px}
+
+/* ================= H28: تذييل أبسط =================
+   حُذف عمود «تواصل معنا» (المكان والأوقات والهاتف مع أيقوناتها). عمودا «روابط مهمة» و«الدعم والمساعدة» متساويان،
+   وعنواناهما على خط واحد، والروابط بمسافة وحجم واحدين ومحاذاة لبداية السطر. لا خط تحت الروابط إلا عند المرور أو التركيز */
+.sf-imp,.sf-help{align-items:stretch}
+.site-foot ul.sf-links{gap:2px}
+.site-foot .sf-links li{display:block}
+.site-foot .link{text-decoration:none;font-size:14px;font-weight:500;line-height:1.5;min-height:36px;padding-block:6px;justify-content:flex-start;text-align:start;text-wrap:balance}
+.site-foot .link:hover,.site-foot .link:focus-visible{color:var(--hero-hl);text-decoration:underline;text-decoration-color:currentColor;text-underline-offset:4px}
