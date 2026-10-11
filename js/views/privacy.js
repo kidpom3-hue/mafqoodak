@@ -11,7 +11,7 @@ import { t, isEn } from '../i18n.js';
 import { emailReady } from '../notify.js';
 
 // تاريخ آخر تحديث لسياسة الخصوصية وشروط الاستخدام: غيّره هنا فقط عند تعديل نصوصهما
-export const LEGAL_UPDATED = '2026-10-04';
+export const LEGAL_UPDATED = '2026-10-08';
 const SECTIONS = ['about', 'data', 'why', 'who', 'where', 'keep', 'rights', 'terms'];
 
 export function vPrivacy(){

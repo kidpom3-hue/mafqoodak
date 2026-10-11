@@ -1,14 +1,17 @@
 // Service Worker: يحفظ ملفات التطبيق ليفتح بسرعة ويعمل عند ضعف الاتصال.
 // الاستراتيجية: الشبكة أولاً (لتظهر تعديلاتك فوراً)، ثم النسخة المحفوظة إذا انقطع الاتصال.
 // عند تغيير أسماء الملفات غيّر رقم الإصدار هنا.
-const CACHE = 'mafqoodak-v43';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
+const CACHE = 'mafqoodak-v46';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
+// H27: الخطوط (مجلد fonts) في مخزن مستقل لا يُمسح مع كل إصدار (الملفات لا تتغير؛ اسم جديد للخط = ملف جديد).
+// تُحفظ عند أول استخدام فقط، فلا يُعاد تنزيل 350 KB مع كل تحديث. غيّر الرقم هنا فقط إن استبدلت ملف خط بالاسم نفسه
+const FONTS = 'mafqoodak-fonts-v1';
 // ملفات التطبيق نفسه فقط: ملفات Firebase من gstatic (ومنها firebase-app-check.js) لا يتعامل معها هذا العامل (مصدر آخر)
 // H8: تبقى هنا كل الملفات، ومنها ما يُحمَّل عند الحاجة فقط (lazy.js)، ليعمل التطبيق كاملاً دون اتصال بعد أول زيارة
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/styles.css',
   './js/main.js', './js/config.js', './js/firebase.js', './js/state.js', './js/ui.js', './js/actions.js',
   './js/constants.js', './js/utils.js', './js/ai.js', './js/sample-data.js', './js/migrate.js', './js/workflow.js',
-  './js/i18n.js', './js/i18n/ar.js', './js/i18n/en.js', './js/qr.js', './js/stats.js', './js/notify.js', './js/theme.js', './js/lazy.js',
+  './js/i18n.js', './js/i18n/ar.js', './js/i18n/en.js', './js/qr.js', './js/stats.js', './js/notify.js', './js/theme.js', './js/lazy.js', './js/install.js',
   './js/views/print.js', './js/views/stats.js', './js/views/audit.js', './js/views/gov.js',
   './js/views/common.js', './js/views/home.js', './js/views/visitor.js', './js/views/staff.js', './js/views/admin.js', './js/views/auth.js', './js/views/privacy.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
@@ -21,11 +24,19 @@ self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, {cache: 'reload'})))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== FONTS).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  // H27: الخطوط من مخزنها أولاً، وتُحفظ عند أول استخدام
+  if (req.destination === 'font'){
+    e.respondWith(caches.open(FONTS).then(c => c.match(req).then(hit => hit || fetch(req).then(res => {
+      if (res.ok) c.put(req, res.clone());
+      return res;
+    }))));
+    return;
+  }
   // H21: الصور (الأيقونات والشعار) من النسخة المحفوظة أولاً؛ تتجدد مع رقم الإصدار. كان طلبها من الشبكة يُخفي الشعار عند كل تنقل
   if (req.destination === 'image'){
     e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => {

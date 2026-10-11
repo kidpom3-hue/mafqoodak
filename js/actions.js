@@ -1,20 +1,21 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
-import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf } from './constants.js';
+import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf, oName, oPlace, oHours } from './constants.js';
+import { installMode, promptInstall, snoozeInstall, markInstalled } from './install.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
-import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when, fmtDateFull } from './utils.js';
-import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
+import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when, fmtDateFull, SS, icsEvent, downloadText } from './utils.js';
+import { claimEmailOk, cleanDomain, domainRe, verifyPrompt } from './views/common.js';
 import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn, STAFF_TABS } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification } from './firebase.js';
-import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar, lockEvidence } from './ui.js';
+import { go, back, renderAll, refresh, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar, lockEvidence, FORM_HOOKS } from './ui.js';
 import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor.js';
 // H8: لوحة الموظف والإحصاءات والذكاء الاصطناعي والأمثلة تُحمَّل عند الحاجة (lazy.js). SM() = وحدة staff.js المحمّلة
 // (أزرار لوحة الموظف لا تظهر إلا بعد تحميلها، فهي موجودة عند النقر)
 import { mod, load } from './lazy.js';
 const SM = () => mod('staff');
-import { FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, dfOpt, detailReq } from './views/common.js';
+import { feedbackBox, FB_REASONS, FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, dfOpt, detailReq } from './views/common.js';
 import { setTheme, setTextSize } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
 import { aiReady } from './firebase.js';
@@ -87,6 +88,61 @@ function stepNext(form){
   showStep(form, (Number(form.dataset.step) || 1) + 1);
 }
 function busy(form, on){ const b = form.querySelector('button[type=submit]'); if (b) b.disabled = on; }
+
+/* H26: بلاغ وإشعار تسليم بلا حاجز دخول مسبق. الزائر يعبّئ النموذج كاملاً، وعند «إرسال» وهو غير مسجّل تُحفظ المسودة
+   في sessionStorage (SS: الحقول والصورة والخطوة) ثم يذهب إلى الدخول، وبعده تعود المسودة إلى النموذج مع تنبيه «أكمل إرسال بلاغك».
+   والبريد غير الموثّق: تبقى المسودة وتظهر نافذة التوثيق عند الإرسال فقط. شرط التوثيق في القواعد كما هو.
+   المسودة تنتهي بعد يوم، وتُمسح بعد الإرسال الناجح */
+const DRAFT_MS = 864e5, DRAFT_KINDS = ['report', 'handin'];
+const draftKey = kind => 'draft:' + kind;
+function saveDraft(form, pending){
+  const v = {};
+  for (const [k, x] of new FormData(form)) if (typeof x === 'string') (v[k] ||= []).push(x);
+  const photo = typeof FORM.photo === 'string' && FORM.photo.startsWith('data:image/') ? FORM.photo : null;
+  // الصورة قد تكبر على مساحة الجلسة: نحفظ بلا صورة إن تعذّر
+  if (!SS.set(draftKey(form.dataset.form), {v, photo, step: form.dataset.step || '', at: Date.now(), pending}))
+    SS.set(draftKey(form.dataset.form), {v, photo: null, step: form.dataset.step || '', at: Date.now(), pending});
+}
+const clearDraft = kind => SS.del(draftKey(kind));
+function restoreDraft(form){
+  const kind = form.dataset.form;
+  if (!DRAFT_KINDS.includes(kind) || form.dataset.id) return;
+  const d = SS.get(draftKey(kind), null);
+  if (!d?.v || Date.now() - (d.at || 0) > DRAFT_MS){ if (d) clearDraft(kind); return; }
+  const v = d.v, one = k => v[k]?.[0] ?? '';
+  // التصنيف أولاً: يرسم الأنواع وأسئلة التصنيف، ثم بقية الخانات بقيمها
+  const c = [...form.querySelectorAll('input[name=cat]')].find(x => x.value === one('cat'));
+  if (c){ c.checked = true; onCatChange(form, c.value, one('sub')); if (!form.isConnected) return; }
+  const fill = () => Object.entries(v).forEach(([k, vals]) => {
+    if (k === 'cat') return;
+    form.querySelectorAll('[name]').forEach(el => {
+      if (el.name !== k || el.type === 'file') return;
+      if (el.type === 'radio' || el.type === 'checkbox') el.checked = vals.includes(el.value);
+      else el.value = vals[0] ?? '';
+    });
+  });
+  fill();
+  const sp = form.querySelector('[name=spot]'); if (sp){ onSpotChange(form, sp.value); fill(); }   // المبنى والقاعة بعد إظهار خاناتهما
+  if (d.photo && !cat(one('cat')).sensitive && form.querySelector('#pv')){
+    FORM.photo = d.photo; form.querySelector('#pv').innerHTML = `<img src="${d.photo}" alt="">`;
+    const rm = form.querySelector('#rm-photo'); if (rm) rm.hidden = false;
+  }
+  form.querySelectorAll('input[type=date]').forEach(el => el.dispatchEvent(new Event('change', {bubbles: true})));
+  if (form.dataset.steps && Number(d.step) > 1) showStep(form, Number(d.step));
+  if (d.pending){ SS.set(draftKey(kind), {...d, pending: false}); toast(t(kind === 'report' ? 'dr.resumeReport' : 'dr.resumeHandin')); }
+}
+FORM_HOOKS.push(restoreDraft);
+// عند الإرسال: غير مسجّل ← حفظ المسودة والذهاب إلى الدخول؛ غير موثّق ← حفظها ونافذة التوثيق. يرجع true إن توقّف الإرسال
+function draftGate(form){
+  const kind = form.dataset.form;
+  if (!S.uid){ saveDraft(form, true); toast(t('dr.loginFirst')); go('login', {next: {name: kind, params: {}}}); return true; }
+  if (!S.verified){
+    saveDraft(form, false);
+    openSheet(`${verifyPrompt(t(kind === 'report' ? 'rp.verifyWhat' : 'hi.verifyWhat'))}<button class="btn ghost" data-act="closeSheet">${t('c.close')}</button>`);
+    return true;
+  }
+  return false;
+}
 
 export function onCatChange(form, catId, sub){
   // H16: بلاغ جديد بتصنيف مخفي (النقود): يتحول إلى البلاغ بالتفاصيل (طلب مجمّع يطابقه الموظف)، فلا بلاغ عادي للنقود
@@ -322,7 +378,8 @@ async function submitForm(form){
   if (kind === 'login'){
     const email = val('email'), pass = String(fd.get('password') || ''), signup = form.dataset.mode === 'signup';
     if (!email || !pass) return formErr(form, t('a.needEmailPass'));
-    if (signup && pass.length < 6) return formErr(form, t('a.passShort'));
+    // H27: الحساب الجديد 8 أحرف على الأقل (كان 6). الحسابات القديمة تدخل بكلمات مرورها كما هي
+    if (signup && pass.length < 8) return formErr(form, t('a.passShort'), 'password');
     busy(form, true);
     try {
       if (signup){
@@ -331,7 +388,7 @@ async function submitForm(form){
         await updateProfile(cred.user, {displayName: name});
         S.me = {...(S.me || {}), name};
         // H18: البريد في users/{uid}/private/profile (خاص)، والقواعد تقبله مساوياً لبريد الحساب فقط
-        await saveProfile(cred.user.uid, {name, photo: '', lastSeen: Date.now()}, cred.user.email || '');
+        await saveProfile(cred.user.uid, {name, photo: ''}, cred.user.email || '');
         // توثيق البريد: البلاغات وطلبات الاستلام تشترطه
         await sendEmailVerification(cred.user).catch(e => console.warn(e));
         toast(t('a.welcome', {name}));
@@ -469,6 +526,7 @@ async function submitForm(form){
     if (kind === 'report'){
       // H16: احتياط: لا بلاغ عادي لتصنيف مخفي (النقود)؛ بلاغه بالتفاصيل يطابقه الموظف
       if (!form.dataset.id && isHiddenCat(catId)){ busy(form, false); go('gclaim', {cat: catId}); return; }
+      if (!form.dataset.id && draftGate(form)){ busy(form, false); return; }   // H26
       if (!S.verified){ busy(form, false); return formErr(form, t('a.verifyFirst')); }
       if (form.dataset.id) return saveReportEdit(form, val, catId, sens, bldg, room);
       const id = dbx.newId('reports');
@@ -482,7 +540,7 @@ async function submitForm(form){
         cachePhoto('r_' + id, FORM.photo);
         if (await write(() => dbx.set('reportPhotos/' + id, {data: FORM.photo}))) await write(() => dbx.update('reports/' + id, {photo: true}));
       }
-      busy(form, false); if (ok){ S.hist = []; go('mine', {focus: id}, false); }
+      busy(form, false); if (ok){ clearDraft('report'); S.hist = []; go('mine', {focus: id}, false); }
       return;
     }
 
@@ -708,14 +766,14 @@ async function submitForm(form){
   if (kind === 'handin'){
     const catId = val('cat');
     if (!catId) return formErr(form, t('a.needCat'));
-    if (!S.verified) return formErr(form, t('a.verifyFirst'));
+    if (draftGate(form)) return;   // H26: بلا دخول أو بلا توثيق: المسودة باقية
     busy(form, true);
     const id = dbx.newId('foundReports');
     // كود قصير يُريه الواجد لموظف المكتب فيفتح إشعاره مباشرة (بحروف رقم القيد نفسها)
     const code = refCode(6);
     const ok = await write(() => createLimited('foundReports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), spot: val('spot'), bldg, room,
       foundDate: val('foundDate') || today(), note: val('note').slice(0, 500), code, status: 'pending', createdAt: Date.now()}), t('hi.sent'));
-    busy(form, false); if (ok){ S.hist = []; go('mine', {focus: id}, false); }
+    busy(form, false); if (ok){ clearDraft('handin'); S.hist = []; go('mine', {focus: id}, false); }
     return;
   }
   // قياس الرضا: تقييم الطلب المكتمل مرة واحدة (القواعد تمنع التقييم الثاني)
@@ -851,8 +909,19 @@ async function doApprove(c, reason = ''){
 }
 // تسجيل الخروج على جهاز مشترك: نمسح رموز الاستلام والتنبيهات المقروءة وتفعيل الإشعارات من المتصفح،
 // ونسخة Firestore المحفوظة (IndexedDB)، ثم نعيد تحميل الصفحة حتى لا يبقى شيء من بيانات الحساب في الذاكرة
-function wipeDevice(){ ['codes', 'seen', 'staffSeen', 'notify'].forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} }); }
+function wipeDevice(){ ['codes', 'seen', 'staffSeen', 'notify', 'prof'].forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} }); }
 
+// H25: يرسل عدّاد تقييم الصفحة ويحدّث صندوقها مكانه (بلا إعادة رسم الصفحة)
+function fbSend(el, field, state){
+  const box = el.closest('.page-fb'); if (!box) return;
+  const {office, page} = box.dataset, all = LS.get('pageFb', {});
+  all[office + '__' + page] = {s: state, at: Date.now()};
+  LS.set('pageFb', Object.fromEntries(Object.entries(all).slice(-100)));
+  if (field) dbx.bump('pageFeedback/' + office + '__' + page, {officeId: office, page}, field).catch(e => console.warn('pageFeedback', e?.code || e));
+  const o = S.offices.find(x => x.id === office);
+  box.outerHTML = feedbackBox(o, page);
+  document.querySelector('.page-fb button, .page-fb .fb-thanks')?.focus({preventScroll: true});   // يبقى التركيز داخل الصندوق
+}
 const ACT = {
   nav(el){
     const r = el.dataset.r, tab = el.dataset.tab;
@@ -894,6 +963,7 @@ const ACT = {
       <div class="list">
         <button class="opt" data-act="nav" data-r="mine">${icon('inbox')}${t('acc.mine')}</button>
         <button class="opt" data-act="lang" lang="${t('lang.otherCode')}">${icon('globe')}${t('foot.lang')}</button>
+        ${installMode() ? `<button class="opt" data-act="install">${icon('install')}${t('ins.row')}</button>` : ''}
         ${notifySupported() ? `<button class="opt" data-act="notify" aria-pressed="${notifyOn()}">${icon('bell')}<span class="grow">${t('nt.label')}</span><span class="pill ${notifyOn() ? 'ok' : 'mute'}">${t(notifyOn() ? 'nt.on' : 'nt.off')}</span></button>
           ${notifyDenied() ? `<p class="hint">${t('nt.deniedHint')}</p>` : ''}` : ''}
         <div class="opt-row"><span class="label">${icon('contrast')}${t('th.label')}</span>${themePicker()}</div>
@@ -1007,14 +1077,53 @@ const ACT = {
     markStaffSeen(staffKeys().filter(x => x.sub === g + ':' + v).map(x => x.k));
     SM()?.updateStaff(); renderNav(); document.getElementById(`st-${g}-${v}`)?.focus({preventScroll: true});   // H13a: بلا قفزة تحت الترويسة
   },
+  // H25: «هل كانت هذه الصفحة مفيدة؟» — نعم/لا ثم سبب اختياري. عدّاد مجمّع فقط، والإخفاق صامت (لا يعطّل الزائر).
+  // الإجابة تُحفظ على الجهاز (LS pageFb) فيبقى الشكر ظاهراً عند إعادة الرسم ولا يُسأل عنها مجدداً قبل 30 يوماً
+  fbVote(el){ fbSend(el, el.dataset.v === 'yes' ? 'yes' : 'no', el.dataset.v === 'yes' ? 'yes' : 'no'); },
+  fbWhy(el){ fbSend(el, FB_REASONS.includes(el.dataset.v) ? el.dataset.v : '', 'done'); },
+  // H26: من بحث بلا نتيجة إلى بلاغ جديد، واسم الغرض = كلمة البحث (يعدّلها الزائر)
+  reportFromSearch(){ go('report', {q: String(S.filter.q || '').trim().slice(0, 80)}); },
   attLater(el){ LS.set('snoozed', [...new Set([...LS.get('snoozed', []), el.dataset.k])].slice(-200)); renderAll(); },
   openCard(el){ openCard(el.dataset.tab, el.dataset.card, el.dataset.ended === '1'); },
+  // H27: «متابعة» في الصفحة الرئيسية: «طلباتي» مفتوحة على البطاقة التي تنتظره
+  resume(el){ go('mine'); openCard(el.dataset.tab, el.dataset.card); },
   fcat(el){ S.filter.cat = el.dataset.id; updateBrowse(); },
   catGo(el){ S.filter.cat = el.dataset.id; S.filter.q = ''; S.filter.status = 'available'; go('browse'); },
   fstatus(el){ S.filter.status = el.dataset.v; updateBrowse(); },
   sTab(el){ staffTabGo(el.dataset.v); },
   closeSheet(){ closeSheet(); },
   copy(el){ const v = el.dataset.v; navigator.clipboard?.writeText(v).then(() => toast(t('a.copied')), () => toast(v)); },
+  // H27: إظهار كلمة المرور أو إخفاؤها (الزر بجانب الحقل؛ التركيز يبقى على الزر فيُقرأ تغيّر حالته)
+  togglePass(el){
+    const inp = document.getElementById(el.getAttribute('aria-controls')); if (!inp) return;
+    const show = inp.type === 'password'; inp.type = show ? 'text' : 'password';
+    const label = t(show ? 'login.hidePass' : 'login.showPass');
+    el.setAttribute('aria-pressed', String(show)); el.setAttribute('aria-label', label); el.title = label;
+    el.innerHTML = icon(show ? 'eyeOff' : 'eye');
+  },
+  // H27: تثبيت المنصة على الجهاز: نافذة المتصفح، أو خطوات «إضافة إلى الشاشة الرئيسية» في Safari
+  async install(){
+    if (installMode() === 'ios') return openSheet(`<h2>${icon('install')} ${t('ins.iosTitle')}</h2>
+      <ol class="ins-steps"><li>${t('ins.ios1', {icon: icon('iosShare')})}</li><li>${t('ins.ios2')}</li><li>${t('ins.ios3')}</li></ol>
+      <button class="btn block ghost" data-act="closeSheet">${t('c.ok')}</button>`);
+    const r = await promptInstall();
+    if (r === 'accepted') markInstalled(); else if (r === 'dismissed') snoozeInstall();
+    if (S.sheet) closeSheet();
+    refresh();
+  },
+  installLater(){ snoozeInstall(); refresh(); },
+  // H27: آخر موعد للاستلام في تقويم الجوال (ملف ‎.ics). بلا رمز الاستلام: يبقى في «طلباتي» فقط
+  addCal(el){
+    const c = S.myClaims.find(x => x.id === el.dataset.id); if (!c?.pickupBy) return;
+    const o = S.offices.find(x => x.id === c.officeId);
+    const place = [oPlace(o), oName(o)].filter(Boolean).join(' - ');
+    const desc = [t('cal.desc', {mine: t('nav.mine')}), place && t('cal.place', {place}), oHours(o) && t('cal.hours', {hours: oHours(o)})].filter(Boolean).join('\n');
+    const ics = icsEvent({uid: `${claimNo(c)}-${c.pickupBy}@mafqoodak`, at: c.pickupBy, title: t('cal.title', {no: claimNo(c)}), desc, place,
+      url: location.origin + location.pathname, remind: t('cal.remind')});
+    if (!ics) return;
+    downloadText(ics, `mafqoodak-${claimNo(c)}.ics`, 'text/calendar;charset=utf-8');
+    toast(t('cal.saved'));
+  },
   removePhoto(el){ clearPhoto(el.closest('form')); },
   aiFill(){ if (aiReady()) aiFill(); },
   // H9: الإضافة السريعة: فتح الكاميرا، أو المتابعة بلا صورة، أو «أضف آخر» بعد الحفظ (يبقى المكان والتاريخ)

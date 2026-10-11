@@ -440,7 +440,7 @@ function onUser(user){
   clear('mine'); S.myReports = []; S.myClaims = []; S.myFound = [];
   S.authReady = true;
   if (user){
-    saveProfile(user.uid, {name: S.me.name, photo: S.me.photo, lastSeen: Date.now(), ...(saved() ? {lang: LANG} : {})}, S.me.email);
+    saveProfile(user.uid, {name: S.me.name, photo: S.me.photo, ...(saved() ? {lang: LANG} : {})}, S.me.email);
     // لغة المستخدم المحفوظة في حسابه تُطبَّق إن لم يختر لغة على هذا الجهاز
     if (!saved()) dbx.get('users/' + user.uid).then(async d => { if (d?.lang && d.lang !== LANG){ await setLang(d.lang); if (auth) auth.languageCode = d.lang; reset(); } }).catch(() => {});
     subs.user.push(dbx.watchDoc('admins/' + user.uid, d => {
@@ -650,13 +650,20 @@ export function getPhoto(key){
   p.then(v => { if (!v) PHOTO.delete(key); });   // لا نحفظ النتيجة الفارغة؛ قد تُرفع الصورة بعد لحظات
   return p;
 }
-/* H18: البريد خاص: users/{uid}/private/profile {email} يقرؤه صاحبه والإدارة فقط؛ users/{uid} العام (الاسم والصورة واللغة
-   وآخر دخول) يقرؤه الموظفون. كل دخول يكتب الاثنين في batch واحد ويحذف email القديم من الوثيقة العامة (ترحيل تلقائي) */
+/* H18: البريد خاص: users/{uid}/private/profile {email} يقرؤه صاحبه والإدارة فقط؛ users/{uid} العام (الاسم والصورة واللغة)
+   يقرؤه الموظفون. الكتابة batch واحد يحذف email القديم من الوثيقة العامة (ترحيل تلقائي).
+   H27: كانت تُكتب الوثيقتان مع كل فتح للمنصة (كتابتان من حصة الخطة المجانية اليومية لكل زيارة)؛ الآن فقط عند تغيّر
+   الاسم أو الصورة أو اللغة أو البريد، أو مرة كل 7 أيام لكل جهاز. وأُلغي «آخر دخول» (lastSeen): لم يُقرأ في أي مكان (أقل بيانات) */
+const PROF_TTL = 7 * 864e5;
+// بصمة قصيرة (FNV-1a) بدل النص نفسه: لا يبقى الاسم أو البريد في ذاكرة الجهاز المشترك (LS «prof» يُمسح عند الخروج أيضاً)
+const h32 = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36); };
 export function saveProfile(uid, pub, email){
+  const sig = h32(JSON.stringify([uid, pub.name || '', pub.photo || '', pub.lang || '', email || ''])), prev = LS.get('prof', null);
+  if (prev?.sig === sig && Date.now() - (prev.at || 0) < PROF_TTL) return Promise.resolve();
   const b = dbx.batch();
   if (email) b.set(dbx.ref(`users/${uid}/private/profile`), {email});
   b.set(dbx.ref('users/' + uid), {...pub, email: deleteField()}, {merge: true});
-  return b.commit().catch(errH('users'));
+  return b.commit().then(() => LS.set('prof', {sig, at: Date.now()})).catch(errH('users'));
 }
 // بريد مستخدم (للإدارة فقط؛ لغيرها يرفض الخادم فيعود فارغاً)
 const EMAILS = new Map();

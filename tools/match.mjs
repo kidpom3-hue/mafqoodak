@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const stub = f => fs.readFileSync(path.join(root, 'tools/a11y-stubs', f), 'utf8');
-const TYPES = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json'};
+const TYPES = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2'};
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]); if (p.endsWith('/')) p += 'index.html';
   const f = path.join(root, p);
@@ -160,7 +160,9 @@ for (const [who, mode] of [[amy, 'visitor'], [staff, 'visitor']]){
   const tag = who === amy ? 'زائر' : 'موظف بوضع الزائر';
   const {p, ctx, errs} = await open(who, mode, {...base(), ...five, ...walletIt('w1'), ...walletIt('w2'), ...bag('b1', 'blue')});
   await go(p, 'home');
-  const h = await p.evaluate(() => ({n: document.querySelectorAll('#home-latest .card').length, cash: [...document.querySelectorAll('#home-latest .card')].filter(c => c.dataset.cat === 'cash' || /نقود|مبلغ/.test(c.textContent)).length}));
+  // H26: بأقل من 3 أغراض تظهر «أحدث المفقودات» صفوفاً مضغوطة (.mini-row) بدل البطاقات، فنعدّ الشكلين
+  const h = await p.evaluate(() => { const els = [...document.querySelectorAll('#home-latest .card, #home-latest .mini-row')];
+    return {n: els.length, cash: els.filter(c => c.dataset.cat === 'cash' || /نقود|مبلغ/.test(c.textContent)).length}; });
   expect(h.n === 2 && h.cash === 0, `${tag}: «أحدث المفقودات» = بطاقة المحافظ والحقيبة فقط، بلا نقود ${JSON.stringify(h)}`);
   await go(p, 'browse');
   const r = await p.evaluate(() => ({groups: [...document.querySelectorAll('#results .group-card')].map(c => c.dataset.cat),

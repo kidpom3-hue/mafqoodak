@@ -4,7 +4,7 @@ import { icon, catName, oName } from '../constants.js';
 import { t, tp } from '../i18n.js';
 import { esc, spotName } from '../utils.js';
 import { S, staffOffices } from '../state.js';
-import { backBtn } from './common.js';
+import { backBtn, FB_LABEL, FB_REASONS } from './common.js';
 import { loadStats, computeStats, monthName, ratingStats, addTimeStats } from '../stats.js';
 
 // أعمدة أفقية (سلسلة واحدة): الطول يمثل العدد، والقيمة عند طرف العمود، والتلميح عند المرور أو التركيز
@@ -22,6 +22,20 @@ const table = (head, rows) => `<details class="viz-table"><summary>${t('sx.table
 // سقف مقرّب لمحور الأعمدة، ونصفه عدد صحيح دائماً: 2، 4، 6، 8، 10، ثم 20، 50، 100...
 const nice = v => { if (v <= 10) return Math.max(2, Math.ceil(v / 2) * 2); const p = 10 ** Math.floor(Math.log10(v)); return [2, 5, 10].map(k => k * p).find(k => k >= v); };
 
+// H25: «هل كانت هذه الصفحة مفيدة؟» جدول لكل صفحة: نعم، لا، نسبة الإفادة، وأكثر أسباب «لا» (بلا أعمدة: الأرقام في جدول يكفي)
+function pageFeedback(list){
+  const rows = (list || []).filter(x => FB_LABEL[x.page]).map(x => {
+    const yes = +x.yes || 0, no = +x.no || 0, n = yes + no;
+    const top = FB_REASONS.map(r => [r, +x[r] || 0]).filter(r => r[1]).sort((a, b) => b[1] - a[1])[0];
+    return {label: t(FB_LABEL[x.page]), yes, no, n, pct: n ? Math.round(100 * yes / n) : 0, top: top ? `${t('fb.' + top[0])} (${top[1]})` : '—'};
+  }).filter(r => r.n).sort((a, b) => a.pct - b.pct || b.n - a.n);
+  if (!rows.length) return `<section class="panel viz"><div class="section-title">${t('fb.statsTitle')}</div><p class="muted">${t('fb.statsNone')}</p></section>`;
+  return `<section class="panel viz"><h2 class="section-title">${t('fb.statsTitle')}</h2>
+    <p class="hint">${t('fb.statsHint')}</p>
+    <div class="table-wrap"><table class="t"><thead><tr>${[t('fb.sPage'), t('fb.yes'), t('fb.no'), t('fb.sPct'), t('fb.sTop')].map(h => `<th scope="col">${h}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr><td>${r.label}</td><td class="n">${r.yes}</td><td class="n">${r.no}</td><td class="n"><span dir="ltr">${r.pct}%</span></td><td>${esc(r.top)}</td></tr>`).join('')}</tbody></table></div>
+  </section>`;
+}
 // رضا المستفيدين: المتوسط والعدد، وتوزيع 1–5 بأعمدة من لون واحد مع جدول، وآخر 10 تعليقات
 function satisfaction(list){
   const r = ratingStats(list || []);
@@ -82,6 +96,7 @@ export function vStats(){
     ${s.lost.length ? `<figure class="panel viz"><figcaption class="section-title">${t('sx.byLost')}</figcaption>${hbars(s.lost.map(x => ({label: x.s ? spotName(x.s, id) : t('it.unknown'), n: x.n, tip: String(x.n)})))}
       ${table([t('if.spot'), t('sx.count')], s.lost.map(x => [x.s ? spotName(x.s, id) : t('it.unknown'), x.n]))}</figure>` : ''}
     ${satisfaction(data.ratings)}
+    ${pageFeedback(data.fb)}
     ${s.closed.some(x => x.n) ? `<section class="panel viz"><div class="section-title">${t('sx.closed')}</div>
       <p class="kpi-line">${s.closed.map(x => `${t('sx.closed.' + x.k)} <b>${x.n}</b>`).join(' · ')}</p>
       ${table([t('sx.closedWhy'), t('sx.count')], s.closed.map(x => [t('sx.closed.' + x.k), x.n]))}</section>` : ''}

@@ -1,4 +1,16 @@
 /* تنسيقات مفقودك — الألوان كلها في :root بالأعلى (الوضع الفاتح) وفي كتل الوضع الداكن */
+
+/* H27: الخطوط من الموقع نفسه (مجلد fonts) بدل Google Fonts: لا يصل عنوان IP الزائر إلى طرف ثالث مع كل فتح،
+   وتعمل دون اتصال بعد أول زيارة (sw.js يحفظها)، وسياسة CSP لم تعد تسمح بموقعَي الخطوط.
+   IBM Plex برخصة SIL Open Font License 1.1 (fonts/OFL.txt). الأوزان المستخدمة فقط: 400 و500 و600 و700،
+   وللأرقام والرموز IBM Plex Mono 500 و600 (الحروف اللاتينية فقط) */
+@font-face{font-family:"IBM Plex Sans Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("../fonts/IBMPlexSansArabic-Regular.woff2") format("woff2")}
+@font-face{font-family:"IBM Plex Sans Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("../fonts/IBMPlexSansArabic-Medium.woff2") format("woff2")}
+@font-face{font-family:"IBM Plex Sans Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("../fonts/IBMPlexSansArabic-SemiBold.woff2") format("woff2")}
+@font-face{font-family:"IBM Plex Sans Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("../fonts/IBMPlexSansArabic-Bold.woff2") format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:swap;src:url("../fonts/IBMPlexMono-Medium-Latin1.woff2") format("woff2");unicode-range:U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+20AC,U+2122,U+2212}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:600;font-display:swap;src:url("../fonts/IBMPlexMono-SemiBold-Latin1.woff2") format("woff2");unicode-range:U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+20AC,U+2122,U+2212}
+
 :root{
   /* H24: ألوان محايدة بأسلوب المنصات الحكومية، والأخضر #1B8354 لوناً أساسياً */
   --bg:#F6F7F8; --surface:#FFFFFF; --surface-2:#EEF1F3; --ink:#1A1F24; --muted:#4D5761; --line:#D8DCE0;
@@ -1265,3 +1277,109 @@ ul.sf-links{list-style:none;margin:0;padding:0;display:flex;flex-direction:colum
 /* صفحات النماذج الضيقة (.wrap.narrow): التذييل بعرض التطبيق كاملاً من 600px */
 @media (min-width:600px){ .wrap.narrow>.site-foot{width:min(100vw - 32px,1048px);margin-inline:calc((100% - min(100vw - 32px,1048px)) / 2)} }
 @media (min-width:720px){ .wrap.narrow>.site-foot{width:min(100vw - 48px,1032px);margin-inline:calc((100% - min(100vw - 48px,1032px)) / 2)} }
+
+/* H25: «هل كانت هذه الصفحة مفيدة؟» صندوق هادئ قبل التذييل: السؤال ثم زرّان، وبعد «لا» أسباب اختيارية، ثم شكر */
+.page-fb{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin-top:8px;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.page-fb .fb-q{margin:0;font-weight:600;font-size:14.5px}
+.page-fb .fb-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.page-fb .fb-row .btn{min-width:72px}
+.page-fb .fb-thanks{margin:0;display:flex;align-items:center;gap:8px;font-weight:600;color:var(--ok)}
+.page-fb .fb-thanks svg{width:18px;height:18px;flex:none}
+.page-fb .fb-thanks:focus{outline:none}
+
+/* ================= H26 (طُلب باسم H25): رئيسية أقصر، وبلاغ بلا حاجز، وبحث فارغ يقود إلى البلاغ ================= */
+/* سطر معلومات المكتب تحت البحث في الواجهة: المكان · الساعات · الهاتف */
+.hh-info{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0;font-size:13px;color:var(--hero-muted)}
+.hh-info>span:not(.dot){display:inline-flex;align-items:center;gap:5px}
+.hh-info svg{width:15px;height:15px;color:var(--hero-hl);flex:none}
+.hh-info a{color:var(--hero-ink);text-decoration:underline;text-decoration-color:var(--hero-line);text-underline-offset:3px}
+.hh-info .dot{opacity:.6}
+/* «أحدث المفقودات» بأقل من 3 أغراض: صفوف مضغوطة بلا مساحة صورة */
+.latest-mini{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden}
+.latest-mini li+li{border-top:1px solid var(--line)}
+.mini-row{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;text-align:start;min-height:56px}
+.mini-row:hover{background:var(--primary-faint)}
+.mini-row .mr-ic{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;background:var(--primary-soft);color:var(--primary);flex:none}
+.mini-row .mr-ic svg{width:18px;height:18px}
+.mini-row .grow{flex:1;min-width:0}
+.mini-row b{display:block;font-size:14.5px}
+.mini-row small{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
+.mini-row>svg:last-child{width:16px;height:16px;color:var(--muted);flex:none}
+/* «حماية البيانات والخصوصية» في الرئيسية: صف واحد من 3 عناصر (التفاصيل في صفحة المكتب) */
+.trust-row{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.trust-row li{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:12px 8px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:13px;font-weight:600;line-height:1.4}
+.trust-row svg{width:22px;height:22px;color:var(--primary)}
+/* بحث بلا نتيجة: الزر الرئيسي «تقديم بلاغ» */
+.empty.search-none .btn{margin-top:4px}
+/* زر الدخول: كلمة «دخول» ظاهرة في كل المقاسات */
+@media (max-width:599px){
+  .login-btn{width:auto;padding-inline:10px;gap:6px}
+  .login-btn .login-txt{position:static;width:auto;height:auto;overflow:visible;clip:auto}
+}
+@media (max-width:379px){ .login-btn svg{display:none} }
+/* المحتوى الثابت في index.html (لمحركات البحث وقبل تشغيل التطبيق): عربي فقط، ولا يومض لمن اختار الإنجليزية */
+.boot-seo{max-width:720px;margin:0 auto;padding:24px 16px 0;display:flex;flex-direction:column;gap:10px}
+.boot-seo h1{font-size:clamp(22px,5vw,30px)}
+.boot-seo p{margin:0;color:var(--muted)}
+.boot-seo ol{margin:0;padding-inline-start:20px;display:flex;flex-direction:column;gap:6px;line-height:1.7}
+.boot-seo+.loading{padding-top:24px}
+html[lang=en] .boot-seo{display:none}
+
+/* ================= H27: تحديث عصري (فحص شامل) =================
+   ضمن أسلوب H24 نفسه (ألوان محايدة وأخضر واحد وخط واحد)، بلا شعارات حكومية */
+
+/* الترويسة بعرض الشاشة كاملاً في الشاشات الواسعة (التطبيق نفسه بعرض 1080px): الخلفية والخط العلوي (3px) والخط السفلي
+   تمتد إلى الجانبين بـ border-image (ما يُرسم خارج الصندوق لا يُحدث تمريراً أفقياً)، بدل صندوق أبيض في الوسط وجانبين رماديين */
+header.top{border-bottom:0;box-shadow:none;border-image:linear-gradient(var(--hero-bg) 0 3px,var(--surface) 0 calc(100% - 1px),var(--line) 0) fill 0 / 0 / 0 100vmax}
+
+/* الشريط السفلي: الصفحة الحالية «كبسولة» خلف الأيقونة (أوضح من الخط القصير أعلاها)، ولمسة الضغط محسوسة.
+   الكبسولة عنصر مطلق (::after) لا يغيّر عرض الزر، فتبقى الخمسة ظاهرة في 320px مع الخط الكبير جداً */
+nav.bottom button.on::before{content:none}
+nav.bottom button{isolation:isolate}
+nav.bottom button.on::after{content:"";position:absolute;z-index:-1;top:5px;inset-inline:0;margin-inline:auto;width:min(56px,calc(100% - 6px));height:30px;border-radius:999px;background:var(--primary-soft)}
+nav.bottom button svg{transition:transform .12s ease}
+.btn,.opt,.cta,.link-row,nav.bottom button{transition:filter .15s ease,transform .12s ease,background-color .2s ease}
+.btn:active:not(:disabled),.opt:active,.cta:active,.link-row:active{transform:scale(.98)}
+nav.bottom button:active svg{transform:scale(.94)}
+
+/* انتقال هادئ بين الصفحات (ui.js ← pageIn): شفافية فقط، 160ms */
+@keyframes page-in{from{opacity:0}to{opacity:1}}
+#main.page-in>*{animation:page-in .16s ease-out}
+
+/* «متابعة» أعلى الصفحة الرئيسية لمن عاد: أهم ما ينتظره في «طلباتي» */
+.resume{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--primary-line);border-inline-start:4px solid var(--primary);border-radius:12px;padding:10px 12px;font-size:14px;font-weight:600}
+.resume>svg{width:20px;height:20px;color:var(--primary);flex:none}
+.resume .grow{flex:1;min-width:0;overflow-wrap:anywhere}
+.resume .btn{flex:none}
+@media (max-width:379px){ .resume{flex-wrap:wrap} .resume .btn{margin-inline-start:30px} }
+
+/* بطاقة «تثبيت المنصة على جهازك» في «طلباتي» */
+.install-card{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--primary-faint);border:1px solid var(--primary-line);border-radius:12px;padding:12px 14px}
+.install-card>svg{width:28px;height:28px;color:var(--primary);flex:none}
+.install-card .grow{flex:1 1 220px;min-width:0}
+.install-card h2{font-size:15px;line-height:1.4}
+.install-card p{font-size:13px;color:var(--muted)}
+.install-card .btn-row{flex:none}
+.ins-steps{margin:0;padding-inline-start:22px;display:flex;flex-direction:column;gap:10px;font-size:15px;line-height:1.7}
+.ins-steps svg{width:20px;height:20px;vertical-align:-4px;color:var(--primary);margin-inline:2px}
+
+/* كلمة المرور: زر إظهار/إخفاء داخل الحقل */
+.pass-wrap{position:relative}
+.pass-wrap .input{padding-inline-end:48px}
+.pass-eye{position:absolute;inset-block:0;inset-inline-end:2px;width:44px;display:grid;place-items:center;color:var(--muted);border-radius:8px}
+.pass-eye:hover{color:var(--ink)}
+.pass-eye svg{width:20px;height:20px}
+
+/* هاتف المكتب: رابط اتصال بلمسة (tel:) */
+a.tel{color:var(--primary);font-weight:600;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px;display:inline-flex;align-items:center;min-height:36px;padding-block:4px;margin-block:-4px}
+.site-foot a.tel{color:var(--hero-ink);font-weight:500;text-decoration-color:var(--hero-line)}
+.site-foot a.tel:hover{text-decoration-color:currentColor}
+
+/* رمز الاستلام: زرّا النسخ والتقويم في صف واحد */
+.code-btns{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+
+/* شريط «أحدث المفقودات» الأفقي: الالتقاط (scroll-snap) يحترم الهامش، فتبدأ أول بطاقة على حافة المحتوى
+   لا على حافة الشاشة (كانت تلتصق بالحافة وتبدو مقصوصة) */
+.hscroll{scroll-padding-inline:16px}
+@media (min-width:720px){ .hscroll{scroll-padding-inline:24px} }
+.stats{scroll-padding-inline:16px}

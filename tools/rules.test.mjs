@@ -1,7 +1,7 @@
 // اختبارات قواعد Firestore على المحاكي (للمطوّر فقط؛ لا يحمّلها التطبيق)
 // التشغيل: cd tools && npm install && npm run test:rules   (يحتاج Java)
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, getCountFromServer, writeBatch, collection, query, where, deleteField, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, getCountFromServer, writeBatch, collection, query, where, deleteField, serverTimestamp, Timestamp, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
 import fs from 'fs';
 import { createHash } from 'crypto';
 
@@ -1054,6 +1054,40 @@ await t('v17-1: من سلّم الغرض لا يطلب استلامه', mk(bob, 
 await t('v17-1: غيره يطلب استلامه', mk(carol, 'claims/hf1_carol', claim('hf1', 'carol')));
 await t('v17-2: لا يُربط طلب بالوصف بغرض سلّمه صاحب الطلب', setDoc(doc(A, 'claimLinks/' + gid('bob', 'wallets', T1)), {officeId: O, itemId: 'hw1', by: 'staffA', at: Date.now()}), false);
 await t('v17-2: ويُربط طلب غيره', setDoc(doc(A, 'claimLinks/' + gid('carol', 'wallets', T1)), {officeId: O, itemId: 'hw1', by: 'staffA', at: Date.now()}));
+
+// ---------- v18 (H25): «هل كانت هذه الصفحة مفيدة؟» عدّادات مجمّعة ----------
+const FB = O + '__item', fbW = (db, k, id = FB, x = {}) => setDoc(doc(db, 'pageFeedback/' + id), {officeId: O, page: 'item', updatedAt: serverTimestamp(), [k]: increment(1), ...x}, {merge: true});
+await t('v18-1: زائر بلا حساب يقيّم صفحة (نعم)', fbW(anon, 'yes'));
+await t('v18-1: ويزيد «لا» بمقدار 1', fbW(anon, 'no'));
+await t('v18-1: وسبب «لا» (غير واضحة)', fbW(bob, 'rUnclear'));
+await t('v18-2: لا زيادة بأكثر من 1', setDoc(doc(anon, 'pageFeedback/' + FB), {officeId: O, page: 'item', updatedAt: serverTimestamp(), yes: increment(5)}, {merge: true}), false);
+await t('v18-2: لا عدّادان في كتابة واحدة', setDoc(doc(anon, 'pageFeedback/' + FB), {officeId: O, page: 'item', updatedAt: serverTimestamp(), yes: increment(1), no: increment(1)}, {merge: true}), false);
+await t('v18-2: لا إنقاص', setDoc(doc(anon, 'pageFeedback/' + FB), {officeId: O, page: 'item', updatedAt: serverTimestamp(), yes: increment(-1)}, {merge: true}), false);
+await t('v18-2: لا حقل غريب (نص)', fbW(anon, 'yes', FB, {note: 'x'}), false);
+await t('v18-2: لا تغيير للمكتب أو الصفحة', setDoc(doc(anon, 'pageFeedback/' + FB), {officeId: 'dom', page: 'item', updatedAt: serverTimestamp(), yes: increment(1)}, {merge: true}), false);
+await t('v18-3: لا إنشاء لصفحة غير معروفة', fbW(anon, 'yes', O + '__evil', {page: 'evil'}), false);
+await t('v18-3: ولا لمكتب غير موجود', fbW(anon, 'yes', 'nope__item', {officeId: 'nope'}), false);
+await t('v18-3: ولا بمعرّف لا يطابق المكتب والصفحة', fbW(anon, 'yes', O + '__home'), false);
+await t('v18-3: ولا بوقت من الجهاز', setDoc(doc(anon, 'pageFeedback/' + O + '__home'), {officeId: O, page: 'home', updatedAt: now, yes: 1}), false);
+await t('v18-3: ولا بعدّاد يبدأ بأكثر من 1', setDoc(doc(anon, 'pageFeedback/' + O + '__home'), {officeId: O, page: 'home', updatedAt: serverTimestamp(), yes: 7}), false);
+await t('v18-4: موظف المكتب يقرأ تقييمات مكتبه', q(A, 'pageFeedback', ['officeId', '==', O]));
+await t('v18-4: الزائر لا يقرأ', q(bob, 'pageFeedback', ['officeId', '==', O]), false);
+await t('v18-4: ولا بلا حساب', getDoc(doc(anon, 'pageFeedback/' + FB)), false);
+await t('v18-4: الموظف لا يحذف', deleteDoc(doc(A, 'pageFeedback/' + FB)), false);
+await t('v18-4: المدير يحذف (تصفير)', deleteDoc(doc(owner, 'pageFeedback/' + FB)));
+
+// ── v19 (H27): «حذف حسابي» يمسح بيانات الطلب المنتهي ولا يكتب فيه قيماً جديدة ──
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  await setDoc(doc(d, 'items/an1'), pub('an1'));
+  await setDoc(doc(d, 'claims/an1_carol'), {...claim('an1', 'carol', {claimantName: 'كارول', idLast4: '4321', details: {mark: 'ملصق'}}),
+    status: 'done', doneAt: now, handoverNote: 'استلمه: كارول — آخر 4: 4321', answer: 'غلاف أحمر'}); });
+const wipe = () => ({uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', answer: '', claimantName: '', idLast4: '', handoverNote: '', details: {}, anonymizedAt: Date.now()});
+await t('v19-1: لا يكتب ملاحظة تسليم جديدة وهو يحذف حسابه', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), handoverNote: 'استلمه: شخص آخر — آخر 4: 0000'}), false);
+await t('v19-1: ولا مكان فقد جديداً', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), lostSpot: 'المواقف'}), false);
+await t('v19-1: ولا إجابات أسئلة', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), details: {mark: 'غيره'}}), false);
+await t('v19-1: ولا يُبقي الاسم كما هو', updateDoc(doc(carol, 'claims/an1_carol'), (({claimantName, ...x}) => x)(wipe())), false);
+await t('v19-2: ولا وقت مسح قديماً', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), anonymizedAt: Date.now() - 3 * DAY}), false);
+await t('v19-3: المسح الكامل مسموح', updateDoc(doc(carol, 'claims/an1_carol'), wipe()));
 
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

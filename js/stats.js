@@ -13,19 +13,21 @@ export async function loadStats(officeId, force = false){
   if (!officeId || loading.has(officeId) || (S.stats[officeId] && !force)) return;
   loading.add(officeId);
   try {
-    const [items, reports, secrets, done, pub, adds] = await Promise.all([dbx.list('items', [['officeId', '==', officeId]]), dbx.list('reports', [['officeId', '==', officeId]]).catch(() => []),
+    const [items, reports, secrets, done, pub, adds, fb] = await Promise.all([dbx.list('items', [['officeId', '==', officeId]]), dbx.list('reports', [['officeId', '==', officeId]]).catch(() => []),
       dbx.list('itemSecrets', [['officeId', '==', officeId]]).catch(() => []),
       // الطلبات المكتملة: للتقييم فقط (مساواة فقط، فلا فهرس مركّب)
       dbx.list('claims', [['officeId', '==', officeId], ['status', '==', 'done']]).catch(() => []),
       dbx.get('publicStats/' + officeId).catch(() => null),
       // H9: قيود إنشاء الأغراض (مساواة فقط): نأخذ منها مدة الإضافة «ms:<رقم>» ووقتها فقط
-      dbx.list('logs', [['officeId', '==', officeId], ['action', '==', 'create']]).catch(() => [])]);
+      dbx.list('logs', [['officeId', '==', officeId], ['action', '==', 'create']]).catch(() => []),
+      // H25: تقييم صفحات المنصة (عدّادات مجمّعة لكل صفحة؛ قبل نشر القواعد v18 تُرفض القراءة فتبقى فارغة)
+      dbx.list('pageFeedback', [['officeId', '==', officeId]]).catch(() => [])]);
     const addTimes = adds.map(l => ({ms: Number(MS_NOTE.exec(l.note || '')?.[1] || 0), at: l.at || 0})).filter(x => x.ms > 0);
     // مكان العثور سري (المرحلة E5): نأخذه من itemSecrets، ونضم spot فقط (لا شيء غيره من التفاصيل السرية)
     const spotOf = Object.fromEntries(secrets.filter(x => x.spot !== undefined).map(x => [x.id, x.spot]));
     // من الطلبات نحتفظ بالتقييم فقط (لا بيانات أصحابها)
     const ratings = done.filter(c => Number.isInteger(c.rating) && c.rating >= 1 && c.rating <= 5).map(c => ({rating: c.rating, note: c.ratingNote || '', at: c.ratedAt || 0}));
-    S.stats[officeId] = {items: items.map(i => i.id in spotOf ? {...i, spot: spotOf[i.id]} : i), reports, ratings, addTimes, at: Date.now()};
+    S.stats[officeId] = {items: items.map(i => i.id in spotOf ? {...i, spot: spotOf[i.id]} : i), reports, ratings, addTimes, fb, at: Date.now()};
     publishPublic(officeId, pub);
   } catch (e){ console.warn(e); S.stats[officeId] = {items: [], reports: [], ratings: [], at: Date.now(), error: true}; }
   finally { loading.delete(officeId); touch(); }

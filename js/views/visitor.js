@@ -3,13 +3,14 @@ import { icon, LOGO, brandOf, CATS, cat, catName, isGrouped, isHiddenCat, colorN
 import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, tAr, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode, iHandedIn } from '../state.js';
-import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack } from './common.js';
+import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack, telLink } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
 import { aiReady } from '../firebase.js';
 import { hydrate, go } from '../ui.js';
 import { canDeleteItem } from '../workflow.js';   // v9: زر الحذف حسب صلاحيته (القواعد تفرضها أيضاً)
 import { msgOf } from '../notify.js';
+import { installMode, installSnoozed } from '../install.js';   // H27: بطاقة «تثبيت المنصة» في «طلباتي»
 
 /* ---------- visitor: choose place ---------- */
 export function vPick(){
@@ -139,8 +140,14 @@ export function updateBrowse(){
   // بحث عن «نقود/مبلغ…»: الرسالة نفسها فوق النتائج (لا نتيجة نقود أبداً)
   const hint = S.filter.cat === 'all' && q.length ? CATS.filter(c => hiddenHere(c.id) && groupHit(q, c.id)).map(c => hiddenNote(c.id)).join('') : '';
   const any = pubActive().length;
+  // H26: بحث بلا نتيجة: «لم تجده؟» وزر يفتح البلاغ واسم الغرض مملوء بكلمة البحث (ACT.reportFromSearch)
+  const noHit = q.length ? emptyBox('search', t('br.searchNone'), t('br.searchNoneSub'),
+    `<button class="btn" data-act="reportFromSearch">${icon('bell')}${t('br.searchReport')}</button>`, 'search-none') : '';
+  // صندوق «غرضك غير موجود في القائمة» أسفل الصفحة يُخفى ما دام صندوق «لم تجده؟» ظاهراً (لا تكرار)
+  const showNoHit = !arr.length && !hint && !!noHit;
+  const cl = $('.cta-lost'); if (cl) cl.hidden = showNoHit;
   res.innerHTML = hint + (arr.length ? `<div class="grid">${arr.join('')}</div>`
-    : hint ? '' : emptyBox('search', t(any ? 'br.noResults' : 'home.empty'), t(any ? 'br.noResultsSub' : 'home.emptySub'), navBtn('report', 'bell', t('home.ctaLost'))));
+    : hint ? '' : noHit || emptyBox('search', t(any ? 'br.noResults' : 'home.empty'), t(any ? 'br.noResultsSub' : 'home.emptySub'), navBtn('report', 'bell', t('home.ctaLost'))));
   hydrate();
 }
 
@@ -182,7 +189,7 @@ export function vItem(){
   } else if (mine && ['expired', 'cancelled'].includes(mine.status)){
     // طلبه انتهت مهلته أو أُلغي: رقم الطلب ثابت فلا يُرسل طلباً جديداً؛ يراجع المكتب فيعيد الموظف تفعيل طلبه
     actions = `<div class="note warn">${icon('clock')}<span>${t(mine.status === 'expired' ? 'it.mineExpired' : mine.cancelledAt ? 'it.mineWithdrawn' : 'it.mineCancelled')}</span></div>
-      ${o ? `<dl class="facts">${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}${o.phone ? `<dt>${t('found.contact')}</dt><dd><span dir="ltr">${esc(o.phone)}</span></dd>` : ''}</dl>` : ''}`;
+      ${o ? `<dl class="facts">${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}${o?.phone ? `<dt>${t('found.contact')}</dt><dd>${telLink(o.phone)}</dd>` : ''}</dl>` : ''}`;
   } else if (mine?.status === 'rejected'){
     actions = `<div class="note warn">${icon('info')}<span>${t('it.rejected')}</span></div>`;
   } else if (mine){
@@ -231,7 +238,7 @@ export function vItem(){
     </div>
     ${staffMode ? SM.timeline(i) : ''}
     ${o ? `<div class="panel"><div class="section-title">${icon('building')}${t('it.whereCollect')}</div>
-      <dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl></div>` : ''}
+      <dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}${o?.phone ? `<dt>${t('found.contact')}</dt><dd>${telLink(o.phone)}</dd>` : ''}</dl></div>` : ''}
   </div>`;
 }
 
@@ -334,8 +341,10 @@ function claimForm(p){
 
 /* ---------- visitor: report lost ---------- */
 export function vReportForm(){
-  if (!S.uid) return `<div class="wrap">${loginPrompt(t('rp.login'))}</div>`;
-  if (!S.verified) return `<div class="wrap">${verifyPrompt(t('rp.verifyWhat'))}</div>`;
+  // H26: البلاغ الجديد يُعبّأ بلا دخول (الدخول والتوثيق يُطلبان عند «إرسال» فقط، والمسودة تبقى: draftGate في actions.js).
+  // تعديل بلاغ قائم يحتاج حساب صاحبه كما كان
+  if (S.route.params.id && !S.uid) return `<div class="wrap">${loginPrompt(t('rp.login'))}</div>`;
+  if (S.route.params.id && !S.verified) return `<div class="wrap">${verifyPrompt(t('rp.verifyWhat'))}</div>`;
   // G3: «تعديل» البلاغ (params.id): النموذج نفسه معبّأً بكل حقوله، والحفظ تحديث للبلاغ نفسه
   const r = S.route.params.id ? S.myReports.find(x => x.id === S.route.params.id && x.status === 'open') : null;
   if (S.route.params.id && !r) return `<div class="wrap">${backBtn()}${emptyBox('bell', t('rp.gone'), '', navBtn('mine', 'inbox', t('it.follow')))}</div>`;
@@ -346,6 +355,7 @@ export function vReportForm(){
   return `<div class="wrap" data-view="report">${r ? backBtn() : ''}
     <section class="hero"><div class="hero-kicker">${icon('bell')}${t('rp.kicker', {office: esc(oName(o))})}</div><h1 class="hero-title">${t(r ? 'rp.editTitle' : 'rp.title')}</h1>
       <p class="hero-sub">${t(r ? 'rp.editSub' : 'rp.sub')}</p></section>
+    ${!S.uid ? `<div class="note info">${icon('info')}<span>${t('dr.hint')}</span></div>` : ''}
     <form data-form="report" class="panel" novalidate data-steps="3" data-step="1" ${r ? `data-id="${esc(r.id)}"` : ''}>
       ${stepper([t('step.what'), t('step.where'), t('step.desc')])}
       <div class="form-err" hidden></div>
@@ -354,7 +364,7 @@ export function vReportForm(){
       <div class="field"><span class="label">${t('c.category')}</span>${catPicker(r?.cat || '')}</div>
       <div class="field" id="subs-field" ${hasSubs ? '' : 'hidden'}><span class="label">${t('c.type')}</span><div id="subs">${hasSubs ? subsPicker(r.cat, r.sub) : ''}</div></div>
       <div id="cat-fields" data-mode="report">${r ? catFields(r.cat, r, 'report') : ''}</div>
-      <div class="field"><label for="r-title">${t('rp.name')}</label><input id="r-title" name="title" class="input" required placeholder="${t('rp.namePh')}" maxlength="80" value="${esc(r?.title || '')}"></div>
+      <div class="field"><label for="r-title">${t('rp.name')}</label><input id="r-title" name="title" class="input" required placeholder="${t('rp.namePh')}" maxlength="80" value="${esc(r?.title || String(S.route.params.q || '').slice(0, 80))}"></div>
       ${stepNav(1, 3)}`)}
       ${step(2, 3, t('step.whereQ'), `
       <div class="two">
@@ -402,12 +412,16 @@ function attKey(n, x){
   if (n === 'sugg') return `sugg:${x.id}:${pickOf(x)?.id || ''}:${suggestFor(x)?.id || ''}`;
   return `stale:${x.id}:${x.renewedAt || x.createdAt || 0}`;
 }
-function attentionBox(cls, reps){
+// H27: صفوف «يحتاج انتباهك» (مصدّرة: أولها يظهر في الصفحة الرئيسية لمن عاد إلى المنصة، «متابعة»)
+export function attnRows(cls = myClaims(), reps = myReports()){
   const later = new Set(LS.get('snoozed', []));
-  const rows = [
+  return [
     ...cls.map(c => [claimNeed(c), c]).filter(([n]) => n).map(([n, c]) => ({n, x: c, msg: t('att.' + n, {title: esc(claimTitle(c))}), tab: 'claims', key: 'c:' + c.id, ic: n === 'code' ? 'shield' : n === 'answer' ? 'question' : 'check'})),
     ...reps.map(r => [reportNeed(r), r]).filter(([n]) => n).map(([n, r]) => ({n, x: r, msg: t('att.' + n, {title: esc(r.title)}), tab: 'reports', key: 'r:' + r.id, ic: n === 'stale' ? 'clock' : 'bell'})),
   ].map(x => ({...x, ak: attKey(x.n, x.x)})).filter(x => !later.has(x.ak));
+}
+function attentionBox(cls, reps){
+  const rows = attnRows(cls, reps);
   if (!rows.length) return '';
   return `<section class="attn-box" aria-labelledby="att-t"><h2 class="section-title" id="att-t">${icon('bell')}${t('att.title')} ${tabNum(0, rows.length)}</h2>
     <ul class="attn-list">${rows.map(x => `<li>${icon(x.ic)}<span class="grow">${x.msg}</span>
@@ -419,6 +433,14 @@ export const MINE_TABS = ['claims', 'reports', 'found'];
 // البطاقات التي فيها تنبيه غير مقروء (حدّ ملوّن ما دامت مطوية)، تُحسب مرة لكل رسم
 let FRESH = new Set();
 const isEndedOf = {claims: c => CLAIM_DONE.includes(c.status), reports: r => r.status !== 'open', found: f => f.status !== 'pending'};
+/* H27: «تثبيت المنصة على جهازك»: لمن لديه طلب أو بلاغ أو إشعار (سيعود لمتابعته)، والمتصفح يدعم التثبيت،
+   ولم يضغط «لاحقاً» خلال 60 يوماً. لا تظهر بعد التثبيت أو داخل المنصة المثبّتة */
+function installCard(n){
+  if (!n || !installMode() || installSnoozed()) return '';
+  return `<section class="install-card" aria-labelledby="ins-t">${icon('install')}
+    <div class="grow"><h2 id="ins-t">${t('ins.title')}</h2><p>${t('ins.lead')}</p></div>
+    <div class="btn-row"><button class="btn sm" data-act="install">${t('ins.btn')}</button><button class="btn sm ghost" data-act="installLater">${t('ins.later')}</button></div></section>`;
+}
 export function vMine(){
   if (!S.uid) return `<div class="wrap">${loginPrompt(t('mine.login'))}</div>`;
   const reps = myReports(), cls = myClaims(), fnd = myFound();
@@ -438,6 +460,7 @@ export function vMine(){
   return `<div class="wrap" data-view="mine">
     <section class="hero"><div class="hero-kicker">${icon('inbox')}${singleMode() ? t('mine.single', {office: esc(oName(curOffice()))}) : t('mine.kicker')}</div><h1 class="hero-title">${t('nav.mine')}</h1></section>
     ${attentionBox(cls, reps)}
+    ${installCard(cls.length + reps.length + fnd.length)}
     ${tabs}
     <div role="tabpanel" id="mp-${cur}" aria-labelledby="mt-${cur}" tabindex="0" class="mine-panel">${mineList(cur, lists[cur], focus)}</div>
   </div>`;
@@ -464,7 +487,7 @@ export function foundCardMine(f, focus){
     : st === 'returned' ? `<div class="note ok">${icon('check')}<span>${t('hi.returned')}</span></div>
       <div class="btn-row"><button class="btn sm soft" data-act="nav" data-r="thanks" data-id="${esc(f.id)}">${icon('print')}${t('ty.btn')}</button></div>`
     : st === 'yours' ? `<div class="note ok">${icon('check')}<span>${t('hi.yours')}${it ? ` (<b dir="ltr">${esc(it.ref)}</b>)` : ''}</span></div>
-      ${o ? `<dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>` : ''}`
+      ${o ? `<dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}${o?.phone ? `<dt>${t('found.contact')}</dt><dd>${telLink(o.phone)}</dd>` : ''}</dl>` : ''}`
     : st === 'received' ? `<div class="note ok">${icon('check')}<span>${it ? t('hi.receivedRef', {ref: `<b>${esc(it.ref)}</b>`}) : t('hi.received')}</span></div>`
     : `<div class="btn-row"><button class="btn sm ghost" data-act="delFound" data-id="${esc(f.id)}">${icon('trash')}${t('c.delete')}</button></div>`;
   const next = st === 'pending' ? t('ns.hand', {place: esc(oPlace(o) || oName(o))}) : t('ns.f.' + st);
@@ -493,10 +516,11 @@ export function claimCardMine(c){
   else if (c.status === 'approved'){
     // رمز الاستلام في مكان بارز أعلى البطاقة: خط كبير، وزر نسخ، وآخر موعد للاستلام (H23: يظهر هنا فقط، وبلا QR)
     if (code) top = `<div class="code-tag code-hero"><small>${t('mine.code')}</small><span class="digits" dir="ltr">${esc(fmtPickup(code))}</span>
-      <button class="btn sm ghost" data-act="copy" data-v="${esc(fmtPickup(code))}">${icon('copy')}${t('c.copy')}</button>
+      <span class="code-btns"><button class="btn sm ghost" data-act="copy" data-v="${esc(fmtPickup(code))}">${icon('copy')}${t('c.copy')}</button>
+        ${/* H27: آخر موعد في تقويم الجوال (ملف .ics) */ c.pickupBy && !late ? `<button class="btn sm ghost" data-act="addCal" data-id="${esc(c.id)}">${icon('calendar')}${t('cal.add')}</button>` : ''}</span>
       ${c.pickupBy ? `<small class="${late ? 'late' : 'until'}">${t(late ? 'st.pickupEnded' : 'mine.codeUntil', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`, when: when(c.pickupBy)})}</small>` : ''}
       <small class="hint">${t('mine.codeHint')}</small></div>`;
-    body = code ? `<dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}</dl>`
+    body = code ? `<dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}${o?.phone ? `<dt>${t('found.contact')}</dt><dd>${telLink(o.phone)}</dd>` : ''}</dl>`
       : `<div class="note warn">${icon('info')}<span>${t('mine.noCode')}</span></div>
          ${c.pickupBy ? `<div class="note ${late ? 'warn' : 'info'}">${icon('clock')}<span>${t(late ? 'st.pickupEnded' : 'mine.collectBy', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`})}</span></div>` : ''}`;
   }
@@ -603,7 +627,7 @@ export function vOffice(){
       <dl class="facts">
         <dt>${t('adm.colOffice')}</dt><dd>${esc(oPlace(o) || '—')}</dd>
         ${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}
-        ${o.phone ? `<dt>${t('found.contact')}</dt><dd><span dir="ltr">${esc(o.phone)}</span><button class="link" data-act="copy" data-v="${esc(o.phone)}">${icon('copy')}${t('c.copy')}</button></dd>` : ''}
+        ${o.phone ? `<dt>${t('found.contact')}</dt><dd>${telLink(o.phone)}<button class="link" data-act="copy" data-v="${esc(o.phone)}">${icon('copy')}${t('c.copy')}</button></dd>` : ''}
         <dt>${t('ofc.keep')}</dt><dd>${daysWord(o.retentionDays || 90)}</dd>
       </dl>
     </div>
@@ -612,6 +636,15 @@ export function vOffice(){
       <p class="muted">${t('br.about')}</p>
       ${collegeLinks(o, 'grid')}
     </div>` : ''}
+    <section class="home-sec" id="privacy-details">
+      <div class="sec-head"><h2>${t('ofc.privacy')}</h2></div>
+      <div class="features compact">
+        <div class="feat">${icon('lock')}<b>${t('ofc.f1')}</b><span>${t('ofc.f1d')}</span></div>
+        <div class="feat">${icon('idcard')}<b>${t('ofc.f2')}</b><span>${t('ofc.f2d')}</span></div>
+        <div class="feat">${icon('shield')}<b>${t('ofc.f3')}</b><span>${t('ofc.f3d')}</span></div>
+        <div class="feat">${icon('spark')}<b>${t('ofc.f4')}</b><span>${t('ofc.f4d')}</span></div>
+      </div>
+    </section>
     ${singleMode() ? '' : `<button class="btn ghost" data-act="pickOffice">${icon('pin')}${t('ui.changePlace')}</button>`}
     <div class="panel">
       <h2 class="section-title">${icon('grid')}${t('svc.indexTitle')}</h2>

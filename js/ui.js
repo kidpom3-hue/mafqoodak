@@ -1,13 +1,13 @@
 // هيكل الواجهة: التنقل بين الصفحات، الشريط العلوي، الشريط السفلي، النوافذ المنبثقة
 import { icon, LOGO, statusLabel, MODE_LABEL, brandOf } from './constants.js';
 import { t } from './i18n.js';
-import { $, $$, esc, toast } from './utils.js';
+import { $, $$, esc, toast, SS } from './utils.js';
 import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, getEmail, SHARE_RE, OFFICE_RE, singleMode, STAFF_TABS, TAB_RE } from './state.js';
 import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice } from './views/visitor.js';
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
 import { vHome, updateHome, vFound, vHandin, footer, fillFootQr } from './views/home.js';
 import { vPrivacy } from './views/privacy.js';
-import { tabNum, brandLogo } from './views/common.js';   // H6: كل شارة رقمية تمرّ بها (رقم واحد: أحمر للجديد أو رمادي للعدد)
+import { tabNum, brandLogo, feedbackBox, fbKey } from './views/common.js';   // H6: كل شارة رقمية تمرّ بها (رقم واحد: أحمر للجديد أو رمادي للعدد)
 // H8: صفحات الموظف والإدارة والإحصاءات والسجل والطباعة والخدمات تُحمَّل عند أول فتح لها فقط (lazy.js)
 import { need, load, loadingHtml, setLazyHooks } from './lazy.js';
 import { SETTINGS } from './config.js';
@@ -62,7 +62,12 @@ export function initForm(){
   const n = f.querySelector('#sens-note'), p = f.querySelector('#photo-field');
   if (n) n.hidden = !sens; if (p) p.hidden = sens;
   lockEvidence(f);
+  FORM_HOOKS.forEach(h => h(f));   // H26: إعادة مسودة البلاغ أو إشعار التسليم (actions.js)
 }
+// H26: دوال تعمل بعد رسم نموذج (يضيفها actions.js، لأن ui.js لا يستورد منه)
+export const FORM_HOOKS = [];
+// H26: مسودة تنتظر الإرسال بعد الدخول (draft:<kind>.pending): بعد الرجوع من دخول Google بإعادة التوجيه نعود إلى نموذجها
+export const pendingDraft = () => ['report', 'handin'].find(k => SS.get('draft:' + k, null)?.pending) || '';
 // v14 (H19): غرض مضى على تسجيله 24 ساعة: حقول الأدلة للعرض فقط للموظف (workflow.editItem يبقي قيمها كما سُجّلت)
 export function lockEvidence(f){
   if (!f?.dataset.locked) return;
@@ -81,12 +86,14 @@ export function go(name, params = {}, push = true){
   // H23: تبويب لوحة الموظف جزء من الصفحة (params.tab): تغييره خطوة في السجل، فيعيده زر الرجوع
   if (name === 'staff'){ params = {...params, tab: params.tab || S.staffTab}; S.staffTab = params.tab; }
   const pushed = push && (S.route.name !== name || (name === 'staff' && S.route.params?.tab !== params.tab));
+  const newPage = S.route.name !== name;   // H27: تلاشٍ قصير عند تغيّر الصفحة (تبويبات اللوحة لها .tab-in)
   // G6: نحفظ مكان التمرير مع الصفحة الحالية، فيعود إليه الرجوع (بلا قفزة للأعلى بعد السحب للرجوع في الآيفون)
   if (pushed){ S.route.y = window.scrollY; S.hist.push(S.route); }
   if (S.hist.length > 30) S.hist.shift();
   if (S.sheet) dropSheetEntry();
   S.route = {name, params}; S.sheet = null;
   GOING = true; try { renderAll(); } finally { GOING = false; }
+  if (newPage) pageIn();
   // H23: كل تبويب في اللوحة يعود إلى موضع تمريره السابق (بقية الصفحات من الأعلى)
   if (name === 'staff' && S.tabY[params.tab]) restoreScroll(S.tabY[params.tab]); else window.scrollTo(0, 0);
   if (pushed) histDo(() => { history.pushState({mf: 1}, ''); syncUrl(); }); else syncUrl();
@@ -97,8 +104,16 @@ export function tabEntry(){ histDo(() => { if (!history.state?.mf) history.pushS
 // خطوة رجوع داخل التطبيق (بلا pushState)
 function backStep(){
   const prev = S.hist.pop(); S.sheet = null;
-  if (prev){ S.route = prev; if (prev.name === 'staff' && prev.params?.tab) S.staffTab = prev.params.tab; renderAll(); restoreScroll(prev.y || 0); }
+  if (prev){ S.route = prev; if (prev.name === 'staff' && prev.params?.tab) S.staffTab = prev.params.tab; renderAll(); pageIn(); restoreScroll(prev.y || 0); }
   else go(homeRoute(), {}, false);
+}
+/* H27: انتقال هادئ بين الصفحات: الصفحة الجديدة تظهر بتلاشٍ قصير (160ms، شفافية فقط فلا يتحرك شيء ولا يتأثر الالتصاق).
+   عند الانتقال فقط، لا عند التحديث الحيّ للبيانات، ويتوقف مع «تقليل الحركة» في الجهاز (قاعدة prefers-reduced-motion) */
+let pageT = 0;
+function pageIn(){
+  const m = $('#main'); if (!m) return;
+  m.classList.remove('page-in'); void m.offsetWidth; m.classList.add('page-in');
+  clearTimeout(pageT); pageT = setTimeout(() => m.classList.remove('page-in'), 260);
 }
 // G6: إعادة التمرير بعد رسم الصفحة السابقة. نعيده في إطار الرسم التالي، ومرة ثانية إن لم تكن الصفحة
 // قد اكتملت بعد (أقصر من المكان المحفوظ). الصور الكسولة محجوزة الارتفاع (aspect-ratio) فلا يتغيّر المكان بعد تحميلها
@@ -187,6 +202,7 @@ function renderMain(){
   if (!S.configured){ main.innerHTML = vNotConfigured(); return; }
   if (!S.authReady || !S.configLoaded || !S.officesLoaded){ main.innerHTML = `<div class="loading"><span class="spin"></span></div>`; return; }
   if (S.route.name === 'login' && S.uid) S.route = S.route.params.next || {name: homeRoute(), params: {}};
+  if (S.uid && S.route.name === homeRoute() && pendingDraft()) S.route = {name: pendingDraft(), params: {}};
   if (!S.config){ main.innerHTML = S.route.name === 'login' ? vLogin() : S.route.name === 'privacy' ? vPrivacy() : vSetup(); return; }
   // لا مكان مختار (أو لم يصل بعد من قاعدة البيانات): نعرض قائمة الأماكن دون تغيير الصفحة المطلوبة
   // H19: وضع المكتب الواحد: صفحة اختيار المكان لا تظهر للزائر
@@ -222,23 +238,27 @@ function crumbs(){
     ? `<li><span aria-current="page">${x}</span></li>`
     : `<li><button class="link" data-act="nav" data-r="${x[1]}">${x[0]}</button></li>`).join('')}</ol></nav>`;
 }
+// H25: «هل كانت هذه الصفحة مفيدة؟» قبل التذييل في كل صفحات الزائر، وفي الرئيسية (تذييلها في صفحتها) قبل تذييلها
 function decorate(main){
   const o = curOffice(), box = main.firstElementChild;
-  if (!o || !box || ['staff', 'admin'].includes(S.mode) || !VISITOR_PAGES.includes(S.route.name)) return;
+  if (!o || !box || ['staff', 'admin'].includes(S.mode)) return;
+  if (S.route.name === 'home'){ box.querySelector(':scope > .site-foot')?.insertAdjacentHTML('beforebegin', feedbackBox(o, 'home')); return; }
+  if (!VISITOR_PAGES.includes(S.route.name)) return;
   box.insertAdjacentHTML('afterbegin', crumbs());
-  box.insertAdjacentHTML('beforeend', footer(o));
+  box.insertAdjacentHTML('beforeend', feedbackBox(o, fbKey()) + footer(o));
   fillFootQr();
 }
 function renderHeader(){
   const o = curOffice(); const ms = S.config ? modes() : ['visitor'];
   const acct = !S.configured || !S.authReady ? ''
-    : S.uid ? `<button class="avatar-btn" data-keep="acct" data-act="account" aria-label="${t('ui.account')}">${safeAvatar(S.me?.photo) ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span>${esc((S.me?.name || '?').trim().charAt(0))}</span>`}</button>`
+    : S.uid ? `<button class="avatar-btn" data-keep="acct" data-act="account" aria-label="${t('ui.accountOf', {name: esc(S.me?.name || '')})}" title="${t('ui.accountOf', {name: esc(S.me?.name || '')})}">${safeAvatar(S.me?.photo) ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span>${esc((S.me?.name || '?').trim().charAt(0))}</span>`}</button>`
     // H3: تحت 400px يصبح زر الدخول أيقونة فقط (النص مخفي بصرياً ويبقى اسمه في aria-label)، فيتسع اسم المكتب
-    : `<button class="btn sm ghost login-btn" data-act="login" aria-label="${t('ui.signIn')}">${icon('users')}<span class="login-txt">${t('ui.signIn')}</span></button>`;
+    // H26: غير المسجّل يرى كلمة «دخول» نصاً في كل المقاسات (لا أيقونة وحدها)
+    : `<button class="btn sm ghost login-btn" data-act="login" aria-label="${t('ui.signIn')}" title="${t('ui.signIn')}">${icon('users')}<span class="login-txt">${t('ui.signInShort')}</span></button>`;
   // زر اللغة: يعرض اللغة الأخرى («EN» في العربية، «عربي» في الإنجليزية)
-  const langBtn = `<button class="lang-btn" data-act="lang" lang="${t('lang.otherCode')}" aria-label="${t('lang.switch')}"><span class="lang-txt">${t('lang.other')}</span>${icon('globe')}</button>`;
+  const langBtn = `<button class="lang-btn" data-act="lang" lang="${t('lang.otherCode')}" aria-label="${t('lang.switch')}" title="${t('lang.switch')}"><span class="lang-txt">${t('lang.other')}</span>${icon('globe')}</button>`;
   // H4: «Aa» يفتح نافذة العرض (المظهر وحجم الخط)
-  const aaBtn = `<button class="aa-btn" data-act="displaySheet" aria-label="${t('ui.display')}"><span aria-hidden="true">Aa</span></button>`;
+  const aaBtn = `<button class="aa-btn" data-act="displaySheet" aria-label="${t('ui.display')}" title="${t('ui.display')}"><span aria-hidden="true">Aa</span></button>`;
   // H15: هوية الكلية (ألوانها وشعارها) في مكتبها فقط، وليس في لوحة الإدارة التي تدير كل المواقع
   const bo = S.mode !== 'admin' ? o : null;
   applyBrand(bo);
