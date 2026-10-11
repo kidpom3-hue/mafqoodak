@@ -1,11 +1,19 @@
 // عناصر واجهة مشتركة بين الصفحات
-import { icon, otype, otypeName, oCity, brandOf, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf, statusLabel, ITEM_STATUS } from '../constants.js';
+import { icon, otype, otypeName, oCity, brandOf, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf, statusLabel, ITEM_STATUS, latinDigits } from '../constants.js';
 import { t, hasKey } from '../i18n.js';
 import { LS, esc, relDay, relTime, colorDot, isBuilding, roomWord, spotText, showTitle, when, fullWhen, fmtDate, fmtDateFull, isoDay, okMs, isoMs } from '../utils.js';
 import { aiReady } from '../firebase.js';   // H8: ai.js يُحمَّل عند الحاجة فقط
 import { THEMES, theme, TEXTS, textSize } from '../theme.js';
 import { S, isStaffHere, answered, singleMode } from '../state.js';
 
+/* H27: هاتف المكتب رابط اتصال بلمسة (tel:) في الجوال. النص كما كتبه المكتب، والرابط أرقام فقط (و+ في أوله)،
+   فلا يُحقن في href شيء من بيانات المكتب */
+export function telLink(phone){
+  const s = latinDigits(String(phone || '')).trim(), n = (s.startsWith('+') ? '+' : '') + s.replace(/\D/g, '');
+  return n.replace('+', '').length >= 3
+    ? `<a class="tel" href="tel:${n}" dir="ltr" aria-label="${t('c.callNum', {phone: esc(s)})}">${esc(phone)}</a>`
+    : `<span dir="ltr">${esc(phone)}</span>`;
+}
 /* H19: نموذج من خطوات (البلاغ والطلب، 3 خطوات بحد أقصى). كل الخانات في النموذج نفسه (لا يضيع ما كُتب)،
    وتظهر خطوة واحدة فقط. stepper = مؤشر الخطوات أعلى النموذج؛ step = جسم خطوة بعنوانها؛ stepNav = «السابق/التالي».
    التنقل في actions.js (stepNext/stepPrev/showStep)، وخطأ الإرسال يفتح الخطوة التي فيها الخانة */

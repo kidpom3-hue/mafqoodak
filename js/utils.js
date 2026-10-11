@@ -227,6 +227,35 @@ export async function makeBlur(dataUrl){
 
 let toastTimer;
 // الرسالة المنبثقة في منطقة aria-live="polite" ثابتة في الصفحة (لا hidden)، فيقرؤها قارئ الشاشة عند تغيّر نصها
+/* H27: ملف تقويم (iCalendar ‎.ics) يفتحه تقويم الجوال (آيفون وأندرويد) ويضيفه: حدث نصف ساعة ينتهي عند الوقت at
+   (آخر موعد للاستلام بالضبط، بتوقيت غرينتش فيظهر بتوقيت الجهاز)، وتنبيه قبله بيوم. النصوص عادية (لا HTML)،
+   وتُهرَّب بحسب المعيار RFC 5545، وتُقسم الأسطر الطويلة عند 75 بايت (الحرف العربي بايتان) */
+const icsEsc = s => String(s ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+function icsFold(line){
+  const enc = new TextEncoder(); let out = '', cur = '', n = 0;
+  for (const ch of line){
+    const b = enc.encode(ch).length;
+    if (n + b > (out ? 74 : 75)){ out += (out ? '\r\n ' : '') + cur; cur = ''; n = 0; }
+    cur += ch; n += b;
+  }
+  return out + (out ? '\r\n ' : '') + cur;
+}
+const icsTime = ms => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+export function icsEvent({uid, at, title, desc = '', place = '', url = '', remind = ''}){
+  if (!okMs(at)) return '';
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Mafqoodak//Lost and found//AR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VEVENT', `UID:${icsEsc(uid)}`, `DTSTAMP:${icsTime(Date.now())}`, `DTSTART:${icsTime(at - 30 * 6e4)}`, `DTEND:${icsTime(at)}`,
+    `SUMMARY:${icsEsc(title)}`, desc && `DESCRIPTION:${icsEsc(desc)}`, place && `LOCATION:${icsEsc(place)}`, url && `URL:${icsEsc(url)}`,
+    ...(remind ? ['BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(remind)}`, 'TRIGGER:-P1D', 'END:VALARM'] : []),
+    'END:VEVENT', 'END:VCALENDAR'].filter(Boolean).map(icsFold).join('\r\n') + '\r\n';
+}
+// تنزيل نص كملف (مثل .ics) دون خادم: رابط Blob مؤقت يُحذف بعد قليل
+export function downloadText(text, name, type){
+  const url = URL.createObjectURL(new Blob([text], {type}));
+  const a = document.createElement('a'); a.href = url; a.download = name; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
 export function toast(msg){
   const t = document.getElementById('toast'); if (!t) return;
   t.textContent = msg; t.classList.add('show');
