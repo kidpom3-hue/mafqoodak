@@ -1076,5 +1076,18 @@ await t('v18-4: ولا بلا حساب', getDoc(doc(anon, 'pageFeedback/' + FB))
 await t('v18-4: الموظف لا يحذف', deleteDoc(doc(A, 'pageFeedback/' + FB)), false);
 await t('v18-4: المدير يحذف (تصفير)', deleteDoc(doc(owner, 'pageFeedback/' + FB)));
 
+// ── v19 (H27): «حذف حسابي» يمسح بيانات الطلب المنتهي ولا يكتب فيه قيماً جديدة ──
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  await setDoc(doc(d, 'items/an1'), pub('an1'));
+  await setDoc(doc(d, 'claims/an1_carol'), {...claim('an1', 'carol', {claimantName: 'كارول', idLast4: '4321', details: {mark: 'ملصق'}}),
+    status: 'done', doneAt: now, handoverNote: 'استلمه: كارول — آخر 4: 4321', answer: 'غلاف أحمر'}); });
+const wipe = () => ({uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', answer: '', claimantName: '', idLast4: '', handoverNote: '', details: {}, anonymizedAt: Date.now()});
+await t('v19-1: لا يكتب ملاحظة تسليم جديدة وهو يحذف حسابه', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), handoverNote: 'استلمه: شخص آخر — آخر 4: 0000'}), false);
+await t('v19-1: ولا مكان فقد جديداً', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), lostSpot: 'المواقف'}), false);
+await t('v19-1: ولا إجابات أسئلة', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), details: {mark: 'غيره'}}), false);
+await t('v19-1: ولا يُبقي الاسم كما هو', updateDoc(doc(carol, 'claims/an1_carol'), (({claimantName, ...x}) => x)(wipe())), false);
+await t('v19-2: ولا وقت مسح قديماً', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), anonymizedAt: Date.now() - 3 * DAY}), false);
+await t('v19-3: المسح الكامل مسموح', updateDoc(doc(carol, 'claims/an1_carol'), wipe()));
+
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

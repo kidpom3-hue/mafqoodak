@@ -4,7 +4,7 @@ import { icon, oName, oPlace, oHours } from '../constants.js';
 import { esc, fmtDate, isoDay, TZ } from '../utils.js';
 import { t, tp, locale } from '../i18n.js';
 import { S, curOffice } from '../state.js';
-import { backBtn } from './common.js';
+import { backBtn, telLink } from './common.js';
 import { loadPublicStats } from '../stats.js';
 
 /* ---------- بطاقة الخدمة ---------- */
@@ -53,7 +53,7 @@ export function vService(){
       <li>${t('svc.web')}</li>
       <li>${t('svc.officeCh', {office: esc(oName(o))})}${oPlace(o) ? ` — ${esc(oPlace(o))}` : ''}</li>
       ${oHours(o) ? `<li>${t('found.hours')}: ${esc(oHours(o))}</li>` : ''}
-      ${o?.phone ? `<li>${t('found.contact')}: <span dir="ltr">${esc(o.phone)}</span></li>` : ''}
+      ${o?.phone ? `<li>${t('found.contact')}: ${telLink(o.phone)}</li>` : ''}
     </ul>`)}
     <button class="btn block" data-act="nav" data-r="${START[id]}">${icon('fwd')}${t('svc.start')}</button>
   </div>`;

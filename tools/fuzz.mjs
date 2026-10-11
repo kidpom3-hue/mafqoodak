@@ -13,7 +13,7 @@ import { chromium } from 'playwright';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const stub = f => fs.readFileSync(path.join(root, 'tools/a11y-stubs', f), 'utf8');
-const TYPES = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json'};
+const TYPES = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2'};
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]); if (p.endsWith('/')) p += 'index.html';
   const f = path.join(root, p);

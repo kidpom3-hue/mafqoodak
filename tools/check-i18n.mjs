@@ -94,5 +94,11 @@ console.log(`✔ رقم الإصدار ${ver} متطابق في js/config.js وs
   const missing = inline.filter(h => !csp.includes(`'${h}'`));
   if (!csp || missing.length){ console.log(`✘ سياسة CSP في index.html ${csp ? 'لا تحوي بصمة السكربت المضمّن: ' + missing.join(' ') : 'غير موجودة'}. انسخ البصمة إلى script-src.`); process.exit(1); }
   if (/\son[a-z]+\s*=\s*["']/i.test(html.replace(/<!--[\s\S]*?-->/g, ''))){ console.log('✘ معالج أحداث مضمّن (onclick/onload…) في index.html: CSP يمنعه. استخدم addEventListener في الكود.'); process.exit(1); }
-  console.log(`✔ سياسة CSP تحوي بصمة ${inline.length} سكربت مضمّن، ولا معالجات مضمّنة في index.html.`);
+  // H27: CSP يسمح بمجلد Firebase بإصداره فقط؛ فكل رابط firebasejs في الكود وفي index.html بالإصدار نفسه الذي في CSP،
+  // وإلا مُنعت مكتبة Firebase وتوقف التطبيق كله بعد رفع الإصدار
+  const cspVer = (csp.match(/https:\/\/www\.gstatic\.com\/firebasejs\/([\d.]+)\//) || [])[1];
+  const srcs = [html, ...['js/firebase.js', 'js/ai.js'].map(f => fs.readFileSync(path.join(root, f), 'utf8'))].join('\n');
+  const vers = [...new Set([...srcs.replace(csp, '').matchAll(/gstatic\.com\/firebasejs\/([\d.]+)\//g)].map(m => m[1]))];
+  if (!cspVer || vers.length !== 1 || vers[0] !== cspVer){ console.log(`✘ إصدار Firebase غير متطابق: CSP = ${cspVer || 'غير موجود'}، والروابط = ${vers.join(', ') || 'لا شيء'}. غيّرها كلها إلى الإصدار نفسه (index.html وjs/firebase.js وjs/ai.js).`); process.exit(1); }
+  console.log(`✔ سياسة CSP تحوي بصمة ${inline.length} سكربت مضمّن، ولا معالجات مضمّنة في index.html، وإصدار Firebase ${cspVer} متطابق فيها وفي الكود.`);
 }
