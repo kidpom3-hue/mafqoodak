@@ -81,12 +81,14 @@ export function go(name, params = {}, push = true){
   // H23: تبويب لوحة الموظف جزء من الصفحة (params.tab): تغييره خطوة في السجل، فيعيده زر الرجوع
   if (name === 'staff'){ params = {...params, tab: params.tab || S.staffTab}; S.staffTab = params.tab; }
   const pushed = push && (S.route.name !== name || (name === 'staff' && S.route.params?.tab !== params.tab));
+  const newPage = S.route.name !== name;   // H25: تلاشٍ قصير عند تغيّر الصفحة (تبويبات اللوحة لها .tab-in)
   // G6: نحفظ مكان التمرير مع الصفحة الحالية، فيعود إليه الرجوع (بلا قفزة للأعلى بعد السحب للرجوع في الآيفون)
   if (pushed){ S.route.y = window.scrollY; S.hist.push(S.route); }
   if (S.hist.length > 30) S.hist.shift();
   if (S.sheet) dropSheetEntry();
   S.route = {name, params}; S.sheet = null;
   GOING = true; try { renderAll(); } finally { GOING = false; }
+  if (newPage) pageIn();
   // H23: كل تبويب في اللوحة يعود إلى موضع تمريره السابق (بقية الصفحات من الأعلى)
   if (name === 'staff' && S.tabY[params.tab]) restoreScroll(S.tabY[params.tab]); else window.scrollTo(0, 0);
   if (pushed) histDo(() => { history.pushState({mf: 1}, ''); syncUrl(); }); else syncUrl();
@@ -97,8 +99,16 @@ export function tabEntry(){ histDo(() => { if (!history.state?.mf) history.pushS
 // خطوة رجوع داخل التطبيق (بلا pushState)
 function backStep(){
   const prev = S.hist.pop(); S.sheet = null;
-  if (prev){ S.route = prev; if (prev.name === 'staff' && prev.params?.tab) S.staffTab = prev.params.tab; renderAll(); restoreScroll(prev.y || 0); }
+  if (prev){ S.route = prev; if (prev.name === 'staff' && prev.params?.tab) S.staffTab = prev.params.tab; renderAll(); pageIn(); restoreScroll(prev.y || 0); }
   else go(homeRoute(), {}, false);
+}
+/* H25: انتقال هادئ بين الصفحات: الصفحة الجديدة تظهر بتلاشٍ قصير (160ms، شفافية فقط فلا يتحرك شيء ولا يتأثر الالتصاق).
+   عند الانتقال فقط، لا عند التحديث الحيّ للبيانات، ويتوقف مع «تقليل الحركة» في الجهاز (قاعدة prefers-reduced-motion) */
+let pageT = 0;
+function pageIn(){
+  const m = $('#main'); if (!m) return;
+  m.classList.remove('page-in'); void m.offsetWidth; m.classList.add('page-in');
+  clearTimeout(pageT); pageT = setTimeout(() => m.classList.remove('page-in'), 260);
 }
 // G6: إعادة التمرير بعد رسم الصفحة السابقة. نعيده في إطار الرسم التالي، ومرة ثانية إن لم تكن الصفحة
 // قد اكتملت بعد (أقصر من المكان المحفوظ). الصور الكسولة محجوزة الارتفاع (aspect-ratio) فلا يتغيّر المكان بعد تحميلها

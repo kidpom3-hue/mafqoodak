@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v17 (H23: من سلّم الغرض لا يطلب استلامه ولا يُربط طلبه به؛ v16 (H22: حد يومي للإنشاء لكل حساب، والأدلة الفارغة لا تُملأ بعد 24 ساعة إلا مكان العثور، وحدود config وprivate وpublicStats؛ v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
+// قواعد حماية بيانات مفقودك — الإصدار v18 (H25: «حذف حسابي» يمسح بيانات الطلب المنتهي ولا يكتب فيه قيماً جديدة)؛ v17 (H23: من سلّم الغرض لا يطلب استلامه ولا يُربط طلبه به؛ v16 (H22: حد يومي للإنشاء لكل حساب، والأدلة الفارغة لا تُملأ بعد 24 ساعة إلا مكان العثور، وحدود config وprivate وpublicStats؛ v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -481,6 +481,13 @@ service cloud.firestore {
 
     // طلبات الاستلام: يراها صاحبها وموظفو المكتب، ويغيّر حالتها الموظف فقط
     match /claims/{claimId} {
+      // v18 (H25): «حذف حسابي» يمسح ولا يكتب: الحقول الشخصية فارغة (أو غير موجودة) بعد العملية
+      function blank(k) { return request.resource.data.get(k, '') == ''; }
+      function anonCleared() {
+        return blank('color') && blank('brand') && blank('lostSpot') && blank('bldg') && blank('room') && blank('lostDate')
+          && blank('answer') && blank('claimantName') && blank('idLast4') && blank('handoverNote') && blank('ratingNote')
+          && request.resource.data.get('details', {}).size() == 0;
+      }
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
       allow create: if verified()
         && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'details', 'no', 'status', 'createdAt', 'proofs', 'cat', 'grouped'])
@@ -584,7 +591,10 @@ service cloud.firestore {
         // (المرفوض يبقى حتى لا يُحذف ويُعاد إرساله لتخمين التفاصيل من جديد)
         || (signedIn() && resource.data.uid == me() && resource.data.status in ['done', 'rejected', 'expired', 'cancelled']
           && request.resource.data.uid == 'deleted' && request.resource.data.proof == ''
-          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'claimantName', 'idLast4', 'handoverNote', 'details', 'ratingNote', 'anonymizedAt']));
+          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'claimantName', 'idLast4', 'handoverNote', 'details', 'ratingNote', 'anonymizedAt'])
+          // v18 (H25): المسح فقط: كل حقل في القائمة فارغ بعد العملية، فلا يكتب صاحب الطلب قيماً جديدة في سجل المكتب
+          // (كان يستطيع مثلاً تغيير ملاحظة التسليم «استلمه: الاسم — آخر 4» وهو يحذف حسابه)، ووقت المسح «الآن»
+          && anonCleared() && freshIfChanged('anonymizedAt'));
       // يحذف المستخدم طلبه ما دام قيد المراجعة، ولم يسأله الموظف (v10: شرط الموافقة الأولى أُلغي)؛ غير ذلك «إلغاء» بالأعلى
       allow delete: if isAdmin()
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'pending'

@@ -7,14 +7,13 @@ import { bindEvents } from './actions.js';
 import { checkNotify } from './notify.js';
 import { toast } from './utils.js';
 import { t } from './i18n.js';
+import { setInstallEvt, markInstalled } from './install.js';
 import './theme.js';   // يطبّق المظهر المحفوظ (فاتح/داكن/تلقائي)
 
 // H7: منع التأطير (clickjacking): لا يُرسم التطبيق إذا فُتح داخل إطار في موقع آخر (frame-ancestors لا تعمل في meta)
 const FRAMED = (() => { try { return window.top !== window.self; } catch { return true; } })();
 if (FRAMED){ document.body.innerHTML = ''; throw new Error('framed'); }
-// H7: الخطوط من Google Fonts بلا onload مضمّن في index.html (CSP): نضيفها هنا كملف تنسيق عادي
-(() => { const pre = document.querySelector('link[rel=preload][as=style][href*="fonts.googleapis.com"]');
-  if (pre){ const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = pre.href; document.head.appendChild(l); } })();
+// H25: الخطوط صارت من الموقع نفسه (@font-face في css/styles.css)؛ لم يعد هنا تحميل Google Fonts
 
 // إزالة اختصار الصفحة من الرابط بعد قراءته حتى لا يتكرر عند التحديث
 // H23: إلا رابط تبويب لوحة الموظف (#/office/…): يبقى ليعيد التحديث التبويب نفسه
@@ -44,6 +43,10 @@ addEventListener('online', () => { renderHeader(); toast(t('net.back')); });
 try { if (sessionStorage.getItem('mfq:signedOut')){ sessionStorage.removeItem('mfq:signedOut'); setTimeout(() => toast(t('a.signedOut')), 400); } } catch {}
 // v7: بعد «سجّل الدخول ببريد الكلية» (خروج ثم إعادة تحميل): صفحة الدخول مباشرة
 try { if (sessionStorage.getItem('mfq:thenLogin')){ sessionStorage.removeItem('mfq:thenLogin'); setTimeout(() => go('login'), 300); } } catch {}
+
+// H25: نافذة التثبيت لا تظهر تلقائياً من المتصفح؛ نحتفظ بها لزر «تثبيت» في «طلباتي» ونافذة الحساب (install.js)
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); setInstallEvt(e); refresh(); });
+addEventListener('appinstalled', () => { markInstalled(); refresh(); toast(t('ins.done')); });
 
 // تثبيت التطبيق على الجوال والعمل دون اتصال (PWA)
 // H6: عند وصول Service Worker جديد (نسخة أحدث من التطبيق) يظهر شريط «تحديث جديد متاح» مع زر «تحديث» يعيد تحميل الصفحة.

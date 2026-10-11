@@ -1055,5 +1055,18 @@ await t('v17-1: غيره يطلب استلامه', mk(carol, 'claims/hf1_carol',
 await t('v17-2: لا يُربط طلب بالوصف بغرض سلّمه صاحب الطلب', setDoc(doc(A, 'claimLinks/' + gid('bob', 'wallets', T1)), {officeId: O, itemId: 'hw1', by: 'staffA', at: Date.now()}), false);
 await t('v17-2: ويُربط طلب غيره', setDoc(doc(A, 'claimLinks/' + gid('carol', 'wallets', T1)), {officeId: O, itemId: 'hw1', by: 'staffA', at: Date.now()}));
 
+// ── v18 (H25): «حذف حسابي» يمسح بيانات الطلب المنتهي ولا يكتب فيه قيماً جديدة ──
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  await setDoc(doc(d, 'items/an1'), pub('an1'));
+  await setDoc(doc(d, 'claims/an1_carol'), {...claim('an1', 'carol', {claimantName: 'كارول', idLast4: '4321', details: {mark: 'ملصق'}}),
+    status: 'done', doneAt: now, handoverNote: 'استلمه: كارول — آخر 4: 4321', answer: 'غلاف أحمر'}); });
+const wipe = () => ({uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', answer: '', claimantName: '', idLast4: '', handoverNote: '', details: {}, anonymizedAt: Date.now()});
+await t('v18-1: لا يكتب ملاحظة تسليم جديدة وهو يحذف حسابه', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), handoverNote: 'استلمه: شخص آخر — آخر 4: 0000'}), false);
+await t('v18-1: ولا مكان فقد جديداً', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), lostSpot: 'المواقف'}), false);
+await t('v18-1: ولا إجابات أسئلة', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), details: {mark: 'غيره'}}), false);
+await t('v18-1: ولا يُبقي الاسم كما هو', updateDoc(doc(carol, 'claims/an1_carol'), (({claimantName, ...x}) => x)(wipe())), false);
+await t('v18-2: ولا وقت مسح قديماً', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), anonymizedAt: Date.now() - 3 * DAY}), false);
+await t('v18-3: المسح الكامل مسموح', updateDoc(doc(carol, 'claims/an1_carol'), wipe()));
+
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

@@ -1,14 +1,15 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
-import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf } from './constants.js';
+import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf, oName, oPlace, oHours } from './constants.js';
+import { installMode, promptInstall, snoozeInstall, markInstalled } from './install.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
-import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when, fmtDateFull } from './utils.js';
+import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when, fmtDateFull, icsEvent, downloadText } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe } from './views/common.js';
 import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn, STAFF_TABS } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification } from './firebase.js';
-import { go, back, renderAll, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar, lockEvidence } from './ui.js';
+import { go, back, renderAll, refresh, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar, lockEvidence } from './ui.js';
 import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor.js';
 // H8: لوحة الموظف والإحصاءات والذكاء الاصطناعي والأمثلة تُحمَّل عند الحاجة (lazy.js). SM() = وحدة staff.js المحمّلة
 // (أزرار لوحة الموظف لا تظهر إلا بعد تحميلها، فهي موجودة عند النقر)
@@ -322,7 +323,8 @@ async function submitForm(form){
   if (kind === 'login'){
     const email = val('email'), pass = String(fd.get('password') || ''), signup = form.dataset.mode === 'signup';
     if (!email || !pass) return formErr(form, t('a.needEmailPass'));
-    if (signup && pass.length < 6) return formErr(form, t('a.passShort'));
+    // H25: الحساب الجديد 8 أحرف على الأقل (كان 6). الحسابات القديمة تدخل بكلمات مرورها كما هي
+    if (signup && pass.length < 8) return formErr(form, t('a.passShort'), 'password');
     busy(form, true);
     try {
       if (signup){
@@ -331,7 +333,7 @@ async function submitForm(form){
         await updateProfile(cred.user, {displayName: name});
         S.me = {...(S.me || {}), name};
         // H18: البريد في users/{uid}/private/profile (خاص)، والقواعد تقبله مساوياً لبريد الحساب فقط
-        await saveProfile(cred.user.uid, {name, photo: '', lastSeen: Date.now()}, cred.user.email || '');
+        await saveProfile(cred.user.uid, {name, photo: ''}, cred.user.email || '');
         // توثيق البريد: البلاغات وطلبات الاستلام تشترطه
         await sendEmailVerification(cred.user).catch(e => console.warn(e));
         toast(t('a.welcome', {name}));
@@ -851,7 +853,7 @@ async function doApprove(c, reason = ''){
 }
 // تسجيل الخروج على جهاز مشترك: نمسح رموز الاستلام والتنبيهات المقروءة وتفعيل الإشعارات من المتصفح،
 // ونسخة Firestore المحفوظة (IndexedDB)، ثم نعيد تحميل الصفحة حتى لا يبقى شيء من بيانات الحساب في الذاكرة
-function wipeDevice(){ ['codes', 'seen', 'staffSeen', 'notify'].forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} }); }
+function wipeDevice(){ ['codes', 'seen', 'staffSeen', 'notify', 'prof'].forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} }); }
 
 const ACT = {
   nav(el){
@@ -894,6 +896,7 @@ const ACT = {
       <div class="list">
         <button class="opt" data-act="nav" data-r="mine">${icon('inbox')}${t('acc.mine')}</button>
         <button class="opt" data-act="lang" lang="${t('lang.otherCode')}">${icon('globe')}${t('foot.lang')}</button>
+        ${installMode() ? `<button class="opt" data-act="install">${icon('install')}${t('ins.row')}</button>` : ''}
         ${notifySupported() ? `<button class="opt" data-act="notify" aria-pressed="${notifyOn()}">${icon('bell')}<span class="grow">${t('nt.label')}</span><span class="pill ${notifyOn() ? 'ok' : 'mute'}">${t(notifyOn() ? 'nt.on' : 'nt.off')}</span></button>
           ${notifyDenied() ? `<p class="hint">${t('nt.deniedHint')}</p>` : ''}` : ''}
         <div class="opt-row"><span class="label">${icon('contrast')}${t('th.label')}</span>${themePicker()}</div>
@@ -1009,12 +1012,45 @@ const ACT = {
   },
   attLater(el){ LS.set('snoozed', [...new Set([...LS.get('snoozed', []), el.dataset.k])].slice(-200)); renderAll(); },
   openCard(el){ openCard(el.dataset.tab, el.dataset.card, el.dataset.ended === '1'); },
+  // H25: «متابعة» في الصفحة الرئيسية: «طلباتي» مفتوحة على البطاقة التي تنتظره
+  resume(el){ go('mine'); openCard(el.dataset.tab, el.dataset.card); },
   fcat(el){ S.filter.cat = el.dataset.id; updateBrowse(); },
   catGo(el){ S.filter.cat = el.dataset.id; S.filter.q = ''; S.filter.status = 'available'; go('browse'); },
   fstatus(el){ S.filter.status = el.dataset.v; updateBrowse(); },
   sTab(el){ staffTabGo(el.dataset.v); },
   closeSheet(){ closeSheet(); },
   copy(el){ const v = el.dataset.v; navigator.clipboard?.writeText(v).then(() => toast(t('a.copied')), () => toast(v)); },
+  // H25: إظهار كلمة المرور أو إخفاؤها (الزر بجانب الحقل؛ التركيز يبقى على الزر فيُقرأ تغيّر حالته)
+  togglePass(el){
+    const inp = document.getElementById(el.getAttribute('aria-controls')); if (!inp) return;
+    const show = inp.type === 'password'; inp.type = show ? 'text' : 'password';
+    const label = t(show ? 'login.hidePass' : 'login.showPass');
+    el.setAttribute('aria-pressed', String(show)); el.setAttribute('aria-label', label); el.title = label;
+    el.innerHTML = icon(show ? 'eyeOff' : 'eye');
+  },
+  // H25: تثبيت المنصة على الجهاز: نافذة المتصفح، أو خطوات «إضافة إلى الشاشة الرئيسية» في Safari
+  async install(){
+    if (installMode() === 'ios') return openSheet(`<h2>${icon('install')} ${t('ins.iosTitle')}</h2>
+      <ol class="ins-steps"><li>${t('ins.ios1', {icon: icon('iosShare')})}</li><li>${t('ins.ios2')}</li><li>${t('ins.ios3')}</li></ol>
+      <button class="btn block ghost" data-act="closeSheet">${t('c.ok')}</button>`);
+    const r = await promptInstall();
+    if (r === 'accepted') markInstalled(); else if (r === 'dismissed') snoozeInstall();
+    if (S.sheet) closeSheet();
+    refresh();
+  },
+  installLater(){ snoozeInstall(); refresh(); },
+  // H25: آخر موعد للاستلام في تقويم الجوال (ملف ‎.ics). بلا رمز الاستلام: يبقى في «طلباتي» فقط
+  addCal(el){
+    const c = S.myClaims.find(x => x.id === el.dataset.id); if (!c?.pickupBy) return;
+    const o = S.offices.find(x => x.id === c.officeId);
+    const place = [oPlace(o), oName(o)].filter(Boolean).join(' - ');
+    const desc = [t('cal.desc', {mine: t('nav.mine')}), place && t('cal.place', {place}), oHours(o) && t('cal.hours', {hours: oHours(o)})].filter(Boolean).join('\n');
+    const ics = icsEvent({uid: `${claimNo(c)}-${c.pickupBy}@mafqoodak`, at: c.pickupBy, title: t('cal.title', {no: claimNo(c)}), desc, place,
+      url: location.origin + location.pathname, remind: t('cal.remind')});
+    if (!ics) return;
+    downloadText(ics, `mafqoodak-${claimNo(c)}.ics`, 'text/calendar;charset=utf-8');
+    toast(t('cal.saved'));
+  },
   removePhoto(el){ clearPhoto(el.closest('form')); },
   aiFill(){ if (aiReady()) aiFill(); },
   // H9: الإضافة السريعة: فتح الكاميرا، أو المتابعة بلا صورة، أو «أضف آخر» بعد الحفظ (يبقى المكان والتاريخ)

@@ -3,10 +3,10 @@ import { icon, LOGO, otype, otypeName, oName, oPlace, oHours, oCity, brandOf } f
 import { $, esc, today } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, curOffice } from '../state.js';
-import { card, skelCards, groupCard, groupEntries, groupedHere, pubActive } from './visitor.js';
+import { card, skelCards, groupCard, groupEntries, groupedHere, pubActive, attnRows } from './visitor.js';
 import { backBtn, catPicker, spotOptions, spotExtra, loginPrompt, verifyPrompt } from './common.js';
 import { APP_VERSION } from '../config.js';
-import { officeUrl, brandLogo, collegeLinks, oKicker, emptyBox, navBtn } from './common.js';
+import { officeUrl, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, telLink } from './common.js';
 import { load } from '../lazy.js';   // H8: رمز QR في التذييل يُحمَّل بعد الرسم
 import { hydrate } from '../ui.js';
 
@@ -27,6 +27,7 @@ const TAG_ART = `<svg class="tag-art" viewBox="0 0 220 240" aria-hidden="true">
 export function vHome(){
   const o = curOffice();
   return `<div class="wrap home" data-view="home">
+    ${/* H25: لمن عاد إلى المنصة: أهم ما ينتظره في «طلباتي» (يملؤه updateHome) */ ''}<div id="home-resume" hidden></div>
     <section class="hero-home">
       <div class="hh-text">
         ${brandOf(o)
@@ -83,6 +84,16 @@ export function vHome(){
 
 export function updateHome(){
   const o = curOffice(); if (!o) return;
+  // H25: سطر «متابعة» أعلى الصفحة: أول مهمة في «يحتاج انتباهك» (رمز استلام جاهز، سؤال من المكتب، تقييم…). يتبع «لاحقاً» هناك
+  const rs = $('#home-resume');
+  if (rs){
+    const r = S.uid ? attnRows()[0] : null, k = r ? r.ak : '';
+    if (rs.dataset.k !== k){
+      rs.dataset.k = k; rs.hidden = !r;
+      rs.innerHTML = r ? `<section class="resume" aria-label="${t('home.resumeAria')}">${icon(r.ic)}<span class="grow">${r.msg}</span>
+        <button class="btn sm" data-act="resume" data-tab="${r.tab}" data-card="${esc(r.key)}">${t('home.resumeBtn')}${icon('fwd')}</button></section>` : '';
+    }
+  }
   const avail = pubActive();   // H16: بلا النقود (لا تظهر للزائر)
   const cc = $('#cta-count'); if (cc && S.itemsLoaded) cc.textContent = avail.length ? t('home.availNow', {items: tp('n.item', avail.length)}) : t('home.ctaBrowseSub');
   const latest = $('#home-latest');
@@ -133,7 +144,7 @@ export function footer(o){
         <ul class="sf-info">
           <li>${icon('pin')}<span>${esc(oPlace(o) || oName(o))}</span></li>
           ${oHours(o) ? `<li>${icon('clock')}<span>${esc(oHours(o))}</span></li>` : ''}
-          ${o.phone ? `<li>${icon('phone')}<span dir="ltr">${esc(o.phone)}</span></li>` : ''}
+          ${o.phone ? `<li>${icon('call')}${telLink(o.phone)}</li>` : ''}
         </ul>
       </div>
       ${brandOf(o) ? `<nav class="sf-col sf-college" aria-labelledby="sf-college">
@@ -165,7 +176,7 @@ export function vFound(){
       <dl class="facts">
         <dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>
         ${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}
-        ${o.phone ? `<dt>${t('found.contact')}</dt><dd><span dir="ltr">${esc(o.phone)}</span><button class="link" data-act="copy" data-v="${esc(o.phone)}">${icon('copy')}${t('c.copy')}</button></dd>` : ''}
+        ${o.phone ? `<dt>${t('found.contact')}</dt><dd>${telLink(o.phone)}<button class="link" data-act="copy" data-v="${esc(o.phone)}">${icon('copy')}${t('c.copy')}</button></dd>` : ''}
       </dl>
     </div>
     <div class="panel handin-cta">

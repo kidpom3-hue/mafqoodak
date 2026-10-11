@@ -24,7 +24,12 @@ export function vLogin(){
     <form data-form="login" data-mode="${mode}" class="panel" novalidate>
       ${mode === 'signup' ? `<div class="field"><label for="l-name">${t('login.name')}</label><input id="l-name" name="name" class="input" autocomplete="name" maxlength="60" placeholder="${t('login.namePh')}"></div>` : ''}
       <div class="field"><label for="l-email">${t('login.email')}</label><input id="l-email" name="email" type="email" class="input" dir="ltr" autocomplete="email"></div>
-      <div class="field"><label for="l-pass">${t('login.pass')}</label><input id="l-pass" name="password" type="password" class="input" dir="ltr" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}"></div>
+      ${/* H25: زر إظهار كلمة المرور (أسهل في الجوال)، وفي الحساب الجديد 8 أحرف على الأقل مع تلميح تحت الحقل.
+         الحقل باتجاه LTR دائماً، فالحاوية dir=ltr ليكون الزر في نهاية النص (يمين الحقل) لا فوقه */ ''}
+      <div class="field"><label for="l-pass">${t('login.pass')}</label>
+        <div class="pass-wrap" dir="ltr"><input id="l-pass" name="password" type="password" class="input" dir="ltr" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" enterkeyhint="go"${mode === 'signup' ? ' minlength="8" aria-describedby="l-pass-hint"' : ''}>
+          <button type="button" class="pass-eye" data-act="togglePass" aria-controls="l-pass" aria-pressed="false" aria-label="${t('login.showPass')}" title="${t('login.showPass')}">${icon('eye')}</button></div>
+        ${mode === 'signup' ? `<p class="hint" id="l-pass-hint">${t('login.passHint')}</p>` : ''}</div>
       <div class="form-err" hidden></div>
       <button class="btn block" type="submit">${t(mode === 'signup' ? 'login.create' : 'login.enter')}</button>
       ${mode === 'signin' ? `<button type="button" class="link" data-act="resetPass" style="align-self:center">${t('login.forgot')}</button>` : ''}

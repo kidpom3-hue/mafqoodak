@@ -5,8 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <!-- H7: سياسة أمان المحتوى (CSP). GitHub Pages لا يرسل ترويسات، فنضعها هنا. تمنع تشغيل أي سكربت أو معالج مضمّن
        غير سكربت المظهر أدناه (بصمته sha256). إذا عدّلت ذلك السكربت فاحسب بصمته من جديد (tools/check-i18n.mjs يتحقق منها).
-       frame-ancestors لا تعمل داخل meta، لذلك يمنع main.js عرض التطبيق داخل إطار (clickjacking) -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://apis.google.com https://www.google.com/recaptcha/ 'sha256-V4SyzImrP7dTHXCHWWZSv/seVG+y3wVG0HI/CbJdjgQ='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleusercontent.com; connect-src 'self' https://*.googleapis.com https://api.emailjs.com; frame-src https://mafqoodak-50269.firebaseapp.com https://www.google.com/recaptcha/ https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+       frame-ancestors لا تعمل داخل meta، لذلك يمنع main.js عرض التطبيق داخل إطار (clickjacking).
+       H25: السكربتات من gstatic مقصورة على مجلد Firebase بالإصدار نفسه (12.19.0) ومجلد reCAPTCHA، لا الموقع كله؛
+       عند رفع إصدار Firebase غيّره هنا أيضاً (tools/check-i18n.mjs يتحقق من التطابق).
+       والخطوط من الموقع نفسه (font-src 'self')، فلا يُسمح بموقعَي Google Fonts -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com/firebasejs/12.19.0/ https://www.gstatic.com/recaptcha/ https://apis.google.com https://www.google.com/recaptcha/ 'sha256-V4SyzImrP7dTHXCHWWZSv/seVG+y3wVG0HI/CbJdjgQ='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https://*.googleusercontent.com; connect-src 'self' https://*.googleapis.com https://api.emailjs.com; frame-src https://mafqoodak-50269.firebaseapp.com https://www.google.com/recaptcha/ https://recaptcha.google.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <title>مكتب المفقودات - الكلية التقنية بالأحساء | مفقودك</title>
   <meta name="description" content="مكتب المفقودات الإلكتروني في الكلية التقنية بالأحساء: ابحث عن غرضك المفقود، وقدّم بلاغ فقد، واستلم غرضك من المكتب برمز تحقق.">
   <link rel="canonical" href="https://kidpom3-hue.github.io/mafqoodak/">
@@ -35,11 +38,10 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="مفقودك">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- الخطوط لا تؤخر أول رسم للصفحة: يضيفها main.js عند تشغيله (H7: بلا onload مضمّن، لأن CSP يمنعه) -->
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap"></noscript>
+  <!-- H25: اتصال مبكر بخادم قاعدة البيانات (Firestore) فتصل المفقودات أسرع عند أول فتح -->
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <!-- H25: الخط من الموقع نفسه (css/styles.css ← @font-face). الوزن العادي يبدأ تحميله مبكراً؛ والنص يظهر بخط الجهاز حتى يصل (swap) -->
+  <link rel="preload" href="fonts/IBMPlexSansArabic-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/styles.css">
   <!-- تحميل ملفات التطبيق ومكتبة Firebase بالتوازي بدل انتظار كل ملف لما يستورده (أسرع فتحاً).
        رقم إصدار Firebase هنا يجب أن يطابق js/firebase.js وjs/ai.js -->
@@ -60,6 +62,7 @@
   <link rel="modulepreload" href="js/workflow.js">
   <link rel="modulepreload" href="js/notify.js">
   <link rel="modulepreload" href="js/lazy.js">
+  <link rel="modulepreload" href="js/install.js">
   <!-- H8: ملفات الموظف والإدارة والإحصاءات والطباعة والخدمات وQR والذكاء الاصطناعي والأمثلة والقاموس الإنجليزي
        لا تُحمَّل هنا: يحمّلها js/lazy.js عند الحاجة فقط (وsw.js يحفظها كلها للعمل دون اتصال) -->
   <link rel="modulepreload" href="js/theme.js">
