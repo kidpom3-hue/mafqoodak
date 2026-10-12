@@ -1,9 +1,9 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
-import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, GROUP_EXPIRE_DAYS, isHiddenCat } from '../constants.js';
+import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, GROUP_EXPIRE_DAYS, isHiddenCat, isHighValue } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText, hasKey } from '../i18n.js';
-import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, groupKeyLabel, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist, isOwner } from '../state.js';
-import { backBtn, relT, relDayT, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf } from './common.js';
+import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, groupKeyLabel, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist, isOwner, regAt } from '../state.js';
+import { backBtn, relT, relDayT, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf, delegateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry, migratePublic } from '../migrate.js';
@@ -175,7 +175,8 @@ export const sameNumber = (a, b) => { const B = new Set(numsOf(b)); return numsO
 export function detailCheck(d, said, truth){
   const a = detailValue(d, said), b = detailValue(d, truth);
   if (!a || !b) return '';
-  if (d.type === 'num' || d.type === 'last4' || d.type === 'pick') return a === b ? OK : NO;
+  // H33: 'tail' = آخر 4 خانات من الرقم التسلسلي أو IMEI: تطابق تام فقط
+  if (d.type === 'num' || d.type === 'last4' || d.type === 'pick' || d.type === 'tail') return a === b ? OK : NO;
   if (d.type === 'approx'){ const x = Number(a), y = Number(b); return x === y ? OK : Math.abs(x - y) <= Math.max(0.2 * Math.max(x, y), 20) ? NEAR : NO; }
   const na = norm(a), nb = norm(b);
   if (na && nb && (na.includes(nb) || nb.includes(na))) return OK;
@@ -214,10 +215,41 @@ export function claimChecks(c, f){
   const all = [color, place, proof, ...det.map(x => x.v)];
   // v7: بلاغ صاحب الطلب المسجَّل قبل العثور على الغرض: أقوى دليل. كل ✓ منه بوزن مضاعف في الملخص
   const rep = priorReport(c, f), rc = rep ? reportChecks(rep, f) : [];
-  const repVals = rc.map(x => x.v);
-  const hits = all.filter(v => v === OK || v === OK2 || v === NEAR).length + 2 * repVals.filter(v => v === OKR).length;
-  const total = all.filter(isRes).length + 2 * repVals.filter(v => v === OKR || v === NO).length;
-  return {color, place, date, proof, det, rep, rc, hits, total};
+  // H33: نسخة «سجل أغراضي» في الطلب (القواعد تضمن أنها مطابقة للسجل نفسه ووقته من الخادم). تُحسب بوزن مضاعف
+  // مثل البلاغ السابق فقط إن سُجّلت قبل تسجيل الغرض في المكتب؛ بعده تُعرض للاطلاع بلا وزن
+  const reg = regOf(c), gc = reg ? regChecks(reg, f) : [];
+  const regBefore = !!reg && reg.ms > 0 && typeof f?.createdAt === 'number' && reg.ms < f.createdAt;
+  const prior = [...rc, ...(regBefore ? gc : [])].map(x => x.v);
+  const hits = all.filter(v => v === OK || v === OK2 || v === NEAR).length + 2 * prior.filter(v => v === OKR).length;
+  const total = all.filter(isRes).length + 2 * prior.filter(v => v === OKR || v === NO).length;
+  /* H33: قوة الإثبات (كما في أفضل مكاتب المفقودات: معرّف فريد، أو دليل سابق للعثور، أو تطابق تفاصيل كثيرة):
+     معرّف فريد مختلف (رقم تسلسلي، آخر 4 من بطاقة، مبلغ…) = ضعيف دائماً مع تنبيه أحمر
+     قوي: معرّف فريد مطابق تماماً، أو بلاغ/تسجيل سابق للعثور ونصف المقارنة على الأقل مطابق
+     متوسط: نصف المقارنة على الأقل مطابق، وتطابقان فأكثر · ضعيف: غير ذلك (ومنه لا شيء يمكن مقارنته) */
+  const uniqHit = det.some(x => x.d.unique && x.v === OK) || rc.some(x => x.unique && x.v === OKR) || (regBefore && gc.some(x => x.unique && x.v === OKR));
+  const uniqMiss = det.some(x => x.d.unique && x.v === NO) || rc.some(x => x.unique && x.v === NO) || gc.some(x => x.unique && x.v === NO);
+  const half = total > 0 && hits / total >= 0.5;
+  const strength = uniqMiss ? 'weak' : uniqHit || ((rep || regBefore) && half) ? 'strong' : half && hits >= 2 ? 'medium' : 'weak';
+  return {color, place, date, proof, det, rep, rc, reg, gc, regBefore, hits, total, strength, uniqHit, uniqMiss};
+}
+/* H33: نسخة السجل من الطلب بأنواع آمنة (بيانات تالفة لا تعطّل الصفحة): ms = وقت التسجيل بالمللي ثانية */
+export function regOf(c){
+  const r = c?.reg;
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+  const str = k => typeof r[k] === 'string' ? r[k] : '';
+  return {id: str('id'), cat: str('cat'), title: str('title'), brand: str('brand'), model: str('model'), serial: str('serial'), color: str('color'), mark: str('mark'), ms: regAt(r)};
+}
+/* H33: مقارنة نسخة السجل بما سجّله المكتب سراً، بالمبادئ نفسها: الرقم التسلسلي (آخر 4) تطابق تام، والنصوص بلا ✗ آلياً،
+   واللون فقط إن لم تُظهره الصورة العامة */
+function regChecks(g, f){
+  const rows = [], text = {type: 'text'}, tail = {type: 'tail'};
+  const ok = v => v === OK || v === OK2 ? OKR : v;
+  if (g.serial) rows.push({label: t('df.serial'), said: `<span dir="ltr">${esc(g.serial)}</span>`, truth: f.details?.serial ? `<span dir="ltr">${esc(f.details.serial)}</span>` : '', v: ok(detailCheck(tail, g.serial, f.details?.serial || '')), unique: true});
+  if (g.brand) rows.push({label: t('if.brand'), said: esc(g.brand), truth: esc(f.brand || ''), v: ok(detailCheck(text, g.brand, f.brand || ''))});
+  if (g.model) rows.push({label: t('df.model'), said: esc(g.model), truth: esc(f.details?.model || ''), v: ok(detailCheck(text, g.model, f.details?.model || ''))});
+  if (g.color && claimOf(f.cat).fields.includes('color')) rows.push({label: t('c.color'), said: esc(colorName(g.color)), truth: esc(colorName(f.color) || ''), v: colorPublic(f) ? SEEN() : !f.color ? '' : g.color === f.color ? OKR : NO});
+  if (g.mark) rows.push({label: t('df.mark'), said: esc(g.mark), truth: esc(f.details?.mark || ''), v: ok(detailCheck(text, g.mark, f.details?.mark || ''))});
+  return rows;
 }
 /* v7: مقارنة تفاصيل البلاغ السابق (ما كتبه صاحبه قبل أن يُسجَّل الغرض) بما سجّله المكتب سراً.
    بالمبادئ نفسها: التاريخ لا يأخذ ✓ أبداً (✗ فقط إن كان مستحيلاً)، واللون فقط إن لم تُظهره الصورة العامة، والوصف ✓ عند العدد نفسه */
@@ -230,7 +262,7 @@ function reportChecks(r, f){
   if (r.lostDate){ const g = f.foundDate ? dayNum(f.foundDate) - dayNum(r.lostDate) : null;
     rows.push({k: 'st.cmpDate', said: esc(fmtDate(r.lostDate)), truth: f.foundDate ? esc(fmtDate(f.foundDate)) : '', v: g !== null && (g < 0 || g > 14) ? NO : ''}); }
   for (const d of q.details){ const said = r.details?.[d.k] || '', truth = f.details?.[d.k] || ''; if (!said) continue;
-    const v = detailCheck(d, said, truth); rows.push({label: dfLabel(f.cat, d.k), said: esc(said), truth: esc(truth), v: v === OK || v === OK2 ? OKR : v}); }
+    const v = detailCheck(d, said, truth); rows.push({label: dfLabel(f.cat, d.k), said: esc(said), truth: esc(truth), v: v === OK || v === OK2 ? OKR : v, unique: !!d.unique}); }
   return rows;
 }
 // تنبيه تضارب المصالح: صاحب الطلب هو من سلّم الغرض للمكتب، أو الموظف الذي سجّله
@@ -241,7 +273,7 @@ function claimCompare(c, f){
   // اللون: مطابقة تلقائية إن لم تكن الصورة العامة تُظهره · المكان: ✓ المنطقة نفسها، ✓✓ والمبنى نفسه
   // التاريخ: ظاهر للعامة، فلا ✓ له، و✗ فقط إن كان مستحيلاً
   // أسئلة التصنيف: إجابة صاحب الطلب بجانب ما سجّله الموظف (الغرض القديم بلا إجابات: «—» بلا نتيجة)
-  const {color, place, date, proof, det, rep, rc, hits, total} = claimChecks(c, f);
+  const {color, place, date, proof, det, rep, rc, reg, gc, regBefore, hits, total, strength, uniqMiss} = claimChecks(c, f);
   // H23: تنبيه واضح إذا كان الفرق بين تاريخ الفقد وتاريخ تسجيل الغرض كبيراً (أكثر من أسبوع) أو فُقد بعد العثور
   const gapDays = c.lostDate && f.foundDate ? dayNum(f.foundDate) - dayNum(c.lostDate) : null;
   const q = claimOf(f.cat), kind = conflictOf(c, f);
@@ -270,10 +302,21 @@ function claimCompare(c, f){
     ${c.question ? row(`${t('st.cmpQA')}: <span class="cmp-q">${esc(c.question)}</span>`, answered(c) ? esc(c.answer) : `<span class="muted">${t(c.status === 'pending' ? 'qa.waiting' : 'qa.none')}</span>`, '<span class="muted">—</span>') : ''}
     ${rep ? `<div class="cmp-row cmp-head cmp-rep"><b>${icon('bell')}${t('st.fromPrior')}</b><span>${t('st.cmpInReport')}</span><span>${t('st.cmpTruth')}</span><span class="v"></span></div>
       ${rc.map(x => row(x.label || t(x.k), x.said || '<span class="muted">—</span>', x.truth || '<span class="muted">—</span>', x.v ? x.v.replace('✓</span>', `✓ <small>${t('st.fromReport')}</small></span>`) : '')).join('')}` : ''}
+    ${reg ? `<div class="cmp-row cmp-head cmp-rep cmp-reg"><b>${icon('shield')}${t('st.fromReg')}</b><span>${t('st.cmpInReg')}</span><span>${t('st.cmpTruth')}</span><span class="v"></span></div>
+      <p class="cmp-reg-at ${regBefore ? 'ok' : 'warn'}">${icon(regBefore ? 'check' : 'clock')}<span>${t(regBefore ? 'st.regBefore' : 'st.regAfter', {when: when(reg.ms)})}</span></p>
+      ${gc.map(x => row(x.label, x.said || '<span class="muted">—</span>', x.truth || '<span class="muted">—</span>', x.v ? (regBefore ? x.v.replace('✓</span>', `✓ <small>${t('st.fromReg2')}</small></span>`) : x.v) : '')).join('')}` : ''}
     ${gapDays !== null && (gapDays < 0 || gapDays > 7) ? `<p class="cmp-warn">${icon('alert')}<span>${t(gapDays < 0 ? 'st.gapBefore' : 'st.gapWarn', {days: tp('n.days', Math.abs(gapDays))})}</span></p>` : ''}
     ${empty.length ? `<p class="cmp-empty">${t('st.cmpEmpty', {list: empty.join(t('c.listSep'))})}</p>` : ''}
-    <div class="cmp-sum">${total ? t('st.cmpSum', {n: hits, total}) : t('st.cmpSumNone')}${rep ? ` <span class="muted">${t('st.priorWeight')}</span>` : ''}</div>
+    ${uniqMiss ? `<p class="cmp-warn bad uniq-miss" role="alert">${icon('alert')}<span>${t('st.uniqMiss')}</span></p>` : ''}
+    <div class="cmp-sum">${total ? t('st.cmpSum', {n: hits, total}) : t('st.cmpSumNone')}${rep || regBefore ? ` <span class="muted">${t(rep && regBefore ? 'st.priorWeightBoth' : rep ? 'st.priorWeight' : 'st.priorWeightReg')}</span>` : ''}</div>
+    ${strengthLine(strength, f.cat)}
   </div>`;
+}
+/* H33: سطر «قوة الإثبات» تحت جدول المقارنة (قوية/متوسطة/ضعيفة)، مع ما يرفعها: للثمين الضعيف يحتاج القبول سبباً مكتوباً */
+export function strengthLine(strength, catId){
+  const cls = {strong: 'ok', medium: 'info', weak: 'warn'}[strength] || 'warn';
+  return `<div class="strength s-${strength}"><span class="pill ${cls}">${icon(strength === 'strong' ? 'shield' : strength === 'medium' ? 'info' : 'alert')}${t('st.str.' + strength)}</span>
+    <span class="meta">${t('st.strHint.' + strength)}${strength === 'weak' && isHighValue(catId) ? ' ' + t('st.strHv') : ''}</span></div>`;
 }
 // سؤال التحقق وإجابته (للموظف ولصاحب الطلب)
 // مدة بالساعات أو الأيام (للموظف: منذ متى ينتظر الطلب، وكم بقي على مهلة الحضور)
@@ -356,7 +399,9 @@ export function claimCardStaff(c, opts){
     : c.status === 'approved' ? `<div class="btn-row">
       ${c.codeHash && !S.isAdmin ? `<span class="note">${icon('info')}<span>${t('st.legacyAdmin')}</span></span>` : `<button class="btn sm" data-act="verify" data-id="${esc(c.id)}">${icon('shield')}${t('st.verify')}</button>`}
       ${late ? `<button class="btn sm ghost" data-act="release" data-id="${esc(c.id)}">${icon('swap')}${t('st.release')}</button>` : ''}
-      <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}${t('st.unapprove')}</button></div>` : '';
+      <button class="btn sm danger" data-act="reject" data-id="${esc(c.id)}">${icon('x')}${t('st.unapprove')}</button></div>`
+    // H33: إيصال التسليم المطبوع (بتوقيع المستلم والموظف) للطلب المكتمل
+    : c.status === 'done' && c.uid !== 'deleted' ? `<div class="btn-row"><button class="btn sm ghost" data-act="receipt" data-id="${esc(c.id)}" data-s="1">${icon('print')}${t('rcp.btn')}</button></div>` : '';
   // الملخّص (PR 3): رقم الطلب والغرض والحالة، والخطوة التالية: مدة الانتظار، أو المهلة المتبقية للحضور (تحذير تحت يوم)
   const left = c.pickupBy ? c.pickupBy - Date.now() : null;
   const next = c.status === 'pending' ? t('st.waitFor', {dur: durText(Date.now() - (c.createdAt || Date.now()))})
@@ -365,6 +410,9 @@ export function claimCardStaff(c, opts){
   const warn = c.status === 'approved' && left !== null && left < 864e5;
   // v7: بلاغ سابق للعثور، وسجل صاحب الطلب في هذا المكتب (قراءة واحدة عند فتح البطاقة)، وصور الإثبات
   const prior = i && c.reportId ? priorReport(c, i) : null;
+  // H33: مسجّل في «سجل أغراضي» قبل تسجيل الغرض في المكتب، والمفوَّض بالاستلام
+  const rg = i ? regOf(c) : null, regEarly = !!rg && rg.ms > 0 && typeof i.createdAt === 'number' && rg.ms < i.createdAt;
+  const dlg = c.status === 'approved' ? delegateOf(c) : null;
   const hist = claimerHist(c, opts?.open || CARD_OPEN.get('s:' + c.id));
   const histLine = hist ? `<div class="meta claimer-hist${hist.rejected >= 2 ? ' flag' : ''}">${icon('users')}${t('st.claimerHist', {n: tp('n.prevClaims', hist.n), m: tp('n.rejectedClaims', hist.rejected)})}</div>` : '';
   const nProofs = Number(c.proofs) || 0;
@@ -375,12 +423,13 @@ export function claimCardStaff(c, opts){
   return mcard({key: 's:' + c.id, open: opts?.open, fresh: opts?.fresh, muted: !['pending', 'approved'].includes(c.status), tone: warn ? 'warn' : '',
     // H17: بلاغ النقود قبل القبول = «قيد المطابقة» عند الموظف كما عند صاحبه
     pillHtml: c.status === 'pending' && c.grouped && isHiddenCat(c.cat) ? `<span class="pill info">${t('gc.matching')}</span>` : pill(CLAIM_STATUS, c.status), next,
-    head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${orphan ? t('st.orphanTitle') : i ? esc(showTitle(i)) : c.grouped && !iid ? t('grp.' + c.cat + '.title') : t('c.loadingDots')}</h3>${c.grouped ? `<span class="pill info">${t('gc.pill')}</span>` : ''}${person(c.uid)}${prior ? `<span class="pill ok prior">${icon('bell')}${t('st.priorReport')}</span>` : ''}`,
+    head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${orphan ? t('st.orphanTitle') : i ? esc(showTitle(i)) : c.grouped && !iid ? t('grp.' + c.cat + '.title') : t('c.loadingDots')}</h3>${c.grouped ? `<span class="pill info">${t('gc.pill')}</span>` : ''}${person(c.uid)}${prior ? `<span class="pill ok prior">${icon('bell')}${t('st.priorReport')}</span>` : ''}${regEarly ? `<span class="pill ok prior">${icon('shield')}${t('st.regPill')}</span>` : ''}`,
     body: `<div class="box-head"><div class="claim-who">${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div></div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
     ${c.editedAt ? `<div class="note info edited">${icon('edit')}<span>${t('st.editedAfter', {when: when(c.editedAt)})}</span></div>` : ''}
     ${claimTimeline(c, true)}
     ${c.status === 'approved' && c.pickupBy ? `<div class="meta ${late ? 'flag' : ''}">${t(late ? 'st.pickupEnded' : 'st.pickupUntil', {date: dateOf(c.pickupBy)})}</div>` : ''}
+    ${dlg ? `<div class="note info deleg">${icon('users')}<span>${t('st.delegate', {name: `<b>${esc(dlg.name)}</b>`, last4: `<b dir="ltr">${esc(dlg.last4)}</b>`})}</span></div>` : ''}
     ${conflictNote(kind)}
     ${rv ? `<div class="note warn">${icon('info')}<span>${t('st.rivalNote')}</span></div>` : ''}
     ${tip}${histLine}

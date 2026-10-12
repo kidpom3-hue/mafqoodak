@@ -86,6 +86,9 @@ export const LOGO = `<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><p
 //   fields: أيٌّ من 'color' و'brand' يظهر · req: الإجبارية منها في طلب الاستلام
 //   details: [{k, type, req, opts, as}]
 //     type: 'num' أرقام · 'approx' رقم تقريبي · 'last4' أربعة أرقام · 'text' نص قصير · 'pick' اختيار من opts (يُحفظ معرّف الخيار)
+//       · 'tail' (H33) آخر 4 خانات (أرقام أو حروف لاتينية) من رقم تسلسلي أو IMEI: يُكتب الرقم كاملاً أو آخره، ويُحفظ آخر 4 فقط
+//     unique (H33): معرّف فريد لا يعرفه إلا المالك (الرقم التسلسلي، آخر 4 من بطاقة، النقش…): تطابقه = «إثبات قوي»،
+//       واختلافه = تنبيه أحمر للموظف (انظر claimChecks في views/staff.js)
 //     req: 'both' إجباري للموظف ولصاحب الطلب · 'staff' للموظف فقط · 'claim' لصاحب الطلب فقط (نموذج البلاغ: كلها اختيارية)
 //     as: حقل موجود في الطلب يقارَن به بدل سؤال جديد (claimantName، idLast4)، فلا يُسأل صاحب الطلب مرتين
 //   hint: مفتاح تلميح خانة الإثبات الحرة (cl.h.<id>)
@@ -135,28 +138,28 @@ export const SUGG_STOP = new Set(['في', 'من', 'على', 'الى', 'عن', '�
   'the', 'a', 'an', 'my', 'of', 'in', 'with', 'and', 'lost', 'small', 'big', 'new', 'old', 'colour', 'color']);
 export const CATS = [
   {id:'ids', autoSuggest:false, groupPublic:true, name:'بطاقات ووثائق', en:'Cards & documents', icon:'idcard', sensitive:true, subs:['هوية وطنية','هوية مقيم','بطاقة متدرب','رخصة قيادة','بطاقة بنكية','جواز سفر','وثيقة أخرى'], subsEn:['National ID','Resident ID (Iqama)','Trainee card','Driving licence','Bank card','Passport','Other document'],
-    claim:{fields: [], details: [q('docName', 'text', 'staff', {as: 'claimantName'}), q('docLast4', 'last4', 'staff', {as: 'idLast4'}), q('issuer')], hint: 'cl.h.ids'},
+    claim:{fields: [], details: [q('docName', 'text', 'staff', {as: 'claimantName'}), q('docLast4', 'last4', 'staff', {as: 'idLast4', unique: true}), q('issuer')], hint: 'cl.h.ids'},
     staffCheck: 'sc.ids', retentionDays: 30, disposal: 'authority'},
   {id:'cash', autoSuggest:false, groupPublic:true, hiddenPublic:true, name:'نقود', en:'Cash', icon:'cash', sensitive:true, publicName:'مبلغ مالي', publicEn:'Sum of money', subs:['نقود ورقية','عملات','ظرف نقود'], subsEn:['Banknotes','Coins','Envelope of money'],
-    claim:{fields: [], details: [q('amount', 'num', 'both'), q('denoms'), q('holder', 'pick', '', {opts: ['envelope', 'wallet', 'clip', 'none']})], hint: 'cl.h.cash'}, staffCheck: 'sc.cash'},
+    claim:{fields: [], details: [q('amount', 'num', 'both', {unique: true}), q('denoms'), q('holder', 'pick', '', {opts: ['envelope', 'wallet', 'clip', 'none']})], hint: 'cl.h.cash'}, staffCheck: 'sc.cash'},
   {id:'wallets', autoSuggest:false, groupPublic:true, name:'محافظ', en:'Wallets', icon:'wallet', subs:['محفظة رجالية','محفظة نسائية','حافظة بطاقات','محفظة جوال'], subsEn:["Men's wallet","Women's wallet",'Card holder','Phone wallet'],
-    claim:{fields: CB, details: [q('cardName'), q('cashInside', 'approx')], hint: 'cl.h.wallets'}},
+    claim:{fields: CB, details: [q('cardName'), q('cardLast4', 'last4', '', {unique: true}), q('cashInside', 'approx')], hint: 'cl.h.wallets'}},
   {id:'phones', autoSuggest:false, name:'جوالات وأجهزة', en:'Phones & devices', icon:'phone', subs:['جوال','جهاز لوحي','لابتوب','ساعة ذكية'], subsEn:['Phone','Tablet','Laptop','Smartwatch'],
-    claim:{fields: CB, req: ['brand'], details: [q('model'), q('lockscreen')], hint: 'cl.h.phones'}, staffCheck: 'sc.phones'},
+    claim:{fields: CB, req: ['brand'], details: [q('model'), q('serial', 'tail', '', {unique: true}), q('lockscreen'), q('sim'), q('mark')], hint: 'cl.h.phones'}, staffCheck: 'sc.phones'},
   {id:'acc', name:'ملحقات إلكترونية', en:'Electronic accessories', icon:'plug', subs:['سماعات','شاحن','كيبل','باور بانك','فلاش USB','آلة حاسبة'], subsEn:['Headphones','Charger','Cable','Power bank','USB flash drive','Calculator'],
-    claim:{fields: CB, details: [q('mark')], hint: 'cl.h.acc'}},
+    claim:{fields: CB, details: [q('serial', 'tail', '', {unique: true}), q('mark')], hint: 'cl.h.acc'}},
   {id:'keys', autoSuggest:false, groupPublic:true, name:'مفاتيح', en:'Keys', icon:'key', subs:['مفتاح سيارة','مفاتيح منزل','ميدالية','بطاقة دخول'], subsEn:['Car key','House keys','Keyring','Access card'],
     claim:{fields: [], details: [q('keyCount', 'num', 'both'), q('keyring'), q('carBrand')], hint: 'cl.h.keys'}},
   {id:'jewelry', autoSuggest:false, name:'مجوهرات وساعات', en:'Jewellery & watches', icon:'ring', subs:['خاتم','سلسال','أسورة','ساعة يد','أقراط'], subsEn:['Ring','Necklace','Bracelet','Wristwatch','Earrings'],
-    claim:{fields: CB, details: [q('engraving'), q('size')], hint: 'cl.h.jewelry'}},
+    claim:{fields: CB, details: [q('engraving', 'text', '', {unique: true}), q('size')], hint: 'cl.h.jewelry'}},
   {id:'glasses', name:'نظارات', en:'Glasses', icon:'glasses', subs:['نظارة طبية','نظارة شمسية','علبة نظارة'], subsEn:['Prescription glasses','Sunglasses','Glasses case'],
     claim:{fields: CB, details: [q('caseDesc')], hint: 'cl.h.glasses'}},
   {id:'bags', name:'حقائب', en:'Bags', icon:'bag', subs:['حقيبة ظهر','حقيبة لابتوب','حقيبة يد','حقيبة رياضية'], subsEn:['Backpack','Laptop bag','Handbag','Sports bag'],
-    claim:{fields: CB, details: [q('inside', 'text', 'claim')], hint: 'cl.h.bags'}},
+    claim:{fields: CB, details: [q('inside', 'text', 'claim'), q('mark')], hint: 'cl.h.bags'}},
   {id:'study', name:'كتب وأدوات دراسية', en:'Books & study supplies', icon:'book', subs:['كتاب','دفتر','ملف أوراق','مقلمة','أدوات هندسية'], subsEn:['Book','Notebook','Document folder','Pencil case','Geometry set'],
     claim:{fields: [], details: [q('bookName'), q('nameOn'), q('inside')], hint: 'cl.h.study'}},
   {id:'clothes', name:'ملابس', en:'Clothing', icon:'shirt', subs:['شماغ أو غترة','عباية','جاكيت','قبعة','حذاء'], subsEn:['Shemagh or ghutra','Abaya','Jacket','Cap','Shoes'],
-    claim:{fields: CB, details: [q('size'), q('mark')], hint: 'cl.h.clothes'}},
+    claim:{fields: CB, details: [q('size'), q('mark'), q('inside')], hint: 'cl.h.clothes'}},
   {id:'tools', name:'عُدد وأدوات ورش', en:'Workshop tools', icon:'wrench', subs:['عدة يدوية','جهاز قياس','خوذة سلامة','نظارة سلامة','قفازات'], subsEn:['Hand tools','Measuring device','Safety helmet','Safety glasses','Gloves'],
     claim:{fields: CB, details: [q('mark')], hint: 'cl.h.tools'}},
   {id:'bottles', name:'قوارير وحافظات', en:'Bottles & flasks', icon:'bottle', subs:['قارورة ماء','حافظة قهوة (ترمس)','علبة طعام'], subsEn:['Water bottle','Coffee flask (thermos)','Food container'], retentionDays: 14,
@@ -165,11 +168,26 @@ export const CATS = [
 ];
 // مفاتيح أسئلة التصنيف المسموحة: نفس قائمة detailKeys() في firestore.rules حرفياً (عدّلهما معاً)
 export const DETAIL_KEYS = ['amount', 'denoms', 'holder', 'docName', 'docLast4', 'issuer', 'cardName', 'cashInside', 'model', 'lockscreen',
-  'mark', 'keyCount', 'keyring', 'carBrand', 'engraving', 'size', 'caseDesc', 'inside', 'bookName', 'nameOn'];
+  'mark', 'keyCount', 'keyring', 'carBrand', 'engraving', 'size', 'caseDesc', 'inside', 'bookName', 'nameOn',
+  'serial', 'sim', 'cardLast4'];   // H33
 // أسئلة التصنيف كاملة (الافتراضي: اللون والماركة، وتلميح عام)
 export const claimOf = id => ({fields: CB, req: [], details: [], hint: 'cl.proofHint', ...(cat(id).claim || {})});
 // هل في طلب الاستلام سؤال إجباري؟ (عندها تصبح خانة الإثبات الحرة اختيارية: «تفاصيل أخرى تثبت أنه لك»)
 export const claimHasRequired = id => { const c = claimOf(id); return c.req.length > 0 || c.details.some(d => d.as || d.req === 'both' || d.req === 'claim'); };
+/* ---------- H33: إثبات الملكية بمستوى عالمي ----------
+   أسئلة «المعرّف الفريد» في التصنيف (unique: true): الرقم التسلسلي، آخر 4 من بطاقة أو وثيقة، المبلغ، النقش */
+export const uniqueKeys = catId => claimOf(catId).details.filter(d => d.unique).map(d => d.k);
+/* «سجل أغراضي» (belongings): الطالب يسجّل جهازه ورقمه التسلسلي قبل أن يضيع (مثل برامج تسجيل الممتلكات في الجامعات).
+   القواعد تكتب وقت التسجيل بوقت الخادم ولا تسمح بتعديله، فتسجيلٌ سابق لتاريخ العثور = أقوى دليل.
+   لا نقود ولا وثائق رسمية (لا تُحفظ أرقام الهويات): نفس القائمة في regCatOk() بـ firestore.rules — عدّلهما معاً */
+export const REG_BLOCK = ['cash', 'ids'];
+export const regCatOk = id => !!id && CATS.some(c => c.id === id) && !REG_BLOCK.includes(id);
+// خانات السجل وحدودها (نفس الحدود في validReg() بالقواعد)
+export const REG_MAX = {title: 80, brand: 40, model: 60, serial: 40, mark: 120};
+/* تفويض شخص آخر بالاستلام (مثل نموذج التفويض في مكاتب المطارات): صاحب الطلب المقبول يسجّل اسم المفوَّض وآخر 4 أرقام من هويته،
+   والموظف لا يسلّم إلا لصاحب الطلب أو لمفوَّضه بالهوية نفسها. الوثائق الرسمية لصاحبها فقط (نفس القائمة في القواعد) */
+export const DELEGATE_BLOCK = ['ids'];
+export const canDelegate = catId => !!catId && !DELEGATE_BLOCK.includes(catId);
 // قيمة إجابة كما تُحفظ: الأرقام الهندية إلى لاتينية، والرقمية أرقام فقط، والنص حتى 80 حرفاً، والاختيار من القائمة فقط
 // G1: الأرقام العربية-الهندية (٠-٩) والفارسية (۰-۹) إلى لاتينية (تُصدَّر أيضاً من utils.js)
 export const latinDigits = s => String(s ?? '').replace(/[\u0660-\u0669\u06F0-\u06F9]/g, c => String(c.charCodeAt(0) & 0xF));
@@ -177,6 +195,8 @@ export function detailValue(d, v){
   v = latinDigits(v).trim();
   if (d.type === 'num' || d.type === 'approx') return v.replace(/\D/g, '').slice(0, 9);
   if (d.type === 'last4') return v.replace(/\D/g, '').slice(0, 4);
+  // H33: آخر 4 خانات من الرقم التسلسلي أو IMEI (حروف لاتينية كبيرة وأرقام فقط؛ O وI تبقيان كما كُتبتا)
+  if (d.type === 'tail') return v.replace(/[^0-9A-Za-z]/g, '').toUpperCase().slice(-4);
   if (d.type === 'pick') return (d.opts || []).includes(v) ? v : '';
   return v.slice(0, 80);
 }

@@ -1,9 +1,9 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
-import { icon, LOGO, brandOf, CATS, cat, catName, isGrouped, isHiddenCat, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired } from '../constants.js';
+import { icon, LOGO, brandOf, CATS, cat, catName, isGrouped, isHiddenCat, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired, regCatOk, canDelegate } from '../constants.js';
 import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, tAr, noteText } from '../i18n.js';
-import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode, iHandedIn } from '../state.js';
-import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack, telLink, reviewDaysOf, pickupDaysOf } from './common.js';
+import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode, iHandedIn, ensureRegs, regAt } from '../state.js';
+import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack, telLink, reviewDaysOf, pickupDaysOf, delegateOf } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
 import { aiReady } from '../firebase.js';
@@ -286,7 +286,7 @@ function claimForm(p){
         <textarea id="proof" name="proof" class="input" ${proofOpt ? '' : 'required'}>${esc(v.proof || '')}</textarea>
         <span class="hint">${t(q.hint)}</span></div>`;
   const optVals = [src.brand, proofOpt ? v.proof : '', q.fields.includes('color') && !q.req.includes('color') ? src.color : '',
-    ...q.details.filter(d => !d.as && !detailReq(d, 'claim')).map(d => src.details?.[d.k])];
+    ...q.details.filter(d => !d.as && !d.unique && !detailReq(d, 'claim')).map(d => src.details?.[d.k])];   // H33: المعرّف الفريد ظاهر أصلاً
   const moreOpen = !!ed || !!pre || optVals.some(Boolean);
   // v7: مكتب يشترط بريد الكلية لطلب الاستلام: رسالة واضحة وزر للدخول بالبريد الصحيح بدل النموذج
   // H11: المجمّع بلا غرض محدد: شرح قصير بدل بطاقة الغرض
@@ -296,7 +296,12 @@ function claimForm(p){
     <div class="note warn domain-need">${icon('idcard')}<span>${t('cl.domainNeedLong', {domains: claimDomainsOf(o).map(d => `<b dir="ltr">@${esc(d)}</b>`).join(t('c.listSep'))})}</span></div>
     <button class="btn" data-act="collegeLogin">${icon('users')}${t('cl.domainLogin')}</button></div>`;
   if (!ed) FORM.proofs = [];   // v7: صور إثبات جديدة لكل طلب
-  return `<div class="wrap" data-view="claim">${backBtn()}
+  /* H33: «سجل أغراضي»: غرض سجّله صاحب الطلب من التصنيف نفسه قبل أن يضيع: زر يعبّئ صفاته ويُرفق نسخته بالطلب
+     (تسجيل أقدم من العثور = أقوى دليل). بلا سجل: سطر صغير يدعوه للتسجيل لاحقاً. ليس في التعديل (القواعد لا تسمح بإضافته) */
+  if (!ed && regCatOk(catId)) ensureRegs();
+  const regBox = ed || !regCatOk(catId) ? '' : `<div id="reg-slot"${S.regsLoaded ? ' data-done="1"' : ''}>${regPickHtml(catId)}</div>`;
+  // H33: data-view = اسم الصفحة (claim أو gclaim)، فتصل إليها دالة التحديث الجزئي (updateClaimRegs) عند وصول «سجل أغراضي»
+  return `<div class="wrap" data-view="${S.route.name === 'gclaim' ? 'gclaim' : 'claim'}">${backBtn()}
     <section class="hero"><div class="hero-kicker">${icon('shield')}${t(gcat ? 'gc.kicker' : 'cl.kicker')}</div><h1 class="hero-title">${ed ? t('cl.editTitle') : gcat ? t('grp.' + catId + '.cta') : t('cl.title')}</h1></section>
     ${head}
     ${ed ? `<div class="note info">${icon('edit')}<span>${t('cl.editNote', {no: `<b dir="ltr">${esc(claimNo(ed))}</b>`})}</span></div>` : ''}
@@ -307,6 +312,8 @@ function claimForm(p){
       ${rep ? `<div class="note info">${icon('bell')}<span>${t('cl.hasReport', {title: esc(rep.title)})}</span><button type="button" class="btn sm soft" data-act="useReport" data-id="${esc(rep.id)}">${t('cl.useReport')}</button></div>` : ''}
       ${pre ? `<div class="note info">${icon('bell')}<span>${t('cl.fromReport', {title: esc(pre.title)})}</span></div>` : ''}
       <input type="hidden" name="reportId" value="${esc(pre?.id || '')}">
+      <input type="hidden" name="regId" value="">
+      ${regBox}
       <div id="cat-fields" data-mode="claim">${catFields(catId, src, 'claim', 'req')}</div>
       ${proofOpt ? '' : proofField}
       <details class="more-box" id="cl-more" ${moreOpen ? 'open' : ''}>
@@ -337,6 +344,22 @@ function claimForm(p){
       <div class="note">${icon('lock')}<span>${t(gcat ? 'gc.privacy' : 'cl.privacy')}</span></div>`)}
     </form>
   </div>`;
+}
+
+/* H33: أغراض «سجل أغراضي» من تصنيف الطلب: زر لكل غرض يعبّئ صفاته ويُرفق نسخته بالطلب. فارغ إن لم يكن له شيء مسجّل */
+function regPickHtml(catId){
+  const regs = (S.myRegs || []).filter(g => g.cat === catId);
+  if (!regs.length) return '';
+  return `<div class="note info reg-pick">${icon('shield')}<div class="grow"><p>${t('rg.inClaim')}</p>
+    <div class="list">${regs.map(g => `<button type="button" class="opt" data-act="useReg" data-id="${esc(g.id)}" aria-pressed="false">${icon(cat(g.cat).icon)}<span class="grow"><b>${esc(g.title)}</b>
+      <span class="meta">${esc([g.brand, g.model].filter(Boolean).join(' · '))}${g.serial ? `${g.brand || g.model ? ' · ' : ''}<span dir="ltr">••${esc(String(g.serial).slice(-4))}</span>` : ''}</span>
+      <span class="meta">${t('rg.at', {when: when(regAt(g))})}</span></span></button>`).join('')}</div></div></div>`;
+}
+// تحديث جزئي لنموذج الطلب (صفحة غير حية حتى لا يضيع ما كُتب): يملأ مكان «سجل أغراضي» مرة واحدة عند وصوله
+export function updateClaimRegs(){
+  const slot = $('#reg-slot'); if (!slot || slot.dataset.done || !S.regsLoaded) return;
+  const f = slot.closest('form'); const catId = f?.dataset.gcat || item(f?.dataset.id)?.cat || '';
+  slot.dataset.done = '1'; slot.innerHTML = regPickHtml(catId);
 }
 
 /* ---------- visitor: report lost ---------- */
@@ -525,8 +548,10 @@ export function claimCardMine(c){
     body = code ? `<dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}${o?.phone ? `<dt>${t('found.contact')}</dt><dd>${telLink(o.phone)}</dd>` : ''}</dl>`
       : `<div class="note warn">${icon('info')}<span>${t('mine.noCode')}</span></div>
          ${c.pickupBy ? `<div class="note ${late ? 'warn' : 'info'}">${icon('clock')}<span>${t(late ? 'st.pickupEnded' : 'mine.collectBy', {date: `<b>${esc(dateOf(c.pickupBy))}</b>`})}</span></div>` : ''}`;
+    body += delegateBox(c, i);
   }
-  else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>${t('mine.done', {when: relT(c.doneAt)})}</span></div>${rateBox(c)}`;
+  else if (c.status === 'done') body = `<div class="note info">${icon('check')}<span>${t('mine.done', {when: relT(c.doneAt)})}</span></div>
+    <div class="btn-row"><button class="btn sm ghost" data-act="receipt" data-id="${esc(c.id)}">${icon('print')}${t('rcp.btnMine')}</button></div>${rateBox(c)}`;
   else if (c.status === 'rejected') body = `<div class="note warn">${icon('info')}<span>${c.note ? t('mine.rejectedWhy', {note: esc(noteText(c.note))}) : t('mine.rejected')}</span></div>`;
   // H13a: أُغلق لأن الغرض لم يعد متاحاً (حُذف أو سُلّم أو أُرشف): سبب واضح بدل «انتهت مهلة الاستلام»
   // H20: سبب آخر غير انتهاء المهلة يظهر كما كتبه المكتب
@@ -551,6 +576,17 @@ export function claimCardMine(c){
       <span class="meta">${icon('building')}${esc(officeName(c.officeId))}</span>
       ${claimTimeline(c)}
       ${body}`});
+}
+/* H33: تفويض شخص بالاستلام (الطلب المقبول): المفوَّض الحالي وزر «إلغاء التفويض»، أو زر «تفويض شخص بالاستلام».
+   الوثائق الرسمية لصاحبها فقط (canDelegate)، والقواعد تمنعه أيضاً */
+function delegateBox(c, i){
+  const catId = c.cat || i?.cat || '';
+  if (!catId || !canDelegate(catId)) return '';
+  const d = delegateOf(c);
+  return d ? `<div class="note info deleg">${icon('users')}<div class="grow"><p>${t('dg.current', {name: `<b>${esc(d.name)}</b>`, last4: `<b dir="ltr">${esc(d.last4)}</b>`})}</p>
+      <div class="btn-row"><button class="btn sm ghost" data-act="delegate" data-id="${esc(c.id)}">${icon('edit')}${t('dg.edit')}</button>
+        <button class="btn sm ghost" data-act="undelegate" data-id="${esc(c.id)}">${icon('x')}${t('dg.cancel')}</button></div></div></div>`
+    : `<div class="btn-row"><button class="btn sm ghost" data-act="delegate" data-id="${esc(c.id)}">${icon('users')}${t('dg.btn')}</button></div>`;
 }
 /* قياس رضا المستفيد: الطلب المكتمل يُسأل مرة واحدة «كيف كانت تجربتك؟» (5 نجوم وتعليق اختياري) */
 // مسودة التقييم: «طلباتي» تُعاد رسمها عند تغيّر البيانات، فنحفظ النجوم والتعليق حتى لا يضيعا

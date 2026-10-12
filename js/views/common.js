@@ -173,14 +173,20 @@ export function catFields(catId, src = {}, mode = 'item', part = ''){
   for (const d of q.details){
     if (mode === 'claim' && d.as) continue;   // الاسم وآخر 4 أرقام في صندوق الهوية أصلاً
     const id = `cf-${d.k}`, v = det[d.k] || '', req = detailReq(d, mode);
-    if (!show(req)) continue;
+    // H33: المعرّف الفريد (الرقم التسلسلي، آخر 4 من بطاقة، النقش…) ظاهر دائماً مع المطلوب، ولو كان اختيارياً:
+    // هو أقوى ما يثبت الملكية، فلا يُخفى في «تفاصيل إضافية»
+    if (!show(req || !!d.unique)) continue;
+    // (النص داخل span: التلميح flex، وكل عنصر فيه مباشرة يصبح قطعة مستقلة فينكسر ترتيب «*#06#»)
+    const hint = d.unique && hasKey(`df.${d.k}.hint`) ? `<span class="hint">${icon('shield')}<span>${t(`df.${d.k}.hint`)}</span></span>` : '';
     const lab = `<label for="${id}">${dfLabel(catId, d.k)}${opt(req)}</label>`;
     const ph = hasKey(`df.${d.k}.ph`) ? ` placeholder="${esc(t(`df.${d.k}.ph`))}"` : '';
     const input = d.type === 'pick'
       ? `<select id="${id}" name="d_${d.k}" class="input"><option value="">${t('df.pickNone')}</option>${d.opts.map(o => `<option value="${o}" ${v === o ? 'selected' : ''}>${dfOpt(d.k, o)}</option>`).join('')}</select>`
       : d.type === 'text' ? `<input id="${id}" name="d_${d.k}" class="input" maxlength="80" autocomplete="off" value="${esc(v)}"${ph}>`
+      // H33: الرقم التسلسلي أو IMEI: يُلصق كاملاً (40 خانة) ويُحفظ آخر 4 منه فقط (detailValue). بلا .num-in (ذلك المرشّح يحذف الحروف)
+      : d.type === 'tail' ? `<input id="${id}" name="d_${d.k}" class="input" dir="ltr" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" value="${esc(v)}"${ph}>`
       : `<input id="${id}" name="d_${d.k}" class="input num-in" inputmode="numeric" dir="ltr" autocomplete="off" maxlength="${d.type === 'last4' ? 4 : 9}" value="${esc(v)}"${ph}>`;
-    out.push(`<div class="field${req ? ' req' : ''}">${lab}${input}</div>`);
+    out.push(`<div class="field${req ? ' req' : ''}${d.unique ? ' uniq' : ''}">${lab}${input}${hint}</div>`);
   }
   return out.join('');
 }
@@ -237,6 +243,12 @@ export const loginPrompt = (msg) => `<div class="empty">${icon('lock')}<b>${msg}
 /* H8: دوال يحتاجها الزائر أيضاً (كانت في staff.js)، فلا يُحمَّل ملف لوحة الموظف لعرض «طلباتي» */
 // تاريخ يوم من وقت بالمللي ثانية («3 أكتوبر»)
 export const dateOf = ms => fmtDate(isoDay(ms));
+/* H33: المفوَّض بالاستلام في طلب الاستلام (اسمه وآخر 4 أرقام من هويته) بأنواع آمنة، أو null */
+export function delegateOf(c){
+  const d = c?.delegate;
+  if (!d || typeof d !== 'object' || typeof d.name !== 'string' || typeof d.last4 !== 'string' || !/^\d{4}$/.test(d.last4)) return null;
+  return {name: d.name.slice(0, 120), last4: d.last4, at: Number(d.at) || 0};
+}
 // سؤال التحقق وإجابته
 export function qaBox(c){
   if (!c.question) return '';

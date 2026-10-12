@@ -1,10 +1,10 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
-import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf, oName, oPlace, oHours } from './constants.js';
+import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf, oName, oPlace, oHours, isHighValue, regCatOk, REG_MAX, canDelegate } from './constants.js';
 import { installMode, promptInstall, snoozeInstall, markInstalled } from './install.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when, fmtDateFull, SS, icsEvent, downloadText } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe, verifyPrompt } from './views/common.js';
-import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn, STAFF_TABS } from './state.js';
+import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn, STAFF_TABS, ensureRegs, regAt } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
@@ -16,7 +16,7 @@ import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor
 // (أزرار لوحة الموظف لا تظهر إلا بعد تحميلها، فهي موجودة عند النقر)
 import { mod, load } from './lazy.js';
 const SM = () => mod('staff');
-import { FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, dfOpt, detailReq } from './views/common.js';
+import { FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, dfOpt, detailReq, delegateOf } from './views/common.js';
 import { setTheme, setTextSize } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
 import { aiReady } from './firebase.js';
@@ -481,6 +481,10 @@ async function submitForm(form){
     // v7: مكتب يشترط بريد الكلية
     if (!claimEmailOk(S.offices.find(o => o.id === officeId), S.me?.email)){ busy(form, false); return formErr(form, t('cl.domainNeed')); }
     const proofs = (FORM.proofs || []).slice(0, 2);
+    /* H33: غرض من «سجل أغراضي» اختاره صاحب الطلب: نسخة حرفية منه (والقواعد تطابقها مع السجل نفسه ووقت تسجيله من الخادم) */
+    // (تسجيل لم يصل وقته من الخادم بعد = لا يُرفق؛ القواعد ترفض وقتاً فارغاً)
+    const rg = val('regId') ? (S.myRegs || []).find(r => r.id === val('regId') && r.cat === catId && regAt(r) > 0) : null;
+    const reg = rg ? {id: rg.id, at: rg.at, cat: rg.cat, ...Object.fromEntries(['title', 'brand', 'model', 'serial', 'color', 'mark'].filter(k => rg[k]).map(k => [k, rg[k]]))} : null;
     // رقم الطلب القصير (REQ-…) يظهر في صفحة التأكيد وفي «طلباتي»
     const no = 'REQ-' + refCode(4);
     // v9: رمز 8 أحرف؛ بصمته في claimCodes (لا يقرؤها أحد) تُنشأ مع الطلب، والطلب نفسه بلا codeHash
@@ -498,6 +502,7 @@ async function submitForm(form){
         lostSpot: val('spot'), bldg, room, lostDate: val('lostDate'),
         ...(val('reportId') ? {reportId: val('reportId').slice(0, 100)} : {}),
         ...(proofs.length ? {proofs: proofs.length} : {}),
+        ...(reg ? {reg} : {}),
         status: 'pending', createdAt},
         // v7: في العملية نفسها: الحصة (قائمة الطلبات الجارية ووقت آخر طلب في هذا التصنيف) وصور الإثبات
         (b, ref) => {
@@ -517,6 +522,37 @@ async function submitForm(form){
     // H31: صفحة التأكيد برقم الطلب والخطوات التالية (بدل رسالة عابرة ثم «طلباتي»)
     busy(form, false); S.hist = [];
     go('done', {kind: gcat ? (isHiddenCat(catId) ? 'cash' : 'gclaim') : 'claim', id, no, title: i ? showTitle(i) : '', cat: catId, officeId, at: createdAt}, false);
+    return;
+  }
+
+  /* H33: «سجل أغراضي»: تسجيل جهاز أو غرض قبل أن يضيع. التصنيف والاسم، ومعرّف واحد على الأقل (رقم تسلسلي أو علامة مميزة).
+     وقت التسجيل وقت الخادم (serverTimestamp)، والوثيقة لا تُعدَّل (القواعد)، مع حدّ الإغراق نفسه (createLimited) */
+  if (kind === 'reg'){
+    const catId = val('cat');
+    if (!regCatOk(catId)) return formErr(form, t('a.needCat'));
+    if (val('title').replace(/\s+/g, '').length < 3) return formErr(form, t('a.titleShort'), 'title');
+    const serial = latinDigits(val('serial')).replace(/\s+/g, '').toUpperCase().slice(0, REG_MAX.serial), mark = val('mark').slice(0, REG_MAX.mark);
+    if (!serial && !mark) return formErr(form, t('rg.needId'), 'serial');
+    if (!S.verified) return formErr(form, t('a.verifyFirst'));
+    const data = {uid: S.uid, cat: catId, title: val('title').slice(0, REG_MAX.title), at: serverTimestamp()};
+    for (const [k, v] of [['sub', val('sub')], ['brand', val('brand').slice(0, REG_MAX.brand)], ['model', val('model').slice(0, REG_MAX.model)], ['serial', serial], ['color', COLORS.some(c => c.id === val('color')) ? val('color') : ''], ['mark', mark]]) if (v) data[k] = v;
+    busy(form, true);
+    const ok = await write(() => createLimited('belongings/' + dbx.newId('belongings'), data), t('rg.saved'));
+    busy(form, false);
+    if (ok){ S.hist = []; go('regs', {}, false); }
+    return;
+  }
+  /* H33: تفويض شخص بالاستلام (صاحب الطلب المقبول): اسمه كما في هويته وآخر 4 أرقام منها، والإقرار */
+  if (kind === 'delegate'){
+    const c = S.myClaims.find(x => x.id === form.dataset.id); if (!c || c.status !== 'approved') return formErr(form, t('dg.notApproved'));
+    const name = val('dname'), last4 = latinDigits(val('dlast4'));
+    if (name.length < 3) return formErr(form, t('dg.needName'), 'dname');
+    if (!/^\d{4}$/.test(last4)) return formErr(form, t('a.needLast4'), 'dlast4');
+    if (last4 === c.idLast4) return formErr(form, t('dg.sameAsYou'), 'dlast4');
+    if (!fd.get('pledge')) return formErr(form, t('a.needPledge'), 'pledge');
+    busy(form, true);
+    const ok = await write(() => dbx.update('claims/' + c.id, {delegate: {name: name.slice(0, 120), last4, at: Date.now()}}), t('dg.saved'));
+    busy(form, false); if (ok) closeSheet();
     return;
   }
 
@@ -697,7 +733,9 @@ async function submitForm(form){
     if (code.length !== 8 && !/^\d{6}$/.test(code)) return formErr(form, t('a.code8'));
     // هوية المستلم الفعلي: «طابقتُ البطاقة» إلزامية، والاسم وآخر 4 أرقام (قد يكون مفوّضاً عن صاحب الطلب)
     if (!fd.get('matched')) return formErr(form, t('a.needMatched'));
-    if (val('rname').length < 3 || !/^\d{4}$/.test(val('rlast4'))) return formErr(form, t('wf.needReceiver'));
+    if (val('rname').length < 3 || !/^\d{4}$/.test(latinDigits(val('rlast4')))) return formErr(form, t('wf.needReceiver'));
+    // H33: آخر 4 أرقام الهوية التي أمامك تطابق صاحب الطلب أو مفوَّضه (إلا بتجاوز الإدارة)
+    if (!wf.receiverRole(c, latinDigits(val('rlast4'))) && !(S.isAdmin && fd.get('override'))) return formErr(form, t(delegateOf(c) ? 'wf.receiverMismatchD' : 'wf.receiverMismatch'), 'rlast4');
     busy(form, true);
     // التسليم فقط للطلب الذي حُجز له الغرض، وتُغلق بقية طلباته في العملية نفسها
     let res = null; const it = item(c.itemId);   // قبل التسليم: الغرض المُسلَّم يخرج من قائمة النشطة
@@ -707,7 +745,7 @@ async function submitForm(form){
     // H19: سبب الرفض يظهر داخل النافذة (رمز خاطئ، أو الطلب ليس مقبولاً، أو محجوز لغيره، أو صلاحية)
     let wrong = '';
     const ok = await write(async () => {
-      try { res = await wf.verifyHandover(c, {name: val('rname'), last4: val('rlast4')}, need, code); }
+      try { res = await wf.verifyHandover(c, {name: val('rname'), last4: latinDigits(val('rlast4'))}, need, code, !!fd.get('override')); }
       catch (e){ if (e?.msg){ wrong = e.msg; return; } throw e; }
     }, '');
     busy(form, false);
@@ -739,14 +777,17 @@ async function submitForm(form){
       // الطلبات المنتهية تبقى سجلاً للمكتب بلا بيانات شخصية، وقيد المراجعة يُحذف
       for (const c of claims){
         // الاسم وآخر 4 أرقام وملاحظة التسليم تُمسح أيضاً (القواعد تسمح بذلك)
+        // H33: ونسخة «سجل أغراضي» (الرقم التسلسلي) والمفوَّض بالاستلام (اسمه وآخر 4 من هويته)
         if (['done', 'rejected', 'expired', 'cancelled'].includes(c.status)) await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '',
-          ...(c.answer ? {answer: ''} : {}), ...(c.claimantName ? {claimantName: ''} : {}), ...(c.idLast4 ? {idLast4: ''} : {}), ...(c.handoverNote ? {handoverNote: ''} : {}), ...(c.details ? {details: {}} : {}), ...(c.ratingNote ? {ratingNote: ''} : {}), anonymizedAt: Date.now()});
+          ...(c.answer ? {answer: ''} : {}), ...(c.claimantName ? {claimantName: ''} : {}), ...(c.idLast4 ? {idLast4: ''} : {}), ...(c.handoverNote ? {handoverNote: ''} : {}), ...(c.details ? {details: {}} : {}), ...(c.ratingNote ? {ratingNote: ''} : {}),
+          ...('reg' in c ? {reg: deleteField()} : {}), ...('delegate' in c ? {delegate: deleteField()} : {}), anonymizedAt: Date.now()});
         else if (c.status === 'pending'){
           // v7: الطلب قيد المراجعة يُحذف مع صور إثباته، ويُزال من حصة الطلبات الجارية، في عملية واحدة
           // v9: بعد سؤال الموظف أو موافقة أولى لا يُحذف: يُلغى، ثم تُمسح بياناته الشخصية كالمنتهي
           await wf.withdrawClaim(c);
           if (!wf.canDeleteOwnClaim(c)) await dbx.update('claims/' + c.id, {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '',
-            ...(c.answer ? {answer: ''} : {}), ...(c.claimantName ? {claimantName: ''} : {}), ...(c.idLast4 ? {idLast4: ''} : {}), ...(c.details ? {details: {}} : {}), anonymizedAt: Date.now()});
+            ...(c.answer ? {answer: ''} : {}), ...(c.claimantName ? {claimantName: ''} : {}), ...(c.idLast4 ? {idLast4: ''} : {}), ...(c.details ? {details: {}} : {}),
+            ...('reg' in c ? {reg: deleteField()} : {}), anonymizedAt: Date.now()});
         }
       }
       // إشعارات التسليم: المستلَم يبقى سجلاً للمكتب بلا بيانات صاحبه، والبقية تُحذف
@@ -755,6 +796,8 @@ async function submitForm(form){
         if (f.status === 'received') await dbx.update('foundReports/' + f.id, {uid: 'deleted', note: ''});
         else await dbx.del('foundReports/' + f.id);
       }
+      // H33: «سجل أغراضي» يُحذف كله
+      for (const g of await dbx.list('belongings', [['uid', '==', user.uid]]).catch(() => [])) await dbx.del('belongings/' + g.id);
       await dbx.del('users/' + user.uid + '/private/codes');
       await dbx.del('users/' + user.uid + '/private/profile').catch(() => {});   // H18: البريد الخاص
       await dbx.del('rate/' + user.uid).catch(() => {});   // H7: وقت آخر إنشاء. H22: يُحذف بعد انتهاء النافذة اليومية فقط؛ قبلها يبقى عدّاداً بلا بيانات شخصية
@@ -965,6 +1008,7 @@ const ACT = {
     openSheet(`<div class="person" style="gap:12px">${safeAvatar(S.me?.photo) ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer" style="width:44px;height:44px">` : ''}<div><b>${esc(S.me?.name || '')}</b><div class="meta" dir="ltr">${esc(S.me?.email || '')}</div></div></div>
       <div class="list">
         <button class="opt" data-act="nav" data-r="mine">${icon('inbox')}${t('acc.mine')}</button>
+        <button class="opt" data-act="nav" data-r="regs">${icon('shield')}${t('acc.regs')}</button>
         <button class="opt" data-act="lang" lang="${t('lang.otherCode')}">${icon('globe')}${t('foot.lang')}</button>
         ${installMode() ? `<button class="opt" data-act="install">${icon('install')}${t('ins.row')}</button>` : ''}
         ${notifySupported() ? `<button class="opt" data-act="notify" aria-pressed="${notifyOn()}">${icon('bell')}<span class="grow">${t('nt.label')}</span><span class="pill ${notifyOn() ? 'ok' : 'mute'}">${t(notifyOn() ? 'nt.on' : 'nt.off')}</span></button>
@@ -1041,7 +1085,8 @@ const ACT = {
   mode(el){ const m = el.dataset.v; if (!modes().includes(m)) return; S.mode = m; LS.set('mode', m); S.hist = []; go(homeRoute(), {}, false); },
   openItem(el){ go('item', {id: el.dataset.id}); },
   // «هذا غرضي — اطلب استلامه» من ترشيح البلاغ: يُعبّأ الطلب من البلاغ ويُربط به
-  goClaim(el){ if (!needLogin()) go('claim', {id: el.dataset.id, ...(el.dataset.report ? {report: el.dataset.report} : {})}); },
+  // H33: «سجل أغراضي» يُطلب قبل فتح النموذج (يصل غالباً قبل رسمه، وإلا يملؤه updateClaimRegs)
+  goClaim(el){ if (!needLogin()){ ensureRegs(); go('claim', {id: el.dataset.id, ...(el.dataset.report ? {report: el.dataset.report} : {})}); } },
   // اختيار عدد النجوم في تقييم الطلب
   rateStar(el){
     const f = el.closest('form'), v = +el.dataset.v; if (!f) return;
@@ -1142,7 +1187,7 @@ const ACT = {
     });
   },
   // H11: البطاقة المجمّعة في المفقودات: «أثبت أنه لك» يفتح الطلب بالوصف (بعد الدخول)
-  gclaim(el){ const cat = el.dataset.cat; if (!S.uid) return go('login', {next: {name: 'gclaim', params: {cat}}}); go('gclaim', {cat}); },
+  gclaim(el){ const cat = el.dataset.cat; if (!S.uid) return go('login', {next: {name: 'gclaim', params: {cat}}}); ensureRegs(); go('gclaim', {cat}); },
   // H11 (الموظف): ربط الطلب المجمّع بالغرض المختار، أو إرسال سؤال التحقق المقترح بضغطة
   async linkClaim(el){
     const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return;
@@ -1229,17 +1274,21 @@ const ACT = {
     if (!i || !ACTIVE.includes(i.status)) return orphanSheet(c, i);
     // تضارب مصالح (صاحب الطلب سلّم الغرض أو سجّله): القبول يحتاج سبباً مكتوباً يُحفظ في الطلب والسجل
     const kind = conflictOf(c, full(i));
-    if (kind) return openSheet(`<h2>${icon('alert')} ${t('a.conflictTitle')}</h2>
-      <div class="note bad">${icon('alert')}<span><b>${t(kind === 'finder' ? 'st.conflictFinder' : 'st.conflictRecorder')}</b></span></div>
+    // قبول يحتاج سبباً مكتوباً يُحفظ في الطلب والسجل (approveWhy): تضارب المصالح، أو (H33) غرض ثمين بإثبات ضعيف
+    const whySheet = (title, note) => openSheet(`<h2>${icon('alert')} ${title}</h2>${note}
       <form data-form="approveWhy" data-id="${esc(c.id)}" novalidate>
         <div class="field"><label for="ap-why">${t('a.conflictWhy')}</label><textarea id="ap-why" name="reason" class="input" maxlength="300" required placeholder="${t('a.conflictPh')}"></textarea></div>
         <div class="form-err" hidden></div>
         <div class="btn-row"><button class="btn" type="submit">${icon('check')}${t('a.weakBtn')}</button><button type="button" class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>
       </form>`);
+    if (kind) return whySheet(t('a.conflictTitle'), `<div class="note bad">${icon('alert')}<span><b>${t(kind === 'finder' ? 'st.conflictFinder' : 'st.conflictRecorder')}</b></span></div>`);
     const go2 = () => doApprove(c);
-    // تطابق ضعيف: أقل من 2 من 3 في جدول المقارنة
     // تطابق ضعيف: أقل من نصف الصفوف التي لها نتيجة في جدول المقارنة (أو لا شيء يمكن مقارنته)
-    const {hits, total} = (SM() || await load('staff')).claimChecks(c, full(i));
+    const {hits, total, strength, uniqMiss} = (SM() || await load('staff')).claimChecks(c, full(i));
+    /* H33: الغرض الثمين (جوال، مجوهرات، محفظة، نقود، وثيقة) لا يُقبل بإثبات ضعيف دون سبب مكتوب، كما في مكاتب الجامعات
+       التي تشترط رقماً تسلسلياً أو فاتورة. ومعرّف فريد مختلف (رقم تسلسلي، آخر 4 من بطاقة) يحتاج سبباً في أي تصنيف */
+    if (uniqMiss || (strength === 'weak' && isHighValue(i.cat))) return whySheet(t(uniqMiss ? 'a.uniqMissTitle' : 'a.weakHvTitle'),
+      `<div class="note warn">${icon('alert')}<span>${t(uniqMiss ? 'a.uniqMissBody' : 'a.weakHvBody')}</span></div>`);
     // H32: لا شيء يمكن مقارنته (لم يُسجَّل للغرض لون ولا وصف ولا مكان…): رسالة واضحة بدل «تطابق 0 من 0 فقط»
     if (!total) return confirmSheet(t('a.noCmpQ'), t('a.noCmpBody'), t('a.weakBtn'), go2, false);
     if (hits / total < 0.5) return confirmSheet(t('a.weakQ'), t('a.weakBody', {n: hits, total}), t('a.weakBtn'), go2, false);
@@ -1364,21 +1413,24 @@ const ACT = {
   },
   verify(el){
     const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return; const i = item(c.itemId);
+    const dlg = delegateOf(c);   // H33: المفوَّض بالاستلام (إن سجّله صاحب الطلب)
     // هوية المستلم: الاسم وآخر 4 أرقام كما كتبهما صاحب الطلب، والموظف يطابقهما مع البطاقة نفسها
     const tip = i && cat(i.cat).staffCheck ? `<div class="note info">${icon('shield')}<span>${t(cat(i.cat).staffCheck)}</span></div>` : '';
     openSheet(`<h2>${icon('shield')} ${t('a.handTitle', {ref: i ? esc(i.ref) : ''})}</h2>
       <p class="muted">${t('a.askCode', {who: person(c.uid)})}</p>
       <p class="meta">${t('c.reqNo')}: <b dir="ltr">${esc(claimNo(c))}</b></p>
       <dl class="facts id-facts"><dt>${t('st.cmpName')}</dt><dd>${c.claimantName ? esc(c.claimantName) : `<span class="muted">${t('st.notSaid')}</span>`}</dd>
-        <dt>${t('st.cmpLast4')}</dt><dd>${c.idLast4 ? `<b dir="ltr">${esc(c.idLast4)}</b>` : `<span class="muted">${t('st.notSaid')}</span>`}</dd></dl>
-      <div class="note warn">${icon('idcard')}<span>${t('a.matchId')}</span></div>${tip}
+        <dt>${t('st.cmpLast4')}</dt><dd>${c.idLast4 ? `<b dir="ltr">${esc(c.idLast4)}</b>` : `<span class="muted">${t('st.notSaid')}</span>`}</dd>
+        ${dlg ? `<dt>${t('dg.title')}</dt><dd>${esc(dlg.name)} — <b dir="ltr">${esc(dlg.last4)}</b></dd>` : ''}</dl>
+      <div class="note warn">${icon('idcard')}<span>${t(dlg ? 'a.matchIdD' : 'a.matchId')}</span></div>${tip}
       <form data-form="verify" data-id="${esc(c.id)}" data-allcheck="1" novalidate>
         <input name="code" class="input code-input" dir="ltr" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="9" placeholder="XXXX-XXXX" aria-label="${t('mine.code')}">
         <div class="two">
           <div class="field"><label for="vf-name">${t('a.receiverName')}</label><input id="vf-name" name="rname" class="input" maxlength="120" autocomplete="off" value="${esc(c.claimantName || '')}"></div>
-          <div class="field"><label for="vf-4">${t('a.last4')}</label><input id="vf-4" name="rlast4" class="input" inputmode="numeric" maxlength="4" dir="ltr" autocomplete="off" value="${esc(c.idLast4 || '')}"></div>
+          <div class="field"><label for="vf-4">${t('a.last4')}</label><input id="vf-4" name="rlast4" class="input" inputmode="numeric" maxlength="4" dir="ltr" autocomplete="off" value=""></div>
         </div>
-        <span class="hint">${t('a.receiverHint')}</span>
+        <span class="hint">${t(dlg ? 'a.receiverHintD' : 'a.receiverHint')}</span>
+        ${S.isAdmin && c.idLast4 ? `<label class="check override"><input type="checkbox" name="override"><span>${t('a.override')}</span></label>` : ''}
         <label class="check"><input type="checkbox" name="matched" required><span><b>${t('a.matched')}</b></span></label>
         <fieldset class="ho-checks"><legend>${t('ho.title')}</legend>
           ${handoverChecks(i?.cat).map(k => `<label class="check"><input type="checkbox" name="hc" value="${k}" required><span>${t(k)}</span></label>`).join('')}</fieldset>
@@ -1387,6 +1439,44 @@ const ACT = {
       </form>`);
   },
   acceptReport(el){ go('add', {fromReport: el.dataset.id}); },
+  /* ---------- H33: إثبات الملكية ---------- */
+  // إيصال التسليم المطبوع (للموظف وصاحب الطلب)
+  receipt(el){ go('receipt', {id: el.dataset.id, ...(el.dataset.s ? {s: 1} : {})}); },
+  // تفويض شخص بالاستلام: نافذة الاسم وآخر 4 أرقام من هويته والإقرار
+  delegate(el){
+    const c = S.myClaims.find(x => x.id === el.dataset.id); if (!c || c.status !== 'approved') return;
+    const d = delegateOf(c);
+    openSheet(`<h2>${icon('users')} ${t('dg.title')}</h2>
+      <p class="muted">${t('dg.lead')}</p>
+      <form data-form="delegate" data-id="${esc(c.id)}" novalidate>
+        <div class="field"><label for="dg-name">${t('dg.name')}</label><input id="dg-name" name="dname" class="input" maxlength="120" autocomplete="off" required value="${esc(d?.name || '')}"></div>
+        <div class="field"><label for="dg-4">${t('dg.last4')}</label><input id="dg-4" name="dlast4" class="input" inputmode="numeric" maxlength="4" dir="ltr" autocomplete="off" required value="${esc(d?.last4 || '')}"></div>
+        <div class="note info">${icon('info')}<span>${t('dg.how')}</span></div>
+        <label class="check"><input type="checkbox" name="pledge"><span>${t('dg.pledge')}</span></label>
+        <div class="form-err" hidden></div>
+        <div class="btn-row"><button class="btn" type="submit">${icon('check')}${t('dg.save')}</button><button type="button" class="btn ghost" data-act="closeSheet">${t('c.cancel')}</button></div>
+      </form>`);
+  },
+  undelegate(el){
+    const c = S.myClaims.find(x => x.id === el.dataset.id); if (!c) return;
+    confirmSheet(t('dg.cancelQ'), t('dg.cancelBody'), t('dg.cancel'), () => write(() => dbx.update('claims/' + c.id, {delegate: deleteField()}), t('dg.cancelled')));
+  },
+  // «سجل أغراضي»: حذف غرض مسجّل (للتصحيح: حذف ثم تسجيل جديد بوقت جديد)
+  delReg(el){
+    const g = S.myRegs.find(x => x.id === el.dataset.id); if (!g) return;
+    confirmSheet(t('rg.delQ'), t('rg.delBody'), t('rg.del'), () => write(() => dbx.del('belongings/' + g.id), t('rg.deleted')));
+  },
+  // نموذج الطلب: استخدام غرض من «سجل أغراضي» (يعبّئ الماركة واللون والرقم التسلسلي والعلامة، ويُرفق نسخته بالطلب)
+  useReg(el){
+    const f = el.closest('form'); const g = S.myRegs.find(x => x.id === el.dataset.id); if (!f || !g) return;
+    f.querySelector('[name=regId]').value = g.id;
+    const set = (n, v) => { const x = f.querySelector(`[name="${n}"]`); if (x && v) x.value = v; };
+    set('brand', g.brand); set('d_model', g.model); set('d_serial', g.serial); set('d_mark', g.mark);
+    const cc = g.color && f.querySelector(`input[name=color][value="${esc(g.color)}"]`); if (cc) cc.checked = true;
+    f.querySelectorAll('.reg-pick [data-act=useReg]').forEach(b => b.setAttribute('aria-pressed', String(b === el)));
+    const more = f.querySelector('#cl-more'); if (more && (g.model || g.mark)) more.open = true;
+    toast(t('rg.used', {title: g.title}));
+  },
   // ملصقات QR: لغرض واحد من صفحته، أو لمجموعة من لوحة الموظف
   labels(el){ go('labels', {ids: String(el.dataset.ids || '').split(',').filter(Boolean)}); },
   labelsMenu(){
@@ -1563,7 +1653,8 @@ export function bindEvents(){
     if (t.id === 'photo-in' || t.classList.contains('photo-file')) onPhoto(t);
     if (t.id === 'proof-in') onProofs(t);
     // v7: نموذج فيه قائمة فحوص (التسليم): الزر يعمل فقط بعد تعليم كل المربعات
-    const af = t.closest?.('form[data-allcheck]'); if (af) af.querySelector('[type=submit]').disabled = ![...af.querySelectorAll('input[type=checkbox]')].every(x => x.checked);
+    // H33: المربعات الإلزامية فقط (required)؛ مربع «تجاوز الإدارة» في التسليم اختياري
+    const af = t.closest?.('form[data-allcheck]'); if (af) af.querySelector('[type=submit]').disabled = ![...af.querySelectorAll('input[type=checkbox][required]')].every(x => x.checked);
     // «سجل العمليات»: تغيير المكتب أو الفلتر يجلب القيود المطلوبة فقط
     if (t.id === 'au-office' || t.id === 'au-filter'){ const p = {office: $('#au-office').value, filter: $('#au-filter').value}; S.route.params = p; renderAll(); }
     // تلميح خانة التاريخ الاختيارية يظهر فقط وهي فارغة

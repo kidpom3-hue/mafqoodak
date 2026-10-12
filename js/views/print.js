@@ -1,10 +1,11 @@
 // صفحات الطباعة: ملصقات QR للأغراض (للمستودع) وملصق المكتب (يُعلَّق في المبنى)
 // الرمز يُولَّد داخل التطبيق (js/qr.js) فيعمل دون اتصال، والطباعة من زر «اطبع» في المتصفح.
 import { icon, LOGO, cat, catName, subLabel, oName, oShort, oPlace, oHours, brandOf } from '../constants.js';
-import { t, locale, isEn } from '../i18n.js';
-import { esc, fmtDate, isoDay, $, TZ } from '../utils.js';
-import { S, item, full, curOffice, ensureItem } from '../state.js';
-import { backBtn, officeUrl, brandLogo } from './common.js';
+import { t, tAr, locale, isEn, noteText } from '../i18n.js';
+import { esc, fmtDate, isoDay, $, TZ, fullWhen, showTitle } from '../utils.js';
+import { S, item, full, curOffice, ensureItem, claimNo, touch } from '../state.js';
+import { backBtn, officeUrl, brandLogo, person, delegateOf } from './common.js';
+import { dbx } from '../firebase.js';
 import { qrSvg } from '../qr.js';
 
 // رابط التطبيق الحالي (يعمل على GitHub Pages وعلى جهازك)
@@ -92,4 +93,54 @@ export function fillThanks(){
   const c = $('.cert'), inp = $('#ty-name'), out = $('#ty-body'); if (!c || !inp || !out) return;
   const draw = () => { out.textContent = t('ty.body', {office: c.dataset.office, name: inp.value.trim() || '…', type: c.dataset.type, date: c.dataset.date}); };
   inp.addEventListener('input', draw); draw();
+}
+
+/* H33: إيصال تسليم غرض (route: receipt، param id = طلب الاستلام المكتمل؛ s=1 من لوحة الموظف):
+   ما سُلّم ولمن ومتى وكيف تُحقق منه، وإقرار المستلم، وسطرا توقيع (المستلم والموظف)، كما في محاضر التسليم بمكاتب المفقودات.
+   للموظف: عنوان الغرض المفصّل واسم الموظف الذي سلّمه. لصاحب الطلب: العنوان العام فقط. A4 عمودي */
+const RCP = {};
+function claimFor(id){
+  const c = S.myClaims.find(x => x.id === id) || S.claims.find(x => x.id === id) || (S.claimHist || []).find(x => x.id === id) || RCP[id];
+  if (c !== undefined) return c === 'loading' ? null : c;
+  RCP[id] = 'loading';
+  dbx.get('claims/' + id).then(d => { RCP[id] = d ? {id, ...d} : 0; touch(); }).catch(() => { RCP[id] = 0; touch(); });
+  return null;
+}
+export function vReceipt(){
+  const id = String(S.route.params.id || ''), c = id ? claimFor(id) : 0;
+  const wait = c === null, it = c?.itemId ? item(c.itemId) : null;
+  if (c?.itemId && !it) ensureItem(c.itemId);
+  if (wait || (c && c.itemId && !it)) return `<div class="wrap">${backBtn()}<div class="loading" aria-busy="true"><span class="spin"></span></div></div>`;
+  if (!c || c.status !== 'done' || !it) return `<div class="wrap">${backBtn()}<div class="empty">${icon('print')}<b>${t('rcp.notDone')}</b></div></div>`;
+  const o = S.offices.find(x => x.id === c.officeId);
+  const staff = !!S.route.params.s && (S.isAdmin || (S.staffDoc?.offices || []).includes(c.officeId));
+  const f = staff ? full(it) : it;
+  // استلمه المفوَّض؟ ملاحظة التسليم المخزّنة تبدأ ببداية نص «استلمه المفوَّض» (sys.receivedByDelegate)
+  const dPre = tAr('sys.receivedByDelegate', {name: '\u0000', last4: ''}).split('\u0000')[0];
+  const byDelegate = !!delegateOf(c) && String(c.handoverNote || '').startsWith(dPre);
+  const how = [t('rcp.howCode'), t(byDelegate ? 'rcp.howDelegate' : 'rcp.howId')];
+  const facts = [
+    [t('rcp.ref'), `<b dir="ltr">${esc(it.ref || '')}</b>`],
+    [t('rcp.reqNo'), `<b dir="ltr">${esc(claimNo(c))}</b>`],
+    [t('rcp.item'), `${esc(staff && f.title ? f.title : showTitle(it))} <span class="muted">(${esc(catName(it.cat))}${it.sub ? ' — ' + esc(subLabel(it.sub)) : ''})</span>`],
+    [t('rcp.at'), esc(fullWhen(c.doneAt))],
+    [t('rcp.receiver'), c.handoverNote ? esc(noteText(c.handoverNote)) : `<span class="muted">—</span>`],
+    [t('rcp.how'), esc(how.join(t('c.listSep')))],
+    [t('rcp.office'), esc([oName(o), oPlace(o)].filter(Boolean).join(' — '))],
+    ...(staff && c.doneBy ? [[t('rcp.staff'), person(c.doneBy)]] : []),
+  ];
+  return `<div class="wrap print-page receipt-page" data-view="receipt">
+    <div class="no-print">${backBtn()}
+      <section class="hero"><div class="hero-kicker">${icon('print')}${t('rcp.kicker')}</div><h1 class="hero-title">${t('rcp.title')}</h1><p class="hero-sub">${t('rcp.hint')}</p></section>
+      <div class="btn-row"><button class="btn" data-act="print">${icon('print')}${t('lb.print')}</button></div>
+    </div>
+    <article class="rcpt">
+      <div class="rcpt-brand">${LOGO}<b>${t('app.name')}</b>${brandOf(o) ? `<span class="po-sep" aria-hidden="true"></span>${brandLogo(o, 'light', 'rcpt-logo')}` : ''}</div>
+      <h2 class="rcpt-title">${t('rcp.docTitle')}</h2>
+      <dl class="rcpt-facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
+      <p class="rcpt-pledge">${t('rcp.pledge')}</p>
+      <div class="rcpt-sign"><div><span>${t('rcp.signReceiver')}</span><i aria-hidden="true"></i></div><div><span>${t('rcp.signStaff')}</span><i aria-hidden="true"></i></div></div>
+      <small class="rcpt-note">${t('rcp.note')}</small>
+    </article>
+  </div>`;
 }

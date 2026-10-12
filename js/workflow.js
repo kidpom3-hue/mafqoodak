@@ -6,7 +6,7 @@ import { isHighValue, pubFlag, isHiddenCat, detailValue, claimOf, cat, keepUntil
 import { makeRef, publicTitle, today } from './utils.js';
 import { S, full, item, isOwner } from './state.js';
 import { SETTINGS } from './config.js';
-import { pubPhoto } from './views/common.js';
+import { pubPhoto, delegateOf } from './views/common.js';
 import { t, tAr } from './i18n.js';
 // ملاحظات النظام تُخزَّن بالعربية (قيم في قاعدة البيانات) عبر tAr، وتُترجم عند العرض بـ noteText
 
@@ -315,7 +315,16 @@ export async function askQuestion(c, q){
 /* التسليم بعد التحقق من الرمز: فقط للطلب المقبول الذي حُجز له الغرض.
    receiver: {name, last4} من طابق الموظف بطاقته (المستلم الفعلي، وقد يكون مفوّضاً)، تُحفظ في handoverNote بالطلب.
    checks (v7): مفاتيح فحوص التسليم حسب التصنيف التي علّمها الموظف كلها؛ تُحفظ في قيد السجل بلا أي بيانات شخصية */
-export async function verifyHandover(c, receiver = {}, checks = [], code = ''){
+/* H33: المستلم صاحب الطلب أو مفوَّضه فقط (كما في مكاتب المفقودات في الجامعات والمطارات): آخر 4 أرقام من الهوية التي
+   أمام الموظف تطابق ما كتبه صاحب الطلب، أو ما كتبه للمفوَّض. يرجع 'owner' | 'delegate' | 'legacy' (طلب قديم بلا آخر 4) | ''.
+   override: المدير وحده يتجاوز عدم التطابق بإقرار (مثل خطأ صاحب الطلب في كتابة رقمه)، ويُعلَّم في السجل */
+export function receiverRole(c, last4){
+  if (!c?.idLast4) return 'legacy';
+  if (last4 === c.idLast4) return 'owner';
+  const d = delegateOf(c);
+  return d && last4 === d.last4 ? 'delegate' : '';
+}
+export async function verifyHandover(c, receiver = {}, checks = [], code = '', override = false){
   notMine(c);
   /* H19: سبب الرفض محدد: صلاحية، أو الطلب ليس مقبولاً، أو الغرض محجوز لغيره، أو رمز خاطئ.
      الرمز نفسه يُفحص على الخادم (القواعد تحسب بصمته وتقارنها بـ claimCodes)، فلا مقارنة هنا */
@@ -328,12 +337,17 @@ export async function verifyHandover(c, receiver = {}, checks = [], code = ''){
   if (i.status !== 'reserved' || i.reservedFor !== c.id) fail(t('wf.notReserved'));
   const name = String(receiver.name || '').trim().slice(0, 120), last4 = String(receiver.last4 || '').trim();
   if (name.length < 3 || !/^\d{4}$/.test(last4)) fail(t('wf.needReceiver'));
+  const role = receiverRole(c, last4) || (override && S.isAdmin ? 'override' : '');
+  if (!role) fail(t(delegateOf(c) ? 'wf.receiverMismatchD' : 'wf.receiverMismatch'));
+  const note = tAr(role === 'delegate' ? 'sys.receivedByDelegate' : role === 'override' ? 'sys.receivedOverride' : 'sys.receivedBy', {name, last4});
+  // مفاتيح السجل (بلا بيانات شخصية): فحوص التصنيف، ومن استلم (مفوَّض أو بتجاوز الإدارة)
+  const keys = [...checks.map(String).slice(0, 8), ...(role === 'delegate' ? ['ho.byDelegate'] : role === 'override' ? ['ho.override'] : [])];
   const b = dbx.batch();
-  closeClaim(b, c, {status: 'done', doneAt: Date.now(), doneBy: S.uid, handoverNote: tAr('sys.receivedBy', {name, last4}), handoverCode: code});
+  closeClaim(b, c, {status: 'done', doneAt: Date.now(), doneBy: S.uid, handoverNote: note, handoverCode: code});
   itemUpdate(b, i, {status: 'returned', returnedAt: Date.now(), updatedAt: Date.now()});
   // اختُبر في المحاكي: التسليم + إغلاق 3 منافسين (بصورهم وحصصهم) يبقى ضمن حد القراءات في batch واحد
   const skippedOwn = await closeOthers(b, i, c.id, 'rejected', tAr('sys.handedVerified'));
-  log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id, note: tAr('sys.receivedBy', {name, last4}), checks: checks.map(String).slice(0, 10)});
+  log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id, note, checks: keys.slice(0, 10)});
   // رفض القواعد: نقرأ الطلب والغرض من جديد لنعرف السبب؛ إن لم يتغيرا فالرمز لا يطابق البصمة
   await commit(b, true).catch(async e => {
     if (!(e instanceof FlowError)) throw e;

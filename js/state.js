@@ -33,6 +33,7 @@ export const S = {
   myReports: [], myClaims: [],   // بلاغات المستخدم وطلباته في كل المكاتب
   links: {},                    // H11: ربط الطلبات المجمّعة بأغراض (claimLinks، للموظف فقط): {claimId: {itemId, by, at}}
   myFound: [], found: [],        // إشعارات التسليم: ما أبلغ المستخدم أنه وجده، وللموظف: المعلّقة في مكتبه
+  myRegs: [], regsLoaded: false, // H33: «سجل أغراضي» (belongings): يُشترك فيه عند أول حاجة فقط (ensureRegs)
   itemCache: {},                 // غرض مفرد جُلب عند الحاجة (مُسلَّم أو من مكتب آخر): رقم ← غرض أو null
   extraItems: {},                // للموظف: المُسلَّم والمؤرشف والمُتصرَّف فيه عند اختيار الفلتر
   claimHist: null,               // للموظف: سجل الطلبات المنتهية عند الطلب
@@ -258,7 +259,8 @@ export function groupCands(c, n = 3){
 // H23: اسم الإجابة الرقمية الأساسية للعرض («المبلغ»، «عدد المفاتيح»…)
 const dfLabelOf = (catId, k) => t(hasKey(`df.${catId}.${k}`) ? `df.${catId}.${k}` : `df.${k}`);   // كـ dfLabel في common.js
 export const groupKeyLabel = c => { const k = keyNum(c)?.[0]; return k ? dfLabelOf(c.cat, k) : t('gc.keyAny'); };
-const keyNum = c => { const r = groupRep(c); for (const k of ['amount', 'keyCount', 'docLast4']) if (r.details[k]) return [k, r.details[k]]; return null; };
+// H33: وآخر 4 أرقام من بطاقة داخل المحفظة
+const keyNum = c => { const r = groupRep(c); for (const k of ['amount', 'keyCount', 'docLast4', 'cardLast4']) if (r.details[k]) return [k, r.details[k]]; return null; };
 /* «مطابقة مؤكدة»: مرشّح واحد قوي فقط: إجابته الرقمية مطابقة تماماً + نفس المبنى أو المكان السري، ولا منافس ضمن 15 نقطة */
 // H23: min = أقل نسبة لـ«مطابقة مؤكدة» (85%)؛ groupStrong(c, cands, 0) = الشروط نفسها بأي نسبة («مطابقة محتملة»)
 export const STRONG_MIN = 85;
@@ -442,7 +444,7 @@ function onUser(user){
   S.isAdmin = false; S.adminLoaded = !user; S.staffDoc = null; S.staffLoaded = !user;
   S.priv = {}; S.staffList = []; S.invites = []; S.allItems = []; S.adminList = []; S.audit = {};
   S.verified = !!user?.emailVerified;   // حسابات Google موثّقة تلقائياً
-  clear('mine'); S.myReports = []; S.myClaims = []; S.myFound = [];
+  clear('mine'); S.myReports = []; S.myClaims = []; S.myFound = []; S.myRegs = []; S.regsLoaded = false; REGS.on = false;
   S.authReady = true;
   if (user){
     saveProfile(user.uid, {name: S.me.name, photo: S.me.photo, ...(saved() ? {lang: LANG} : {})}, S.me.email);
@@ -465,6 +467,17 @@ function onUser(user){
   ensureOfficeSubs();
   reset();
 }
+/* H33: «سجل أغراضي»: اشتراك واحد عند أول حاجة (صفحة السجل، أو نموذج طلب الاستلام)، لا مع كل دخول (حصة القراءة).
+   يبقى حتى الخروج (clear('mine')). مرتّب بالأحدث */
+const REGS = {on: false};
+export function ensureRegs(){
+  if (!S.uid || REGS.on) return;
+  REGS.on = true;
+  subs.mine.push(dbx.watch('belongings', [['uid', '==', S.uid]], l => { S.myRegs = l.sort((a, b) => regAt(b) - regAt(a)); S.regsLoaded = true; changed(); },
+    e => { errH('belongings')(e); S.regsLoaded = true; changed(); }));
+}
+// وقت التسجيل بالمللي ثانية: وقت الخادم (Timestamp)، أو رقم في البيانات التجريبية
+export const regAt = r => { const v = r?.at; return typeof v?.toMillis === 'function' ? v.toMillis() : Number(v) || 0; };
 /* إغلاق البلاغ تلقائياً بعد استلام صاحبه الغرض من المكتب: لكل طلب «تم الاستلام»، يُغلق بلاغ المستخدم المفتوح
    المرتبط به (reportId، أو الغرض المرشَّح له) بسبب office. مرة واحدة لكل بلاغ، والفشل يُتجاهل (يُعاد عند الفتح التالي) */
 const autoClosed = new Set();

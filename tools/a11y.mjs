@@ -38,14 +38,18 @@ const db = {
   'config/app': {ownerUid: 'owner'}, 'admins/owner': {role: 'owner'},
   'offices/tc-ahsa': {name: 'الكلية التقنية بالأحساء', short: 'تقنية الأحساء', nameEn: 'Technical College in Al-Ahsa', type: 'college', city: 'الأحساء', place: 'المبنى الإداري', hours: 'الأحد – الخميس، 7:30 ص – 2:30 م', phone: '0135000000', retentionDays: 90, pickupDays: 7, reviewDays: 2, spots: ['المكتبة', 'الكافتيريا'], active: true, createdAt: 1, code: 'TCA'},
   'staff/staffA': {offices: [O]}, 'users/zed': {name: 'Zed'}, 'users/staffA': {name: 'Staff'},
-  'items/i1': item('i1'), 'itemSecrets/i1': {officeId: O, title: 'جوال أسود', color: 'black', spot: 'المكتبة'},
+  'items/i1': item('i1'), 'itemSecrets/i1': {officeId: O, title: 'جوال أسود', color: 'black', spot: 'المكتبة', details: {serial: 'ABCD', model: 'iPhone 13'}},
   'items/i2': item('i2', {cat: 'wallets', sub: 'محفظة رجالية', title: 'محفظة رجالية'}), 'itemSecrets/i2': {officeId: O, title: 'محفظة', spot: 'الكافتيريا'},
   'items/i3': item('i3', {status: 'returned', returnedAt: now - day}),
   'items/i4': item('i4', {cat: 'bags', sub: 'حقيبة ظهر', title: 'حقيبة ظهر', status: 'reserved', reservedFor: 'i4_zed'}), 'itemSecrets/i4': {officeId: O, title: 'حقيبة', color: 'navy', spot: 'المكتبة'},
-  'claims/i1_zed': {itemId: 'i1', officeId: O, uid: 'zed', no: 'REQ-7K3M', proof: 'غلاف أحمر', color: 'black', lostSpot: 'المكتبة', lostDate: ds(4), claimantName: 'Zed', idLast4: '1234', status: 'pending', codeHash: 'x', createdAt: now},
-  'claims/i3_zed': {itemId: 'i3', officeId: O, uid: 'zed', no: 'REQ-4PRX', proof: 'x', status: 'done', doneAt: now - day, codeHash: 'x', createdAt: now - 3 * day},
+  // H33: الطلب قيد المراجعة معه نسخة من «سجل أغراضي» (سُجّل قبل العثور) ورقم تسلسلي، فتظهر قوة الإثبات وصفوف السجل للموظف
+  'claims/i1_zed': {itemId: 'i1', officeId: O, uid: 'zed', no: 'REQ-7K3M', proof: 'غلاف أحمر', color: 'black', lostSpot: 'المكتبة', lostDate: ds(4), claimantName: 'Zed', idLast4: '1234', status: 'pending', codeHash: 'x', createdAt: now,
+    details: {serial: 'ABCD'}, reg: {id: 'g1', at: now - 10 * day, cat: 'phones', title: 'جوال الدراسة', brand: 'Apple', model: 'iPhone 13', serial: 'F2LXK9ABCD'}},
+  'claims/i3_zed': {itemId: 'i3', officeId: O, uid: 'zed', no: 'REQ-4PRX', proof: 'x', status: 'done', doneAt: now - day, doneBy: 'staffA', handoverNote: 'استلمه: Zed — آخر 4: 1234', codeHash: 'x', createdAt: now - 3 * day},
+  'belongings/g1': {uid: 'zed', cat: 'phones', title: 'جوال الدراسة', brand: 'Apple', model: 'iPhone 13', serial: 'F2LXK9ABCD', mark: 'ملصق قطة', at: now - 10 * day},
   // H31: طلب مقبول برمز استلام (بطاقة الرمز في «طلباتي»، و«تحقق وسلّم» عند الموظف)
-  'claims/i4_zed': {itemId: 'i4', officeId: O, uid: 'zed', no: 'REQ-9QWE', proof: 'حقيبة كحلية', color: 'navy', lostSpot: 'المكتبة', lostDate: ds(4), claimantName: 'Zed', idLast4: '1234', status: 'approved', decidedAt: now - 3600e3, decidedBy: 'staffA', pickupBy: now + 6 * day, createdAt: now - day},
+  'claims/i4_zed': {itemId: 'i4', officeId: O, uid: 'zed', no: 'REQ-9QWE', proof: 'حقيبة كحلية', color: 'navy', lostSpot: 'المكتبة', lostDate: ds(4), claimantName: 'Zed', idLast4: '1234', status: 'approved', decidedAt: now - 3600e3, decidedBy: 'staffA', pickupBy: now + 6 * day, createdAt: now - day,
+    delegate: {name: 'Sam', last4: '5678', at: now - 600e3}},   // H33: مفوَّض بالاستلام
   'users/zed/private/codes': {codes: {i4_zed: 'K7M3TX9P'}},
   'reports/r1': {officeId: O, uid: 'zed', cat: 'phones', title: 'جوالي', status: 'open', lostDate: ds(4), createdAt: now - day},
   'publicStats/tc-ahsa': {month: ds(0).slice(0, 7), monthReceived: 3, monthReturned: 1, totalReceived: 40, totalReturned: 28, returnRate: 70, avgDays: 3.5, avgRating: 4.5, ratings: 12, updatedAt: now},
@@ -63,6 +67,9 @@ const PAGES = [
   ['staff', staff, 'staff', {}], ['staff', staff, 'staff', {tab: 'claims'}, null, 'staff-claims'], ['staff', staff, 'staff', {tab: 'reports'}, null, 'staff-reports'],
   ['item', staff, 'staff', {id: 'i1'}, null, 'staff-item'], ['add', staff, 'staff', {}], ['stats', staff, 'staff', {office: O}],
   ['admin', owner, 'admin', {}],
+  // H33: «سجل أغراضي» ونموذج التسجيل، وإيصال التسليم، ونافذة التفويض بالاستلام
+  ['regs', zed, 'visitor', {}], ['regAdd', zed, 'visitor', {}], ['receipt', zed, 'visitor', {id: 'i3_zed'}],
+  ['mine', zed, 'visitor', {}, click('[data-act=delegate]'), 'sheet-delegate'],
   // النوافذ وحالات الخطأ
   ['home', zed, 'visitor', {}, click('[data-act=account]'), 'sheet-account'], ['home', null, 'visitor', {}, click('[data-act=displaySheet]'), 'sheet-display'],
   ['staff', staff, 'staff', {tab: 'claims'}, click('[data-act=reject]'), 'sheet-reject'],
