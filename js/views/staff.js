@@ -9,6 +9,7 @@ import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry, migratePublic } from '../migrate.js';
 import { MS_NOTE, expireGroupClaim, OPEN, evidenceLocked } from '../workflow.js';
 import { emailUser } from '../notify.js';   // H9: ملاحظة مدة الإضافة لا تُعرض في السجل
+import { load } from '../lazy.js';   // H32: وحدة الإحصاءات تُحمَّل عند الحاجة فقط (تجديد مؤشرات الزوار)
 
 /* ---------- staff dashboard ---------- */
 export function vStaff(){
@@ -27,7 +28,7 @@ export function vStaff(){
     <div id="s-body"></div>
   </div>`;
 }
-let toolsTab = null, bodyTab = null;
+let toolsTab = null, bodyTab = null, pubChecked = '';
 // أيام متبقية على نهاية مدة الحفظ (سالبة = تجاوزها). مدة التصنيف تتقدم على مدة المكتب إن كانت أقصر
 export const keepLeft = i => keepDaysOf(i.cat, curOffice()) - daysAgo(i.foundDate);
 // مدة حفظ خاصة بالتصنيف (أقصر من مدة المكتب)؟ نص قصير يوضحها
@@ -85,6 +86,9 @@ export function updateStaff(){
   migrateItems();   // نقل تفاصيل الأغراض القديمة إلى الملف السري (مرة واحدة)
   migrateSpots();   // نقل مكان العثور من الإعلان العام إلى الملف السري (المرحلة E5)
   migratePublic();  // H16: حقل public لكل غرض قديم (مرة واحدة لكل جهاز ومكتب)
+  // H32: مؤشرات الزوار القديمة (شهر سابق أو أسبوع) تُجدَّد في الخلفية، مرة لكل مكتب في كل فتح للوحة (وفحص واحد في اليوم)
+  const oid = curOffice()?.id;
+  if (oid && pubChecked !== oid){ pubChecked = oid; load('stats').then(m => m.refreshPublicIfStale(oid)).catch(e => console.warn(e)); }
 }
 /* محتوى التبويب الحالي في اللوحة (يُستدعى أيضاً من البحث والفلتر في actions.js).
    H31: يبدأ بعنوان مخفي (h2) باسم التبويب: تسلسل العناوين بلا قفزة (h1 المكتب ← h2 التبويب ← h3 البطاقات)، ويأخذ التركيز عند تبديل التبويب */
@@ -268,7 +272,7 @@ function claimCompare(c, f){
       ${rc.map(x => row(x.label || t(x.k), x.said || '<span class="muted">—</span>', x.truth || '<span class="muted">—</span>', x.v ? x.v.replace('✓</span>', `✓ <small>${t('st.fromReport')}</small></span>`) : '')).join('')}` : ''}
     ${gapDays !== null && (gapDays < 0 || gapDays > 7) ? `<p class="cmp-warn">${icon('alert')}<span>${t(gapDays < 0 ? 'st.gapBefore' : 'st.gapWarn', {days: tp('n.days', Math.abs(gapDays))})}</span></p>` : ''}
     ${empty.length ? `<p class="cmp-empty">${t('st.cmpEmpty', {list: empty.join(t('c.listSep'))})}</p>` : ''}
-    <div class="cmp-sum">${t('st.cmpSum', {n: hits, total})}${rep ? ` <span class="muted">${t('st.priorWeight')}</span>` : ''}</div>
+    <div class="cmp-sum">${total ? t('st.cmpSum', {n: hits, total}) : t('st.cmpSumNone')}${rep ? ` <span class="muted">${t('st.priorWeight')}</span>` : ''}</div>
   </div>`;
 }
 // سؤال التحقق وإجابته (للموظف ولصاحب الطلب)
