@@ -12,7 +12,7 @@ import {
   collection, doc, query, where, onSnapshot, getDoc, getDocs, getCountFromServer, setDoc, updateDoc, deleteDoc, writeBatch, deleteField, arrayUnion, arrayRemove, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 // App Check (H4): يثبت أن الطلبات تأتي من تطبيقنا على موقعنا لا من سكربت آخر يستخدم المفاتيح العامة
-import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app-check.js';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app-check.js';
 import { firebaseConfig, SETTINGS } from './config.js';
 import { LANG } from './i18n.js';
 
@@ -26,9 +26,12 @@ export const appCheck = (() => {
   const c = SETTINGS.appCheck || {};
   if (!app || !c.siteKey) return null;
   try {
-    // وضع التجربة: يطبع رمز تصحيح في وحدة التحكم يُسجَّل في Firebase Console (للتجربة على localhost فقط)
-    if (c.debug) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
-    return initializeAppCheck(app, {provider: new ReCaptchaV3Provider(c.siteKey), isTokenAutoRefreshEnabled: true});
+    // وضع التجربة: يطبع رمز تصحيح في وحدة التحكم يُسجَّل في Firebase Console.
+    // H35: لا يعمل إلا على localhost حتى لو تُرك debug: true بالخطأ، فلا يصل أي رمز تصحيح إلى نسخة النشر
+    const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+    if (c.debug && local) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    // H35: reCAPTCHA Enterprise بدل v3 (المفتاح من Google Cloud، ونطاق الموقع مضاف إليه)
+    return initializeAppCheck(app, {provider: new ReCaptchaEnterpriseProvider(c.siteKey), isTokenAutoRefreshEnabled: true});
   } catch (e){ console.warn(e); return null; }
 })();
 // H8: هل الذكاء الاصطناعي مفعّل؟ (هنا لا في ai.js، حتى لا يُحمَّل ai.js إلا عند استخدامه)

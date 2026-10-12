@@ -221,30 +221,27 @@ npm run test:rules
 
 مفاتيح Firebase في `js/config.js` عامة (يراها أي زائر)، وقواعد الحماية هي التي تحمي البيانات.
 App Check يضيف طبقة أخرى: يتأكد أن الطلبات تأتي من تطبيقك على موقعك، لا من سكربت يستخدم المفاتيح نفسها لإغراق قاعدة البيانات أو استهلاك حصة الذكاء الاصطناعي.
-التطبيق يستخدم **reCAPTCHA v3** (غير مرئي، لا يطلب من المستخدم شيئاً).
+التطبيق يستخدم **reCAPTCHA Enterprise** (H35، غير مرئي، لا يطلب من المستخدم شيئاً). مجاني حتى 10 آلاف تحقق شهرياً، ويكفي مع التحديث التلقائي للرمز (كل زائر يأخذ رمزاً صالحاً قرابة ساعة).
 
-> **مهم:** الكود جاهز، لكنه **لا يُفعَّل** حتى تضع المفتاح في `config.js`.
+> **الحالة الآن:** المفتاح موضوع في `js/config.js` (`6Lcfz-stAAAAAGiOjXxFhWTvh8v07X1vraJne1VP`)، فالكود يرسل الرموز من أول طلب.
 > والإلزام (Enforce) **لا يحدث تلقائياً أبداً**: أنت من يفعّله يدوياً في الخطوة 4، بعد أن تتأكد أن كل شيء يعمل. لو فعّلته مبكراً قد يتعطل التطبيق على المستخدمين.
 
-**1) أنشئ مفتاح reCAPTCHA v3**
-- افتح [لوحة reCAPTCHA](https://www.google.com/recaptcha/admin/create) وسجّل موقعاً جديداً بنوع **reCAPTCHA v3** (النقاط، وليس «أنا لست روبوتاً»).
-- أضف النطاق: `kidpom3-hue.github.io`. أضف `localhost` أيضاً إن كنت تجرّب على جهازك.
-- ستحصل على مفتاحين:
-  - **مفتاح الموقع (Site key):** للتطبيق، وتضعه في الخطوة 3.
-  - **المفتاح السري (Secret key):** لـ Firebase فقط، ولا يوضع في الكود أبداً.
+**1) مفتاح reCAPTCHA Enterprise (تمّ)**
+- أُنشئ في Google Cloud Console ← **Security ← reCAPTCHA** (نوع **Website**، بلا مربع «أنا لست روبوتاً»).
+- تأكد أن قائمة النطاقات فيه تحتوي `kidpom3-hue.github.io` (وأضف `localhost` إن كنت تجرّب على جهازك).
+- لـ Enterprise مفتاح واحد فقط (Site key)، وهو عام ويوضع في الكود بلا خطر.
 
 **2) سجّل التطبيق في Firebase App Check**
-- Firebase Console ← **App Check** ← تبويب **Apps** ← اختر تطبيق الويب ← **reCAPTCHA** (وليس Enterprise).
-- الصق **المفتاح السري** ← **Save**.
+- Firebase Console ← **App Check** ← تبويب **Apps** ← اختر تطبيق الويب ← **reCAPTCHA Enterprise**.
+- الصق **مفتاح الموقع** نفسه ← **Save**.
 
-**3) ضع مفتاح الموقع في التطبيق**
+**3) مفتاح الموقع في التطبيق (تمّ)**
 - في `js/config.js`:
   ```js
-  appCheck: {siteKey: 'ضع هنا مفتاح الموقع', debug: false},
+  appCheck: {siteKey: '6Lcfz-stAAAAAGiOjXxFhWTvh8v07X1vraJne1VP', debug: false},
   ```
-- ارفع التعديل إلى GitHub.
-- للتجربة على جهازك (`localhost`) فقط:
-  1. اجعل `debug: true` مؤقتاً.
+- **لا يُرفع أي رمز تصحيح (debug token) أبداً.** للتجربة على جهازك (`localhost`) فقط:
+  1. اجعل `debug: true` مؤقتاً (الكود يتجاهله على أي نطاق غير localhost، احتياطاً).
   2. افتح وحدة التحكم في المتصفح (Console)، وانسخ «App Check debug token» الذي يظهر فيها.
   3. أضفه في Firebase Console ← App Check ← Apps ← ⋮ ← **Manage debug tokens**.
   4. أعِد `debug: false` قبل الرفع.
@@ -295,8 +292,7 @@ App Check يضيف طبقة أخرى: يتأكد أن الطلبات تأتي م
 3. **افتح لوحة الإدارة مرة واحدة** لتنقل بريد المستخدمين القدامى إلى `private/profile`.
 4. **البيانات التوضيحية:** الإدارة ← «حذف البيانات التوضيحية»، ثم اضغط «إيقاف البيانات التوضيحية نهائياً» (`samplesOff`).
 5. **App Check:**
-   - أنشئ مفتاح reCAPTCHA v3 للنطاق `kidpom3-hue.github.io` (الخطوات في قسم App Check أعلاه).
-   - ضع مفتاح الموقع في `SETTINGS.appCheck.siteKey` في `js/config.js`.
+   - المفتاح (reCAPTCHA Enterprise) موضوع في الكود منذ H35؛ باقٍ عليك تسجيله في Firebase Console ← App Check ← Apps ← **reCAPTCHA Enterprise**، والتأكد أن `kidpom3-hue.github.io` في نطاقات المفتاح.
    - راقب أسبوعاً في Firebase Console ← App Check (نسبة الطلبات الموثّقة)، ثم فعّل **Enforce** لـ Firestore وAuthentication.
    - بدونه يستطيع أي سكربت يستخدم المفاتيح العامة استهلاك حصة القراءة المجانية (50 ألف قراءة يومياً)، فيتوقف الموقع حتى اليوم التالي.
 6. **تقييد مفتاح API:**
