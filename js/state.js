@@ -1,6 +1,6 @@
 // حالة التطبيق والاشتراك في البيانات من Firestore
-import { auth, db, dbx, configured, onAuthStateChanged, getRedirectResult, deleteField } from './firebase.js';
-import { LS, matchScore, toast, dayNum, subKey, setSpotHook, tokens, norm, when } from './utils.js';
+import { auth, db, dbx, configured, onAuthStateChanged, getRedirectResult, deleteField, sharedDevice } from './firebase.js';
+import { LS, SS, matchScore, toast, dayNum, subKey, setSpotHook, tokens, norm, when } from './utils.js';
 import { t, LANG, saved, setLang, hasKey } from './i18n.js';
 import { oName, spotLabel, cat, catName, COLORS, autoSuggestOk, SUGG_STOP, claimOf, GROUP_DAYS, AMOUNT_TOL } from './constants.js';
 import { SETTINGS } from './config.js';
@@ -127,7 +127,8 @@ export const STALE_DAYS = 60;
 export const isStale = r => r?.status === 'open' && Date.now() - (r.renewedAt || r.createdAt || 0) > STALE_DAYS * 864e5;
 // رقم الطلب القصير (المرحلة F): REQ-XXXX يُحفظ عند الإنشاء، والطلبات القديمة يُشتق رقمها من آخر 4 أحرف من رقمها الطويل
 export const claimNo = c => c?.no || ('REQ-' + String(c?.id || '').slice(-4).toUpperCase());
-export const myCode = id => S.priv?.codes?.[id] || LS.get('codes', {})[id] || null;
+// H29: النسخة الاحتياطية للرمز في localStorage، أو في الجلسة فقط على الجهاز المشترك (SS)
+export const myCode = id => S.priv?.codes?.[id] || LS.get('codes', {})[id] || SS.get('codes', {})[id] || null;
 export const MATCH_MIN = SETTINGS.matchThreshold;
 
 /* G5: «ليس غرضي»: الأغراض التي رفضها صاحب البلاغ = القائمة rejected (تكبر فقط، 30 على الأكثر)
@@ -430,7 +431,11 @@ export function start(){
   getRedirectResult(auth).catch(e => { const m = authErr(e); if (m) toast(m); });
 }
 
+/* H29: الجهاز المشترك بلا مستخدم داخل (انتهت جلسة السابق بإغلاق المتصفح دون «تسجيل الخروج»): ما بقي منه على الجهاز يُمسح —
+   التنبيهات المقروءة والاقتراحات المعلّقة وبصمة الملف الشخصي (وفيها أرقام بلاغاته وطلباته). المكان والمظهر واللغة تبقى للجهاز */
+const SHARED_WIPE = ['codes', 'seen', 'staffSeen', 'prof', 'notify', 'snoozed', 'suggHold', 'suggAlert', 'mineTab', 'rateAt'];
 function onUser(user){
+  if (!user && sharedDevice()) SHARED_WIPE.forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} });
   clear('user'); clear('admin');
   S.uid = user?.uid || null;
   S.me = user ? {name: user.displayName || (user.email || '').split('@')[0] || t('user.anon'), email: user.email || '', photo: user.photoURL || ''} : null;
@@ -469,7 +474,9 @@ function autoClose(){
     for (const r of S.myReports){
       if (r.status !== 'open' || autoClosed.has(r.id) || !(r.id === c.reportId || (r.staffPick && r.staffPick === c.itemId))) continue;
       autoClosed.add(r.id);
-      dbx.update('reports/' + r.id, {status: 'closed', closedAt: Date.now(), closedReason: 'office'})   // H7: القواعد تقبل وقت «الآن» فقط.catch(e => console.warn('[auto close]', e?.code || e));
+      // H7: القواعد تقبل وقت «الآن» فقط. H29: كانت ‎.catch‎ داخل هذا التعليق خطأً، فيبقى الرفض (دون اتصال مثلاً) بلا معالجة
+      dbx.update('reports/' + r.id, {status: 'closed', closedAt: Date.now(), closedReason: 'office'})
+        .catch(e => console.warn('[auto close]', e?.code || e));
     }
   }
 }

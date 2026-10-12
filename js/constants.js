@@ -268,7 +268,12 @@ export const otypeName = id => isEn() ? otype(id).en : otype(id).name;
 export const oName = o => (isEn() && o?.nameEn) || o?.name || '';
 export const oShort = o => (isEn() && (o?.shortEn || o?.nameEn)) || o?.short || o?.name || '';
 export const oPlace = o => (isEn() && o?.placeEn) || o?.place || '';
-export const oHours = o => (isEn() && o?.hoursEn) || o?.hours || '';
+/* H29: الوقت لا ينقسم على سطرين («2:30» في سطر و«م» في الذي بعده): مسافة غير قابلة للكسر بين الرقم والكلمة التي تليه
+   (ص/م، مساءً، am/pm). للعرض فقط؛ نموذج المكتب يقرأ hours كما هي */
+// وفترة الوقت كلها («7:30 ص – 2:30 م») في سطر واحد: بعد الشرطة «رابط كلمات» (U+2060)، فقواعد تقسيم الأسطر تسمح بالكسر بعد الشرطة ولو تلتها مسافة غير قابلة للكسر
+const keepTimes = s => String(s || '').replace(/(\d)[ \t]+(?=\p{L})/gu, '$1\u00a0')
+  .replace(/(\d\u00a0[\p{L}\p{M}]+)[ \t]+([–—-])[ \t]+(?=\d)/gu, '$1\u00a0$2\u2060\u00a0');
+export const oHours = o => keepTimes((isEn() && o?.hoursEn) || o?.hours || '');
 export const oCity = o => (isEn() && o?.cityEn) || o?.city || '';
 /* هوية الجهة (H15): شعار الكلية وألوان المؤسسة العامة للتدريب التقني والمهني، بإذن من إدارة الكلية.
    تظهر في مكتب الكلية التقنية بالأحساء فقط (المفتاح = معرّف المكتب)؛ أي مكتب آخر (مطار، مجمع…) يبقى بهوية مفقودك وحدها.

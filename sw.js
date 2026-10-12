@@ -1,7 +1,7 @@
 // Service Worker: يحفظ ملفات التطبيق ليفتح بسرعة ويعمل عند ضعف الاتصال.
 // الاستراتيجية: الشبكة أولاً (لتظهر تعديلاتك فوراً)، ثم النسخة المحفوظة إذا انقطع الاتصال.
 // عند تغيير أسماء الملفات غيّر رقم الإصدار هنا.
-const CACHE = 'mafqoodak-v47';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
+const CACHE = 'mafqoodak-v48';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
 // H27: الخطوط (مجلد fonts) في مخزن مستقل لا يُمسح مع كل إصدار (الملفات لا تتغير؛ اسم جديد للخط = ملف جديد).
 // تُحفظ عند أول استخدام فقط، فلا يُعاد تنزيل 350 KB مع كل تحديث. غيّر الرقم هنا فقط إن استبدلت ملف خط بالاسم نفسه
 const FONTS = 'mafqoodak-fonts-v1';
@@ -48,11 +48,13 @@ self.addEventListener('fetch', e => {
   // H6: cache: 'no-cache' يجبر المتصفح على سؤال الخادم (GitHub Pages) عن كل ملف بدل نسخته المخزّنة في ذاكرة HTTP،
   // فلا تظهر نسخة قديمة بعد التحديث. طلب فتح الصفحة (navigate) لا يقبل خيارات إضافية، فنبني له طلباً جديداً بعنوانه
   const fresh = req.mode === 'navigate' ? new Request(req.url, {cache: 'no-cache'}) : new Request(req, {cache: 'no-cache'});
+  // H29: صفحة الفتح تُحفظ بعنوانها دون ‎?query‎ (روابط المشاركة تضيف ‎?fbclid=…‎ وغيرها): نسخة واحدة، لا نسخة جديدة لكل رابط
+  const u = new URL(req.url), key = req.mode === 'navigate' ? u.origin + u.pathname : req;
   e.respondWith(
     fetch(fresh).then(res => {
-      if (res.ok){ const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
+      if (res.ok && res.type === 'basic' && !res.redirected){ const copy = res.clone(); caches.open(CACHE).then(c => c.put(key, copy)); }
       return res;
-    }).catch(() => caches.match(req).then(r => r || (req.mode === 'navigate' ? caches.match('./index.html') : undefined)))
+    }).catch(() => caches.match(key).then(r => r || (req.mode === 'navigate' ? caches.match('./index.html') : undefined)))
   );
 });
 // الضغط على إشعار المتصفح: نفتح التطبيق (أو نعود إليه إن كان مفتوحاً)

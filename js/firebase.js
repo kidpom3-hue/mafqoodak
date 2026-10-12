@@ -5,9 +5,10 @@ import {
   getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut,
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification,
+  setPersistence, browserLocalPersistence, browserSessionPersistence,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import {
-  initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence,
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, terminate, clearIndexedDbPersistence,
   collection, doc, query, where, onSnapshot, getDoc, getDocs, getCountFromServer, setDoc, updateDoc, deleteDoc, writeBatch, deleteField, arrayUnion, arrayRemove, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 // App Check (H4): يثبت أن الطلبات تأتي من تطبيقنا على موقعنا لا من سكربت آخر يستخدم المفاتيح العامة
@@ -32,13 +33,36 @@ export const appCheck = (() => {
 })();
 // H8: هل الذكاء الاصطناعي مفعّل؟ (هنا لا في ai.js، حتى لا يُحمَّل ai.js إلا عند استخدامه)
 export const aiReady = () => !!(SETTINGS.enableAI && app);
+/* H29: «جهاز مشترك» (معمل الحاسب، المكتبة): من ألغى «تذكّرني على هذا الجهاز» في صفحة الدخول.
+   عندها: الدخول يُحفظ في الجلسة فقط فينتهي بإغلاق المتصفح، ونسخة البيانات في الذاكرة لا على القرص،
+   وأي نسخة قديمة على القرص (من دخول سابق بـ«تذكّرني») تُمسح عند الفتح. العلامة تخص الجهاز لا الحساب:
+   localStorage «mfq:shared»، ويغيّرها خيار «تذكّرني» عند الدخول التالي */
+const SHARED_KEY = 'mfq:shared';
+export const sharedDevice = () => { try { return JSON.parse(localStorage.getItem(SHARED_KEY) || 'false') === true; } catch { return false; } };
+export function setSharedDevice(on){ try { if (on) localStorage.setItem(SHARED_KEY, 'true'); else localStorage.removeItem(SHARED_KEY); } catch {} }
+
 export const auth = app ? getAuth(app) : null;
-if (auth) auth.languageCode = LANG;   // لغة رسائل Firebase تتبع لغة الواجهة
+if (auth){
+  auth.languageCode = LANG;   // لغة رسائل Firebase تتبع لغة الواجهة
+  if (sharedDevice()) setPersistence(auth, browserSessionPersistence).catch(e => console.warn('[auth] persistence', e?.code || e));
+}
+// «تذكّرني» من صفحة الدخول: يُطبَّق فور تغيير الخيار (لا عند الضغط على Google، فالنافذة المنبثقة تُفتح مباشرة بعد الضغط).
+// الدخول بالبريد ينتظر rememberReady قبل الإرسال
+let persistP = Promise.resolve();
+export function rememberDevice(on){
+  setSharedDevice(!on);
+  if (auth) persistP = setPersistence(auth, on ? browserLocalPersistence : browserSessionPersistence).catch(e => console.warn('[auth] persistence', e?.code || e));
+  return persistP;
+}
+export const rememberReady = () => persistP;
 
 let _db = null;
 if (app){
-  try { _db = initializeFirestore(app, {localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})}); }
+  const shared = sharedDevice();
+  try { _db = initializeFirestore(app, {localCache: shared ? memoryLocalCache() : persistentLocalCache({tabManager: persistentMultipleTabManager()})}); }
   catch { _db = initializeFirestore(app, {}); }
+  // جهاز مشترك: قبل أي قراءة تُمسح النسخة القديمة على القرص (يفشل إن كان تبويب آخر مفتوحاً بالنسخة الدائمة، فنتجاهله)
+  if (shared) try { clearIndexedDbPersistence(_db).catch(() => {}); } catch {}
 }
 export const db = _db;
 

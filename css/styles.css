@@ -1378,3 +1378,19 @@ a.tel{color:var(--primary);font-weight:600;text-decoration:underline;text-decora
 .site-foot .sf-links li{display:block}
 .site-foot .link{text-decoration:none;font-size:14px;font-weight:500;line-height:1.5;min-height:36px;padding-block:6px;justify-content:flex-start;text-align:start;text-wrap:balance}
 .site-foot .link:hover,.site-foot .link:focus-visible{color:var(--hero-hl);text-decoration:underline;text-decoration-color:currentColor;text-underline-offset:4px}
+
+/* ================= H29: فحص شامل =================
+   1) اختيار الصورة في البلاغ وإشعار التسليم وتعديل الغرض: عمود الأزرار كان ينكمش إلى 20px فيلتف «اختر صورة» على سطرين */
+.photo-drop .col{flex:1 1 auto}
+.photo-drop .btn,.filebtn{white-space:nowrap}
+/* 2) سطر المكتب في الواجهة بلا نقاط فاصلة (كانت تبقى وحدها أول السطر عند الالتفاف): الأيقونة تفصل العناصر،
+      ورابط الهاتف (telLink) بلون الواجهة الداكنة لا بلون الروابط العادية */
+.hh-info{gap:6px 16px}
+.hh-info a.tel{color:var(--hero-ink);font-weight:500;text-decoration-color:var(--hero-line)}
+/* 3) «تذكّرني على هذا الجهاز» في صفحة الدخول: الخيار في إطار، والتلميح تحته بمحاذاة نصه (خارج label حتى يبقى اسم الخيار قصيراً لقارئ الشاشة) */
+.remember{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.remember .check{font-weight:600;color:var(--ink);cursor:pointer;min-height:28px;align-items:center}
+.remember .check input{margin-top:0}
+.remember .hint{margin:2px 0 0;padding-inline-start:28px;font-size:12.5px;line-height:1.6}
+/* 4) زر «دخول» في الترويسة وأنت في صفحة الدخول: يظهر «الصفحة الحالية» */
+.login-btn[aria-current="page"]{background:var(--primary-faint);border-color:var(--primary-line);color:var(--primary)}

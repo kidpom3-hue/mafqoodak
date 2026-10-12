@@ -1,8 +1,9 @@
 // بديل تجريبي لمكتبة Firestore (لأداة tools/a11y.mjs فقط): قاعدة بيانات في الذاكرة من window.__FAKE.db
 const F = () => window.__FAKE;
 const deny = p => { if (F().deny && new RegExp(F().deny).test(p)) { const e = new Error('denied'); e.code = 'permission-denied'; throw e; } };
-export const initializeFirestore = () => ({});
-export const persistentLocalCache = () => ({}), persistentMultipleTabManager = () => ({});
+// H29: نوع النسخة المحلية (على القرص أو في الذاكرة للجهاز المشترك) يُسجَّل للفحص
+export const initializeFirestore = (app, s) => { F().cache = s?.localCache?.kind || 'default'; return {}; };
+export const persistentLocalCache = () => ({kind: 'persistent'}), persistentMultipleTabManager = () => ({}), memoryLocalCache = () => ({kind: 'memory'});
 export const doc = (a, path) => path === undefined ? {id: 'n' + Math.random().toString(36).slice(2, 10)} : {path, id: path.split('/').pop()};
 export const collection = (db, col) => ({col, w: []});
 export const where = (f, op, v) => ({f, op, v});
