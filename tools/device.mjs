@@ -8,6 +8,8 @@
 // 4) H31: صفحة التأكيد بعد إرسال بلاغ الفقد وطلب الاستلام (المباشر وبالوصف والنقود) وإشعار التسليم: عنوانها، ورقم الطلب أو التسليم
 //    كما حُفظ، والتركيز على العنوان، وعنوان التبويب، و«متابعة…» تفتح «طلباتي» والبطاقة الجديدة مفتوحة، والرجوع لا يعيد النموذج.
 //    والتنقل ينقل التركيز إلى عنوان الصفحة الجديدة، والنافذة لها اسم والتركيز داخلها، وتبويبات «طلباتي» تشير إلى لوحة موجودة.
+// 5) H32: «مؤشرات الأداء» لا تقول «هذا الشهر» عن شهر سابق، وتتجدد في الخلفية حين يفتح الموظف لوحته؛ وعنوان التبويب لا يكرر
+//    اسم المكتب؛ وقبول طلب لا شيء فيه للمقارنة يقول ذلك بوضوح بدل «تطابق 0 من 0».
 // التشغيل: cd tools && npm run device   (لمتصفح مثبّت مسبقاً: CHROMIUM_PATH=/path/to/chromium npm run device)
 import http from 'http';
 import fs from 'fs';
@@ -42,14 +44,14 @@ const browser = await chromium.launch(process.env.CHROMIUM_PATH ? {executablePat
 const fails = []; let checks = 0;
 const expect = (ok, msg) => { checks++; if (!ok) fails.push(msg); };
 
-async function open({user = null, lang = 'ar', width = 390, text = ''} = {}){
+async function open({user = null, lang = 'ar', width = 390, text = '', mode = 'visitor', extra = {}} = {}){
   const ctx = await browser.newContext({viewport: {width, height: 844}});
   await ctx.route(/firebase-app\.js/, r => r.fulfill({contentType: 'text/javascript', body: 'export const initializeApp = () => ({});'}));
   await ctx.route(/firebase-auth\.js/, r => r.fulfill({contentType: 'text/javascript', body: stub('auth.js')}));
   await ctx.route(/firebase-firestore\.js/, r => r.fulfill({contentType: 'text/javascript', body: stub('firestore.js')}));
   await ctx.route(/firebase-app-check\.js/, r => r.fulfill({contentType: 'text/javascript', body: 'export const initializeAppCheck = () => ({}); export class ReCaptchaV3Provider {}'}));
-  await ctx.addInitScript(`window.__FAKE = ${JSON.stringify({db, reads: [], writes: [], user})};
-    localStorage.setItem('mfq:office', '"${O}"'); localStorage.setItem('mfq:lang', '"${lang}"'); localStorage.setItem('mfq:mode', '"visitor"');
+  await ctx.addInitScript(`window.__FAKE = ${JSON.stringify({db: {...db, ...extra}, reads: [], writes: [], user})};
+    localStorage.setItem('mfq:office', '"${O}"'); localStorage.setItem('mfq:lang', '"${lang}"'); localStorage.setItem('mfq:mode', '"${mode}"');
     ${text ? `localStorage.setItem('mfq:text', '"${text}"');` : ''}`);
   const p = await ctx.newPage(); p.errs = [];
   p.on('pageerror', e => p.errs.push(String(e)));
@@ -238,10 +240,61 @@ for (const lang of ['ar', 'en']){
   await ctx.close();
 }
 
+// ---------- 5) H32: المؤشرات القديمة، وعنوان التبويب، و«لا تفاصيل للمقارنة» ----------
+{
+  const ym = d => new Date(d).toISOString().slice(0, 7);
+  const now = new Date(); const cur = await (async () => { const {p, ctx} = await open(); const v = await p.evaluate(async () => (await import('./js/utils.js')).today().slice(0, 7)); await ctx.close(); return v; })();
+  const [cy, cm] = cur.split('-').map(Number), prev = ym(Date.UTC(cy, cm - 2, 15));
+  const stats = month => ({'publicStats/tc-ahsa': {month, monthReceived: 3, monthReturned: 2, totalReceived: 10, totalReturned: 8, returnRate: 80, avgDays: 2, avgRating: 4.5, ratings: 2, updatedAt: Date.now() - 13 * 864e5}});
+  for (const [month, want] of [[prev, 'num.monthOf'], [cur, 'num.month']]){
+    const {p, ctx} = await open({extra: stats(month)});
+    await go(p, 'numbers'); await p.waitForTimeout(400);
+    const h = await p.evaluate(() => document.querySelector('[data-view=numbers] h2.section-title')?.textContent.trim() || '');
+    const head = await tr(p, want, {month: '__'});
+    expect(h.startsWith(head.split('__')[0]), `5: مؤشرات شهر ${month === cur ? 'الحالي' : 'سابق'}: العنوان «${h}» والمتوقع يبدأ بـ «${head.split('__')[0]}»`);
+    await ctx.close();
+  }
+  // الموظف يفتح لوحته والمؤشرات من شهر سابق: تُحسب وتُنشر في الخلفية (مرة في اليوم لكل جهاز)
+  {
+    const {p, ctx} = await open({user: {uid: 'staffA', displayName: 'Staff', email: 's@example.com'}, mode: 'staff', extra: {...stats(prev), 'staff/staffA': {offices: [O]}}});
+    await go(p, 'staff'); await p.waitForTimeout(1500);
+    const ps = await p.evaluate(() => window.__FAKE.db['publicStats/tc-ahsa']);
+    expect(ps?.month === cur && Date.now() - ps.updatedAt < 60000, `5: فتح لوحة الموظف لم يجدد المؤشرات القديمة (${ps?.month})`);
+    expect(!p.errs.length, '5 (لوحة الموظف): أخطاء في الصفحة: ' + p.errs.join(' | '));
+    await ctx.close();
+  }
+  // عنوان التبويب: اسم المكتب مرة واحدة (المفقودات وصفحة المكتب فيهما اسم المكتب أصلاً)
+  {
+    const {p, ctx} = await open();
+    const office = await p.evaluate(async () => { const {curOffice} = await import('./js/state.js'); const {oName} = await import('./js/constants.js'); return oName(curOffice()); });
+    for (const r of ['browse', 'office', 'mine', 'report']){
+      await go(p, r);
+      const title = await p.evaluate(() => document.title);
+      expect(title.split(office).length - 1 === 1, `5: عنوان تبويب «${r}» يكرر اسم المكتب أو لا يذكره: ${title}`);
+    }
+    await ctx.close();
+  }
+  // قبول طلب لا شيء فيه للمقارنة: «لا تفاصيل للمقارنة» (كانت «تطابق 0 من 0 فقط»)
+  {
+    const extra = {'staff/staffA': {offices: [O]}, 'itemSecrets/b1': {officeId: O, title: 'كتاب'},
+      'claims/b1_zed': {itemId: 'b1', officeId: O, uid: 'zed', no: 'REQ-B1ZZ', proof: 'كتاب عليه اسمي', claimantName: 'Zed', idLast4: '1234', lostDate: '2026-10-01', status: 'pending', createdAt: Date.now() - 3600e3}};
+    const {p, ctx} = await open({user: {uid: 'staffA', displayName: 'Staff', email: 's@example.com'}, mode: 'staff', extra});
+    await go(p, 'staff', {tab: 'claims'}); await p.waitForTimeout(500);
+    await p.evaluate(() => document.querySelectorAll('details').forEach(d => d.open = true));
+    const sum = await p.evaluate(() => document.querySelector('.cmp-sum')?.textContent.trim() || '');
+    expect(sum.startsWith(await tr(p, 'st.cmpSumNone')), `5: ملخص المقارنة بلا تفاصيل: «${sum}»`);
+    await p.evaluate(() => document.querySelector('[data-act=approve][data-id="b1_zed"]')?.click()); await p.waitForTimeout(700);
+    const h = await p.evaluate(() => document.querySelector('#sheet h2')?.textContent.trim() || '');
+    expect(h === await tr(p, 'a.noCmpQ'), `5: نافذة القبول بلا تفاصيل للمقارنة: «${h}»`);
+    expect(!p.errs.length, '5 (القبول): أخطاء في الصفحة: ' + p.errs.join(' | '));
+    await ctx.close();
+  }
+}
+
 await browser.close(); server.close();
 if (fails.length){
   console.log(`✘ فشل ${fails.length} من ${checks} فحصاً:`);
   for (const f of fails) console.log('- ' + f);
   process.exit(1);
 }
-console.log(`✔ الجهاز المشترك وثبات النصوص وصفحة التأكيد: ${checks} فحصاً («تذكّرني»، والدخول في الجلسة، والنسخة في الذاكرة، وزر الدخول، و«اختر صورة»، والأوقات، والواجهة بلا سطر المكتب، وصفحة التأكيد ورقمها، والتركيز وعنوان التبويب، والنوافذ).`);
+console.log(`✔ الجهاز المشترك وثبات النصوص وصفحة التأكيد: ${checks} فحصاً («تذكّرني»، والدخول في الجلسة، والنسخة في الذاكرة، وزر الدخول، و«اختر صورة»، والأوقات، والواجهة بلا سطر المكتب، وصفحة التأكيد ورقمها، والتركيز وعنوان التبويب، والنوافذ، والمؤشرات القديمة، و«لا تفاصيل للمقارنة»).`);

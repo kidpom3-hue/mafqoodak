@@ -5,7 +5,7 @@ import { MS_NOTE } from './workflow.js';
 import { S, touch } from './state.js';
 import { catName, subLabel, statusLabel, ITEM_STATUS, oName, keepDaysOf } from './constants.js';
 import { t, locale } from './i18n.js';
-import { dayNum, daysAgo, isoDay, spotName, today, toast, disposalLabel, TZ } from './utils.js';
+import { dayNum, daysAgo, isoDay, spotName, today, toast, disposalLabel, TZ, LS } from './utils.js';
 
 const loading = new Set();
 // كل أغراض المكتب بكل حالاتها (مرة واحدة، و«تحديث» يعيد الجلب)
@@ -56,6 +56,15 @@ async function publishPublic(officeId, old){
   if (same && Date.now() - (old.updatedAt || 0) < 864e5) return;
   try { await dbx.set('publicStats/' + officeId, {...next, updatedAt: Date.now()}); S.pubStats[officeId] = {...next, updatedAt: Date.now()}; }
   catch (e){ console.warn('[publicStats]', e?.code || e); }
+}
+/* H32: مؤشرات الزوار (publicStats) كانت تتجدد فقط حين يفتح موظف صفحة الإحصاءات، فبقيت «سبتمبر» ظاهرة في أكتوبر.
+   الآن عند فتح لوحة الموظف: إن كانت من شهر سابق أو مضى عليها أسبوع تُحسب وتُنشر في الخلفية (loadStats ← publishPublic).
+   يُفحص مرة في اليوم لكل جهاز ومكتب (LS pubChk:<office>): قراءة واحدة للوثيقة، والحساب الكامل فقط عند الحاجة */
+export async function refreshPublicIfStale(officeId){
+  if (!officeId || navigator.onLine === false) return;
+  const k = 'pubChk:' + officeId; if (LS.get(k, '') === today()) return; LS.set(k, today());
+  const pub = await dbx.get('publicStats/' + officeId).catch(() => null);
+  if (!pub || pub.month !== today().slice(0, 7) || Date.now() - (Number(pub.updatedAt) || 0) > 7 * 864e5) await loadStats(officeId);
 }
 // للزائر: وثيقة المؤشرات (قراءة واحدة عند فتح الصفحة)
 export async function loadPublicStats(officeId){

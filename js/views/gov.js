@@ -1,7 +1,7 @@
 // صفحات المرحلة F (بأسلوب المنصات الحكومية، دون أي شعار حكومي):
 // بطاقة الخدمة (route: service)، ومؤشرات المكتب للزوار (route: numbers)، وبيان إمكانية الوصول (route: a11y)
 import { icon, oName, oPlace, oHours } from '../constants.js';
-import { esc, fmtDate, isoDay, TZ } from '../utils.js';
+import { esc, fmtDate, isoDay, TZ, today } from '../utils.js';
 import { t, tp, locale } from '../i18n.js';
 import { S, curOffice } from '../state.js';
 import { backBtn, telLink, reviewDaysOf, pickupDaysOf } from './common.js';
@@ -73,8 +73,10 @@ export function vNumbers(){
   const tile = (label, value, hint = '') => `<div class="kpi"><span class="kpi-l">${label}</span><b class="kpi-v">${value}</b>${hint ? `<span class="kpi-h">${hint}</span>` : ''}</div>`;
   const [y, m] = String(d.month || '').split('-').map(Number);
   const month = y && m ? new Intl.DateTimeFormat(locale(), {month: 'long', year: 'numeric', timeZone: TZ}).format(new Date(Date.UTC(y, m - 1, 15))) : '';
+  // H32: «هذا الشهر» فقط إن كانت الأرقام لهذا الشهر فعلاً؛ كانت تقول «هذا الشهر (سبتمبر)» في أكتوبر حين لم تتجدد
+  const cur = d.month === today().slice(0, 7);
   return `<div class="wrap" data-view="numbers">${head}
-    <h2 class="section-title">${t('num.month', {month: esc(month)})}</h2>
+    <h2 class="section-title">${t(cur ? 'num.month' : 'num.monthOf', {month: esc(month)})}</h2>
     <div class="kpis">
       ${tile(t('num.received'), d.monthReceived ?? 0)}
       ${tile(t('num.returned'), d.monthReturned ?? 0)}

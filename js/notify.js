@@ -56,9 +56,10 @@ const known = new Set(); let who = null, armedAt = 0;
 export function syncTitle(){
   const n = isStaffHere() ? staffNew('claims') + staffNew('reports') : S.uid ? unseenCount() : 0;
   // H21: اسم المكتب في عنوان الصفحة (والتبويب)
-  const o = curOffice();
-  const base = o ? (S.pageName ? t('app.pageOf', {page: S.pageName, office: oName(o)}) : t('app.titleOf', {office: oName(o)}))
-    : S.pageName ? t('app.pageOfApp', {page: S.pageName}) : t('app.title');
+  const o = curOffice(), on = o ? oName(o) : '';
+  // H32: إن كان اسم المكتب في اسم الصفحة نفسه (المفقودات، صفحة المكتب) لا يتكرر: «مفقودات الكلية… | مفقودك»
+  const base = !S.pageName ? (o ? t('app.titleOf', {office: on}) : t('app.title'))
+    : o && !S.pageName.includes(on) ? t('app.pageOf', {page: S.pageName, office: on}) : t('app.pageOfApp', {page: S.pageName});
   document.title = (n ? `(${n}) ` : '') + base;
   try { if (n) navigator.setAppBadge?.(n); else navigator.clearAppBadge?.(); } catch {}
 }

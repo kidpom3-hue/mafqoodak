@@ -1240,7 +1240,9 @@ const ACT = {
     // تطابق ضعيف: أقل من 2 من 3 في جدول المقارنة
     // تطابق ضعيف: أقل من نصف الصفوف التي لها نتيجة في جدول المقارنة (أو لا شيء يمكن مقارنته)
     const {hits, total} = (SM() || await load('staff')).claimChecks(c, full(i));
-    if (!total || hits / total < 0.5) return confirmSheet(t('a.weakQ'), t('a.weakBody', {n: hits, total}), t('a.weakBtn'), go2, false);
+    // H32: لا شيء يمكن مقارنته (لم يُسجَّل للغرض لون ولا وصف ولا مكان…): رسالة واضحة بدل «تطابق 0 من 0 فقط»
+    if (!total) return confirmSheet(t('a.noCmpQ'), t('a.noCmpBody'), t('a.weakBtn'), go2, false);
+    if (hits / total < 0.5) return confirmSheet(t('a.weakQ'), t('a.weakBody', {n: hits, total}), t('a.weakBtn'), go2, false);
     go2();
   },
   // إعادة تفعيل طلب منتهٍ أو ملغى (من سجل الطلبات)
