@@ -27,6 +27,11 @@ export const stepBack = () => `<button type="button" class="btn ghost step-back"
 export const emptyBox = (ic, title, sub = '', act = '', cls = '') => `<div class="empty ${cls}">${icon(ic)}<b>${title}</b>${sub ? `<span>${sub}</span>` : ''}${act}</div>`;
 export const navBtn = (r, ic, label) => `<button class="btn soft" data-act="nav" data-r="${r}">${icon(ic)}${label}</button>`;
 
+/* مدة مراجعة الطلب ومهلة الاستلام كما ضبطها المكتب (بحدود معقولة). H31: نُقلتا من gov.js (يُحمَّل عند الحاجة)
+   لأن صفحة التأكيد بعد الإرسال (visitor.js) تحتاجهما أيضاً */
+export const reviewDaysOf = o => Math.max(1, Math.min(30, Number(o?.reviewDays) || 2));
+export const pickupDaysOf = o => Math.max(1, Math.min(60, Number(o?.pickupDays) || 7));
+
 /* H19: سطر فوق اسم المكتب: نوع المنشأة والمدينة؛ في وضع المكتب الواحد المدينة فقط (لا أنواع منشآت للزائر) */
 export const oKicker = o => singleMode() ? (oCity(o) ? icon('pin') + esc(oCity(o)) : '')
   : `${icon(otype(o.type).icon)}${esc(otypeName(o.type))}${oCity(o) ? ' · ' + esc(oCity(o)) : ''}`;

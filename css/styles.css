@@ -12,9 +12,11 @@
 @font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:600;font-display:swap;src:url("../fonts/IBMPlexMono-SemiBold-Latin1.woff2") format("woff2");unicode-range:U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+20AC,U+2122,U+2212}
 
 :root{
-  /* H24: ألوان محايدة بأسلوب المنصات الحكومية، والأخضر #1B8354 لوناً أساسياً */
+  /* H24: ألوان محايدة بأسلوب المنصات الحكومية، والأخضر لوناً أساسياً.
+     H31: #187A4E (كان #1B8354): أغمق قليلاً ليبلغ النص الأخضر الصغير 4.5:1 على الخلفية الرمادية والخلفيات الخضراء الفاتحة
+     (كان 4.43 على --bg و4.16 على --primary-soft؛ الآن 4.98 و4.68). الفرق لا يكاد يُرى */
   --bg:#F6F7F8; --surface:#FFFFFF; --surface-2:#EEF1F3; --ink:#1A1F24; --muted:#4D5761; --line:#D8DCE0;
-  --primary:#1B8354; --primary-ink:#FFFFFF; --primary-soft:#E3F4EA; --primary-line:#9FD5B4; --primary-faint:#F2FAF5;
+  --primary:#187A4E; --primary-ink:#FFFFFF; --primary-soft:#E3F4EA; --primary-line:#9FD5B4; --primary-faint:#F2FAF5;
   --tag:#F2DDA8; --tag-ink:#4A380B; --tag-line:#D5B86F;
   --ok:#1B7646; --ok-soft:#DCF0E3; --warn:#9A5A0B; --warn-soft:#FAEAD2; --bad:#B0261E; --bad-soft:#F7DFDC; --info:#1D57A0; --info-soft:#DEE8F6;
   --shadow:0 1px 2px rgba(16,24,32,.05),0 2px 8px rgba(16,24,32,.04);
@@ -1385,3 +1387,37 @@ a.tel{color:var(--primary);font-weight:600;text-decoration:underline;text-decora
 .remember .hint{margin:2px 0 0;padding-inline-start:28px;font-size:12.5px;line-height:1.6}
 /* 4) زر «دخول» في الترويسة وأنت في صفحة الدخول: يظهر «الصفحة الحالية» */
 .login-btn[aria-current="page"]{background:var(--primary-faint);border-color:var(--primary-line);color:var(--primary)}
+
+/* ================= H31: تطوير شامل =================
+   1) صفحة التأكيد بعد الإرسال (done): علامة صح، والعنوان، ورقم الطلب أو التسليم بخط ثابت العرض مع زر نسخ،
+      ثم «الخطوات التالية» مرقّمة، ومكان التسليم لإشعار التسليم، وزرّان بعرض متساوٍ */
+.done-box{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:28px 18px 22px;margin-block:8px 14px;background:var(--surface);border:1px solid var(--line);border-radius:16px}
+.done-ic{display:grid;place-items:center;width:64px;height:64px;border-radius:50%;background:var(--ok-soft);color:var(--ok)}
+.done-ic svg{width:34px;height:34px}
+.done-title{font-size:24px;font-weight:700;line-height:1.35;margin:4px 0 0;text-wrap:balance}
+.done-lead{margin:0;color:var(--muted);max-width:52ch;line-height:1.8;text-wrap:pretty}
+.done-num{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px 12px;margin-top:6px;padding:12px 14px;background:var(--surface-2);border-radius:12px;align-self:stretch}
+.done-num-l{font-size:13px;font-weight:600;color:var(--muted)}
+.done-num-v{font-family:var(--f-mono);font-size:22px;font-weight:600;letter-spacing:.06em;color:var(--ink)}
+.done-num .hint{flex-basis:100%;margin:0}
+.done-box .when{justify-content:center}
+.done-next,.done-where{margin-bottom:14px}
+.done-steps{margin:0;padding:0;list-style:none;counter-reset:dn;display:grid;gap:12px}
+.done-steps li{counter-increment:dn;display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:start;line-height:1.75}
+.done-steps li::before{content:counter(dn);display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--primary-soft);color:var(--primary);font:700 13px/1 var(--f-mono)}
+.done-btns{margin-top:4px}
+.done-btns .btn{flex:1 1 200px}
+/* 2) أهداف اللمس 36px على الأقل (اتفاق المشروع، وفحص tools/a11y.mjs): شعار الترويسة، والأزرار المقسّمة (.seg) ومنها
+   أوضاع العرض وتبويبات اللوحة ودخول/حساب جديد، وخانة «تذكّرني»، وروابط المسار والتذييل القصيرة («Home» و«FAQ»)، ورابط الإحصاءات في جدول الإدارة */
+.brand{min-height:36px}
+.seg button,.seg-opt{min-height:36px}
+.remember .check{min-height:36px}
+.check{padding-block:6px}   /* خانات الاختيار (الإقرار، تحقق التسليم…): السطر الواحد كان 24px */
+.crumbs .link,.site-foot .sf-links .link{min-width:36px}
+.crumbs .link{justify-content:center}
+table.t td>.link{min-height:36px;display:inline-flex;align-items:center}
+/* 3) التركيز عند تغيّر الصفحة (focusPage في ui.js) يذهب إلى عنوانها، وعند فتح نافذة إلى النافذة نفسها:
+   ليسا عنصرين تفاعليين، فلا إطار تركيز حولهما (يبقى الإطار لكل زر وحقل) */
+#main h1[tabindex="-1"]:focus,#main[tabindex="-1"]:focus,#s-body>h2:focus,.sheet-panel:focus{outline:none}
+/* 4) تباين: سطر «اعرضه لموظف المكتب» في بطاقة رمز الاستلام كان شفافاً (3.97:1 على الذهبي)؛ الآن بلون كامل (5:1 فأكثر) */
+.code-hero .hint{opacity:1}

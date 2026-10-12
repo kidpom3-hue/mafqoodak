@@ -53,7 +53,7 @@ export function vSetup(){
     <div class="intro">${LOGO}<h1>${t('setup.title')}</h1>
       <p>${t('setup.lead', {email: `<b dir="ltr">${esc(S.me?.email || '')}</b>`})}</p></div>
     <form data-form="setup" class="panel" novalidate>
-      <div class="section-title">${icon(otype(o.type).icon)}${t('setup.first')}</div>
+      <h2 class="section-title">${icon(otype(o.type).icon)}${t('setup.first')}</h2>
       <dl class="facts">
         <dt>${t('setup.org')}</dt><dd>${esc(o.name)}</dd>
         <dt>${t('setup.city')}</dt><dd>${esc(o.city)}</dd>

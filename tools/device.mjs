@@ -5,6 +5,9 @@
 // 2) زر «دخول» في الترويسة وأنت في صفحة الدخول: «الصفحة الحالية»، ولا يمسح وجهة العودة بعد الدخول.
 // 3) نصوص لا تنكسر: «اختر صورة» في سطر واحد (كان العمود ينكمش إلى 20px)، و«2:30 م» لا ينقسم على سطرين،
 //    والواجهة بلا سطر المكان والأوقات والهاتف (H30: حُذف منها بطلب المالك؛ يبقى في صفحة المكتب). على 320 و390 باللغتين، وبالخط العادي والكبير جداً.
+// 4) H31: صفحة التأكيد بعد إرسال بلاغ الفقد وطلب الاستلام (المباشر وبالوصف والنقود) وإشعار التسليم: عنوانها، ورقم الطلب أو التسليم
+//    كما حُفظ، والتركيز على العنوان، وعنوان التبويب، و«متابعة…» تفتح «طلباتي» والبطاقة الجديدة مفتوحة، والرجوع لا يعيد النموذج.
+//    والتنقل ينقل التركيز إلى عنوان الصفحة الجديدة، والنافذة لها اسم والتركيز داخلها، وتبويبات «طلباتي» تشير إلى لوحة موجودة.
 // التشغيل: cd tools && npm run device   (لمتصفح مثبّت مسبقاً: CHROMIUM_PATH=/path/to/chromium npm run device)
 import http from 'http';
 import fs from 'fs';
@@ -13,7 +16,7 @@ import { chromium } from 'playwright';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const stub = f => fs.readFileSync(path.join(root, 'tools/a11y-stubs', f), 'utf8');
-const TYPES = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2'};
+const TYPES = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2'};
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]); if (p.endsWith('/')) p += 'index.html';
   const f = path.join(root, p);
@@ -29,6 +32,9 @@ const db = {
     place: 'المبنى الإداري - الدور الأرضي', placeEn: 'Admin building - ground floor', hours: 'الأحد – الخميس، 7:30 ص – 2:30 م', hoursEn: 'Sun – Thu, 7:30 am – 2:30 pm',
     phone: '0135800000', retentionDays: 90, pickupDays: 7, spots: ['المكتبة'], active: true, createdAt: 1, code: 'TCA'},
   'users/zed': {name: 'Zed'},
+  // H31: غرض متاح لطلب استلام مباشر، ومحفظة (تصنيف بالوصف)
+  'items/b1': {officeId: O, ref: 'TCA-B1XX', cat: 'study', sub: 'كتاب', title: 'كتاب', foundDate: '2026-10-01', photo: false, status: 'available', createdBy: 'staffA', createdAt: 1, updatedAt: 1, sample: false, public: true},
+  'items/w1': {officeId: O, ref: 'TCA-W1XX', cat: 'wallets', sub: 'محفظة رجالية', title: 'محفظة رجالية', foundDate: '2026-10-01', photo: false, status: 'available', createdBy: 'staffA', createdAt: 1, updatedAt: 1, sample: false, public: true},
 };
 const zed = {uid: 'zed', displayName: 'Zed', email: 'zed@example.com'};
 
@@ -153,10 +159,89 @@ for (const lang of ['ar', 'en']) for (const width of [320, 390]) for (const text
   await ctx.close();
 }
 
+// ---------- 4) H31: صفحة التأكيد، والتركيز، وعنوان التبويب، والنوافذ ----------
+const tr = (p, k, v) => p.evaluate(async ([k, v]) => (await import('./js/i18n.js')).t(k, v), [k, v]);
+// يملأ النموذج ثم يرسله من الخطوة الأخيرة (كما يفعل زر «إرسال»)
+async function send(p, sel, fill){
+  await p.evaluate(fill);
+  await p.evaluate(sel => { const f = document.querySelector(sel); f.dataset.step = f.dataset.steps || 1; f.requestSubmit(); }, sel);
+  await p.waitForTimeout(1200);
+  return p.evaluate(async () => { const {S} = await import('./js/state.js'); const a = document.activeElement;
+    return {route: S.route.name, p: S.route.params, h1: document.querySelector('#main h1')?.textContent.trim() || '', onH1: !!a?.matches('#main h1'),
+      num: document.querySelector('.done-num-v')?.textContent.trim() || '', title: document.title, err: document.querySelector('.form-err:not([hidden])')?.textContent || ''}; });
+}
+const pick = (cat) => `const f = document.querySelector('form[data-form]'); const c = f.querySelector('input[name=cat][value=${cat}]'); if (c){ c.checked = true; c.dispatchEvent(new Event('change', {bubbles: true})); }`;
+const ident = `const f = document.querySelector('form[data-form=claim]'); const set = (n, v) => { const el = f.querySelector('[name=' + n + ']'); if (el) el.value = v; };
+  set('proof', 'كتاب عليه اسمي في الصفحة الأولى بخط أزرق'); set('claimantName', 'Zed Test'); set('idLast4', '1234'); set('d_amount', '200'); const pl = f.querySelector('[name=pledge]'); if (pl) pl.checked = true;
+  f.querySelectorAll('[required]').forEach(el => { if (!el.value && !['radio', 'checkbox'].includes(el.type)) el.value = el.type === 'number' || el.inputMode === 'numeric' ? '200' : 'نص'; });
+  f.querySelectorAll('input[type=radio][required]').forEach(el => { if (!f.querySelector('input[name=' + el.name + ']:checked')) el.checked = true; });`;
+for (const lang of ['ar', 'en']){
+  const cases = [
+    ['report', 'report', {}, 'form[data-form=report]', `${pick('bags')} f.querySelector('[name=title]').value = 'حقيبة لابتوب رمادية';`, 'reports'],
+    ['claim', 'claim', {id: 'b1'}, 'form[data-form=claim]', ident, 'claims'],
+    ['gclaim', 'gclaim', {cat: 'wallets'}, 'form[data-form=claim]', ident, 'claims'],
+    ['cash', 'gclaim', {cat: 'cash'}, 'form[data-form=claim]', ident, 'claims'],
+    ['handin', 'handin', {}, 'form[data-form=handin]', pick('bottles'), 'foundReports'],
+  ];
+  for (const [kind, route, params, sel, fill, col] of cases){
+    const tag = `4 (${lang} ${kind})`;
+    const {p, ctx} = await open({user: zed, lang});
+    await go(p, route, params);
+    const r = await send(p, sel, new Function(fill));
+    expect(r.route === 'done' && r.p.kind === kind, `${tag}: بعد الإرسال المتوقع صفحة التأكيد، ووُجد: ${r.route} ${r.p.kind || ''} ${r.err}`);
+    if (r.route !== 'done'){ await ctx.close(); continue; }
+    expect(r.h1 === await tr(p, 'done.t.' + kind), `${tag}: عنوان صفحة التأكيد «${r.h1}»`);
+    expect(r.onH1, `${tag}: التركيز ليس على عنوان صفحة التأكيد`);
+    expect(r.title.startsWith(r.h1) && r.title.includes(await tr(p, 'app.name')), `${tag}: عنوان التبويب لا يبدأ باسم الصفحة: ${r.title}`);
+    // الرقم المعروض هو المحفوظ فعلاً: رقم الطلب (no) أو رقم التسليم (code)؛ البلاغ بلا رقم
+    const saved = await p.evaluate(([col, id]) => window.__FAKE.db[col + '/' + id] || null, [col, r.p.id]);
+    expect(!!saved, `${tag}: لم يُحفظ ${col}/${r.p.id}`);
+    const want = kind === 'report' ? '' : kind === 'handin' ? saved?.code : saved?.no;
+    expect(r.num === (want || ''), `${tag}: الرقم المعروض «${r.num}» والمحفوظ «${want || ''}»`);
+    if (kind === 'handin') expect(await p.evaluate(() => !!document.querySelector('.done-where a.tel[href^="tel:"]')), `${tag}: مكان التسليم بلا هاتف المكتب`);
+    expect(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${tag}: تمرير أفقي في صفحة التأكيد`);
+    // «متابعة…» تفتح «طلباتي» والبطاقة الجديدة مفتوحة
+    await p.click('[data-act=doneGo][data-r=mine]'); await p.waitForTimeout(500);
+    const m = await p.evaluate(async id => { const {S} = await import('./js/state.js'); return {route: S.route.name, open: [...document.querySelectorAll('details.mcard[open]')].map(d => d.dataset.card.slice(2)), onH1: !!document.activeElement?.matches('#main h1')}; }, r.p.id);
+    expect(m.route === 'mine' && m.open.includes(r.p.id), `${tag}: «متابعة» لم تفتح البطاقة الجديدة في «طلباتي» (${m.route}، المفتوحة: ${m.open.join('، ') || 'لا شيء'})`);
+    expect(m.onH1, `${tag}: بعد الانتقال إلى «طلباتي» التركيز ليس على عنوانها`);
+    // الرجوع من «طلباتي» لا يعيد صفحة التأكيد ولا النموذج المرسَل
+    await p.evaluate(() => history.back()); await p.waitForTimeout(500);
+    const back = await p.evaluate(async () => (await import('./js/state.js')).S.route.name);
+    expect(!['done', route].includes(back), `${tag}: الرجوع أعاد «${back}»`);
+    expect(!p.errs.length, `${tag}: أخطاء في الصفحة: ${p.errs.join(' | ')}`);
+    await ctx.close();
+  }
+}
+// التنقل: التركيز إلى عنوان الصفحة الجديدة، وعنوان التبويب باسمها؛ والرئيسية بالعنوان العام
+{
+  const {p, ctx} = await open({user: zed});
+  await p.click('#nav [data-r=browse]'); await p.waitForTimeout(500);
+  const b = await p.evaluate(() => ({onH1: !!document.activeElement?.matches('#main h1'), h1: document.querySelector('#main h1')?.textContent.trim(), title: document.title}));
+  expect(b.onH1, '4: بعد الضغط على «المفقودات» في الشريط السفلي التركيز ليس على عنوان الصفحة');
+  expect(b.title.startsWith(b.h1), `4: عنوان التبويب في صفحة المفقودات: ${b.title}`);
+  await p.click('#nav [data-r=home]'); await p.waitForTimeout(500);
+  const office = await p.evaluate(async () => { const {curOffice} = await import('./js/state.js'); const {oName} = await import('./js/constants.js'); return oName(curOffice()); });
+  expect((await p.evaluate(() => document.title)).replace(/^\(\d+\) /, '') === await tr(p, 'app.titleOf', {office}), '4: عنوان التبويب في الرئيسية تغيّر');
+  // تبويبات «طلباتي» تشير إلى لوحة موجودة
+  await go(p, 'mine');
+  expect(await p.evaluate(() => [...document.querySelectorAll('[role=tab][aria-controls]')].every(b => document.getElementById(b.getAttribute('aria-controls')))), '4: تبويب في «طلباتي» يشير إلى لوحة غير موجودة');
+  // النافذة: اسمها أول عنوان فيها، والتركيز ينتقل إليها، ويعود إلى زر الحساب بعد إغلاقها
+  await p.click('.avatar-btn'); await p.waitForTimeout(300);
+  const d = await p.evaluate(() => { const s = document.querySelector('#sheet .sheet-panel'); const l = s && document.getElementById(s.getAttribute('aria-labelledby') || '');
+    return {named: !!l?.textContent.trim(), inside: !!s?.contains(document.activeElement)}; });
+  expect(d.named, '4: نافذة الحساب بلا اسم (aria-labelledby)');
+  expect(d.inside, '4: التركيز لم ينتقل إلى نافذة الحساب');
+  await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+  expect(await p.evaluate(() => !!document.activeElement?.matches('.avatar-btn')), '4: بعد إغلاق النافذة لم يعد التركيز إلى زر الحساب');
+  expect(!p.errs.length, '4: أخطاء في الصفحة: ' + p.errs.join(' | '));
+  await ctx.close();
+}
+
 await browser.close(); server.close();
 if (fails.length){
   console.log(`✘ فشل ${fails.length} من ${checks} فحصاً:`);
   for (const f of fails) console.log('- ' + f);
   process.exit(1);
 }
-console.log(`✔ الجهاز المشترك وثبات النصوص: ${checks} فحصاً («تذكّرني»، والدخول في الجلسة، والنسخة في الذاكرة، وزر الدخول، و«اختر صورة»، والأوقات، والواجهة بلا سطر المكتب).`);
+console.log(`✔ الجهاز المشترك وثبات النصوص وصفحة التأكيد: ${checks} فحصاً («تذكّرني»، والدخول في الجلسة، والنسخة في الذاكرة، وزر الدخول، و«اختر صورة»، والأوقات، والواجهة بلا سطر المكتب، وصفحة التأكيد ورقمها، والتركيز وعنوان التبويب، والنوافذ).`);

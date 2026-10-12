@@ -3,7 +3,7 @@ import { icon, LOGO, brandOf, CATS, cat, catName, isGrouped, isHiddenCat, colorN
 import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, tAr, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode, iHandedIn } from '../state.js';
-import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack, telLink } from './common.js';
+import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack, telLink, reviewDaysOf, pickupDaysOf } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
 import { aiReady } from '../firebase.js';
@@ -183,7 +183,7 @@ export function vItem(){
         ${canDeleteItem(i) ? `<button class="btn danger" data-act="delItem" data-id="${esc(i.id)}">${icon('trash')}${t('c.delete')}</button>` : ''}
       </div>
       ${SM.rivals(i).length ? `<div class="note warn">${icon('info')}<span>${t('it.rival')}</span></div>` : ''}
-      ${cls.length ? `<div class="section-title">${t('it.claims')}</div><div class="list">${cls.map(c => SM.claimCardStaff(c, {open: true})).join('')}</div>` : ''}`;
+      ${cls.length ? `<h2 class="section-title">${t('it.claims')}</h2><div class="list">${cls.map(c => SM.claimCardStaff(c, {open: true})).join('')}</div>` : ''}`;
   } else if (i.status === 'disposed'){
     actions = `<div class="note">${icon('clock')}<span>${t('it.disposed')}</span></div>`;
   } else if (mine && ['expired', 'cancelled'].includes(mine.status)){
@@ -237,7 +237,7 @@ export function vItem(){
       </div>
     </div>
     ${staffMode ? SM.timeline(i) : ''}
-    ${o ? `<div class="panel"><div class="section-title">${icon('building')}${t('it.whereCollect')}</div>
+    ${o ? `<div class="panel"><h2 class="section-title">${icon('building')}${t('it.whereCollect')}</h2>
       <dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}${o?.phone ? `<dt>${t('found.contact')}</dt><dd>${telLink(o.phone)}</dd>` : ''}</dl></div>` : ''}
   </div>`;
 }
@@ -446,8 +446,9 @@ export function vMine(){
   const reps = myReports(), cls = myClaims(), fnd = myFound();
   const focus = S.route.params.focus;
   const lists = {claims: cls, reports: reps, found: fnd};
-  // البلاغ أو الإشعار الذي أُنشئ للتو (focus) يُفتح في تبويبه
-  if (focus){ const k = reps.some(r => r.id === focus) ? 'reports' : fnd.some(f => f.id === focus) ? 'found' : ''; if (k){ LS.set('mineTab', k); CARD_OPEN.set((k === 'reports' ? 'r:' : 'f:') + focus, true); } }
+  // البلاغ أو الإشعار أو الطلب (H31) الذي أُنشئ للتو (focus) يُفتح في تبويبه
+  if (focus){ const k = reps.some(r => r.id === focus) ? 'reports' : fnd.some(f => f.id === focus) ? 'found' : cls.some(c => c.id === focus) ? 'claims' : '';
+    if (k){ LS.set('mineTab', k); CARD_OPEN.set({reports: 'r:', found: 'f:', claims: 'c:'}[k] + focus, true); } }
   const saved = LS.get('mineTab', '');
   const cur = MINE_TABS.includes(saved) ? saved : MINE_TABS.find(k => lists[k].length) || 'claims';
   const unseen = unseenKeys(); FRESH = new Set(unseen.map(keyCard));
@@ -455,14 +456,15 @@ export function vMine(){
   // المهام المطلوبة (مثل سؤال الموظف) تبقى في «يحتاج انتباهك» وفي حدّ البطاقة، لا في شارة التبويب
   const tabs = `<div class="tabs" role="tablist" aria-label="${t('mine.tabsAria')}">${MINE_TABS.map(k => {
     const act = lists[k].filter(x => !isEndedOf[k](x)).length, nw = unseen.filter(x => keyTab(x) === k).length;
-    return `<button role="tab" id="mt-${k}" aria-controls="mp-${k}" aria-selected="${k === cur}" tabindex="${k === cur ? 0 : -1}" data-act="mineTab" data-v="${k}">
+    // H31: لوحة واحدة (mine-panel) تعرض التبويب المختار، فكل تبويب يشير إليها (كانت تشير إلى لوحات غير موجودة)
+    return `<button role="tab" id="mt-${k}" aria-controls="mine-panel" aria-selected="${k === cur}" tabindex="${k === cur ? 0 : -1}" data-act="mineTab" data-v="${k}">
       <span class="tl">${t('mine.t.' + k)}</span><span class="ts">${t('mine.ts.' + k)}</span>${tabNum(nw, act)}</button>`; }).join('')}</div>`;
   return `<div class="wrap" data-view="mine">
     <section class="hero"><div class="hero-kicker">${icon('inbox')}${singleMode() ? t('mine.single', {office: esc(oName(curOffice()))}) : t('mine.kicker')}</div><h1 class="hero-title">${t('nav.mine')}</h1></section>
     ${attentionBox(cls, reps)}
     ${installCard(cls.length + reps.length + fnd.length)}
     ${tabs}
-    <div role="tabpanel" id="mp-${cur}" aria-labelledby="mt-${cur}" tabindex="0" class="mine-panel">${mineList(cur, lists[cur], focus)}</div>
+    <div role="tabpanel" id="mine-panel" aria-labelledby="mt-${cur}" tabindex="0" class="mine-panel"><h2 class="sr-only">${t('mine.t.' + cur)}</h2>${mineList(cur, lists[cur], focus)}</div>
   </div>`;
 }
 // قائمة نوع واحد: الجاري أولاً، ثم عنوان صغير «منتهية (n)» وبطاقات مضغوطة بلون أهدأ (بلا طي).
@@ -614,6 +616,47 @@ export function reportCardMine(r, focus){
 // طلب الاستلام النشط (قيد المراجعة أو مقبول) المرتبط بالبلاغ: عبر reportId أو على الغرض المرشَّح
 export const linkedClaim = r => myClaims().find(c => (c.reportId === r.id || (r.staffPick && c.itemId === r.staffPick)) && ['pending', 'approved'].includes(c.status)) || null;
 
+/* ---------- H31: صفحة التأكيد بعد الإرسال ----------
+   بعد تقديم بلاغ فقد أو طلب استلام أو إشعار تسليم، بدل رسالة عابرة ثم «طلباتي» مباشرة (بأسلوب المنصات الحكومية):
+   ما الذي أُرسل، ورقمه الذي يُذكر للمكتب، والخطوات التالية، وزر لمتابعته في «طلباتي».
+   البيانات من params (ما أُرسل للتو: actions.js)، فلا تنتظر الصفحة وصول الاشتراك. تُفتح بلا خطوة في السجل
+   (S.hist = [])، فزر الرجوع لا يعيد النموذج المرسَل. لا تكشف شيئاً لم يكتبه المستخدم نفسه */
+const DONE_KINDS = ['report', 'claim', 'gclaim', 'cash', 'handin'];
+// خطوات كل نوع (مفاتيح done.*): الطلب بالوصف يختلف في الخطوة الأولى، وبلاغ النقود («بلاغ» للمستخدم، طلب مجمّع في البيانات) في الأولى والأخيرة
+const DONE_STEPS = {report: ['report.s1', 'report.s2', 'report.s3'], claim: ['claim.s1', 'claim.s2', 'claim.s3'],
+  gclaim: ['gclaim.s1', 'claim.s2', 'claim.s3'], cash: ['cash.s1', 'claim.s2', 'cash.s3'], handin: ['handin.s1', 'handin.s2', 'handin.s3']};
+export function vDone(){
+  const p = S.route.params || {};
+  const kind = DONE_KINDS.includes(p.kind) ? p.kind : '';
+  if (!kind) return `<div class="wrap narrow" data-view="done">${emptyBox('inbox', t('nav.mine'), '', navBtn('mine', 'inbox', t('nav.mine')))}</div>`;
+  const o = S.offices.find(x => x.id === p.officeId) || curOffice();
+  const vars = {office: esc(oName(o)), title: esc(p.title || ''), what: kind === 'gclaim' ? t('grp.' + p.cat + '.title') : '',
+    reviewDays: tp('n.workDays', reviewDaysOf(o)), pickupDays: tp('n.days', pickupDaysOf(o))};
+  // الرقم الذي يُذكر للمكتب: رقم الطلب (REQ-…) أو رقم التسليم. البلاغ بلا رقم: اسمه في السطر الأول
+  const num = kind === 'handin' ? p.code : kind === 'report' ? '' : p.no;
+  const btn = kind === 'report' || kind === 'cash' ? 'report' : kind === 'handin' ? 'handin' : 'claim';
+  return `<div class="wrap narrow" data-view="done">
+    <section class="done-box" aria-labelledby="done-t">
+      <span class="done-ic" aria-hidden="true">${icon('check')}</span>
+      <h1 id="done-t" class="done-title">${t('done.t.' + kind)}</h1>
+      <p class="done-lead">${t('done.lead.' + kind, vars)}</p>
+      ${num ? `<div class="done-num"><span class="done-num-l">${t(kind === 'handin' ? 'done.handinNo' : 'term.reqNo')}</span>
+        <b class="done-num-v" dir="ltr">${esc(num)}</b>
+        <button class="btn sm ghost" data-act="copy" data-v="${esc(num)}">${icon('copy')}${t('c.copy')}</button>
+        <small class="hint">${t(kind === 'handin' ? 'done.handinNoHint' : 'done.reqNoHint')}</small></div>` : ''}
+      ${p.at ? whenLine('c.sentAt', p.at) : ''}
+    </section>
+    <section class="panel done-next" aria-labelledby="done-n"><h2 class="section-title" id="done-n">${icon('clock')}${t('done.next')}</h2>
+      <ol class="done-steps">${DONE_STEPS[kind].map(k => `<li>${t('done.' + k, vars)}</li>`).join('')}</ol></section>
+    ${kind === 'handin' && o ? `<section class="panel done-where" aria-labelledby="done-w"><h2 class="section-title" id="done-w">${icon('building')}${t('done.where')}</h2>
+      <dl class="facts"><dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}${o.phone ? `<dt>${t('found.contact')}</dt><dd>${telLink(o.phone)}</dd>` : ''}</dl></section>` : ''}
+    <div class="btn-row done-btns">
+      <button class="btn" data-act="doneGo" data-r="mine" data-id="${esc(p.id || '')}">${icon('inbox')}${t('done.btn.' + btn)}</button>
+      <button class="btn ghost" data-act="doneGo" data-r="home">${t('done.toHome')}</button>
+    </div>
+  </div>`;
+}
+
 /* ---------- visitor: office info ---------- */
 /* أسئلة شائعة — نصوصها في القاموسين (faq.q1… وfaq.a1…)، عدّلها كما تريد */
 const FAQ = () => [1, 2, 3, 4, 5, 6, 7].map(n => [t('faq.q' + n), t('faq.a' + n)]);
@@ -623,7 +666,7 @@ export function vOffice(){
   return `<div class="wrap" data-view="office">
     <section class="hero">${brandLogo(o, 'light', 'ofc-logo')}${oKicker(o) ? `<div class="hero-kicker">${oKicker(o)}</div>` : ''}<h1 class="hero-title">${esc(oName(o))}</h1></section>
     <div class="panel">
-      <div class="section-title">${icon('building')}${t('ofc.title')}</div>
+      <h2 class="section-title">${icon('building')}${t('ofc.title')}</h2>
       <dl class="facts">
         <dt>${t('adm.colOffice')}</dt><dd>${esc(oPlace(o) || '—')}</dd>
         ${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}

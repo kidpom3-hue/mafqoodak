@@ -3,7 +3,8 @@ import { icon, LOGO, statusLabel, MODE_LABEL, brandOf } from './constants.js';
 import { t } from './i18n.js';
 import { $, $$, esc, toast, SS } from './utils.js';
 import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, getEmail, SHARE_RE, OFFICE_RE, singleMode, STAFF_TABS, TAB_RE } from './state.js';
-import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice } from './views/visitor.js';
+import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice, vDone } from './views/visitor.js';
+import { syncTitle } from './notify.js';   // H31: عنوان الصفحة في تبويب المتصفح (اسم الصفحة + المكتب)
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
 import { vHome, updateHome, vFound, vHandin, footer, fillFootQr } from './views/home.js';
 import { vPrivacy } from './views/privacy.js';
@@ -25,6 +26,7 @@ const ROUTES = {
   gclaim: {live: false, v: vClaimForm},   // H11: طلب مجمّع بالوصف ({cat})
   report: {live: false, v: vReportForm, after: initForm},
   mine: {live: true, v: vMine},   // H4: التنبيهات تُقرأ بالنقر على التبويب أو فتح البطاقة، لا بمجرد الدخول
+  done: {live: false, v: vDone},   // H31: صفحة التأكيد بعد إرسال بلاغ أو طلب أو إشعار ({kind, id, …})
   office: {live: true, v: vOffice},
   // lazy: اسم الوحدة في lazy.js، وv/update/after أسماء الدوال فيها
   staff: {live: true, lazy: 'staff', v: 'vStaff', update: 'updateStaff'},
@@ -53,7 +55,8 @@ function routeFns(r){
   return {live: r.live, v: f('v'), update: f('update'), after: f('after')};
 }
 // بعد وصول الوحدة: نرسم الصفحة إن كانت ما زالت مفتوحة. وعند الفشل (دون اتصال ولم تُحفظ بعد): رسالة ونعود للصفحة الرئيسية للمسار
-setLazyHooks(name => { if (ROUTES[S.route.name]?.lazy === name) renderAll(); else renderNav(); },
+// H31: وكان التركيز على #main (لا عنوان أثناء التحميل): ينتقل إلى عنوان الصفحة بعد وصولها
+setLazyHooks(name => { if (ROUTES[S.route.name]?.lazy === name){ const onMain = document.activeElement === $('#main'); renderAll(); if (onMain) focusPage(); } else renderNav(); },
   () => { toast(t('err.offline')); if (ROUTES[S.route.name]?.lazy) $('#main').innerHTML = `<div class="empty">${icon('info')}<b>${t('err.offline')}</b></div>`; });
 
 export function initForm(){
@@ -96,7 +99,20 @@ export function go(name, params = {}, push = true){
   if (newPage) pageIn();
   // H23: كل تبويب في اللوحة يعود إلى موضع تمريره السابق (بقية الصفحات من الأعلى)
   if (name === 'staff' && S.tabY[params.tab]) restoreScroll(S.tabY[params.tab]); else window.scrollTo(0, 0);
+  // H31: صفحة جديدة: التركيز إلى عنوانها. تبويب آخر في لوحة الموظف: إلى عنوان التبويب، إن ضاع التركيز فقط
+  if (newPage) focusPage(); else if (name === 'staff') focusPage(true, '#s-body > h2');
   if (pushed) histDo(() => { history.pushState({mf: 1}, ''); syncUrl(); }); else syncUrl();
+}
+/* H31: عند تغيّر الصفحة ينتقل التركيز إلى عنوانها الرئيسي (h1)، فيعلن قارئ الشاشة الصفحة الجديدة، ويبدأ Tab منها
+   لا من أعلى المستند. كان التركيز يضيع بعد كل تنقّل (الزر المضغوط يُعاد رسمه) فلا يُعلَن شيء.
+   onlyIfLost: لا ننقله إن كان ما زال على عنصر في الصفحة (مثل الرجوع). التمرير لا يتغير (preventScroll) */
+function focusPage(onlyIfLost = false, sel = '#main h1'){
+  const a = document.activeElement;
+  const lost = !a || a === document.body || a === document.documentElement || !a.isConnected;
+  if (onlyIfLost && !lost) return;
+  const h = $(sel) || (sel === '#main h1' ? $('#main') : null); if (!h) return;
+  if (!h.hasAttribute('tabindex')) h.setAttribute('tabindex', '-1');
+  h.focus({preventScroll: true});
 }
 // الانتقال من الشريط السفلي لا يحفظ الصفحة في S.hist، لكن نضيف خطوة واحدة في سجل المتصفح
 // حتى يعود زر الرجوع إلى الرئيسية بدل الخروج من التطبيق
@@ -104,7 +120,7 @@ export function tabEntry(){ histDo(() => { if (!history.state?.mf) history.pushS
 // خطوة رجوع داخل التطبيق (بلا pushState)
 function backStep(){
   const prev = S.hist.pop(); S.sheet = null;
-  if (prev){ S.route = prev; if (prev.name === 'staff' && prev.params?.tab) S.staffTab = prev.params.tab; renderAll(); pageIn(); restoreScroll(prev.y || 0); }
+  if (prev){ S.route = prev; if (prev.name === 'staff' && prev.params?.tab) S.staffTab = prev.params.tab; renderAll(); pageIn(); restoreScroll(prev.y || 0); focusPage(true); }
   else go(homeRoute(), {}, false);
 }
 /* H27: انتقال هادئ بين الصفحات: الصفحة الجديدة تظهر بتلاشٍ قصير (160ms، شفافية فقط فلا يتحرك شيء ولا يتأثر الالتصاق).
@@ -153,7 +169,17 @@ window.addEventListener('popstate', () => {
   backStep();
   if (urlTab && !(S.route.name === 'staff' && S.staffTab === urlTab)){ S.staffTab = urlTab; S.route = {name: 'staff', params: {tab: urlTab}}; renderAll(); }
 });
-export function renderAll(){ renderHeader(); renderMain(); renderNav(); renderSheet(); hydrate(); if (!GOING) syncUrl(); }
+export function renderAll(){ renderHeader(); renderMain(); renderNav(); renderSheet(); hydrate(); pageTitle(); if (!GOING) syncUrl(); }
+/* H31: عنوان تبويب المتصفح باسم الصفحة الحالية (كان واحداً لكل الصفحات): «طلباتي - الكلية التقنية بالأحساء | مفقودك».
+   الاسم = عنوان الصفحة الظاهر (h1)، وفي لوحة الموظف والإدارة اسم التبويب؛ الرئيسية تبقى بالعنوان العام.
+   يفيد قارئ الشاشة (يُعلن عند التنقل) وسجل المتصفح والإشارات المرجعية. التركيب والعدد في notify.js (syncTitle) */
+function pageTitle(){
+  const n = S.route.name;
+  S.pageName = n === 'staff' ? navItems().find(x => x.tab === S.staffTab)?.l || ''
+    : n === 'admin' ? navItems().find(x => x.tab === S.adminTab)?.l || ''
+    : n === 'home' || n === 'pick' ? '' : ($('#main h1')?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 70);
+  syncTitle();
+}
 // H23: داخل go() يُكتب الرابط بعد pushState (وإلا كُتب التبويب الجديد على الخطوة السابقة في السجل)
 let GOING = false;
 /* H23: الرابط يتبع الصفحة: في لوحة الموظف #/office/<التبويب>، وفي غيرها بلا اختصار (replaceState: لا خطوة جديدة في السجل) */
@@ -189,13 +215,17 @@ window.addEventListener('scroll', markStuck, {passive: true});
 export function refresh(){
   // H4: إن أعاد الرسم بناء العنصر الذي عليه التركيز (مثل تبويب بعد الأسهم) نعيد التركيز إليه بمعرّفه
   const fid = document.activeElement?.id;
+  // H31: وعنوان الصفحة (h1 بلا معرّف) الذي وضعه عليه focusPage يعود إليه بعد إعادة الرسم الحي
+  const onH1 = !!document.activeElement?.matches?.('#main h1');
   renderHeader();
   const r = routeFns(ROUTES[S.route.name]);
   const main = $('#main');
   if (r?.update && main.firstElementChild?.dataset.view === S.route.name) r.update();
   else if (r?.live || (!r && ROUTES[S.route.name])) renderMain();
-  renderNav(); hydrate();
-  if (fid && (document.activeElement === document.body || !document.activeElement)) document.getElementById(fid)?.focus({preventScroll: true});
+  renderNav(); hydrate(); pageTitle();
+  const lost = () => document.activeElement === document.body || !document.activeElement;
+  if (fid && lost()) document.getElementById(fid)?.focus({preventScroll: true});
+  if (onH1 && lost()) focusPage(true);
 }
 function renderMain(){
   const main = $('#main');
@@ -212,6 +242,7 @@ function renderMain(){
   if (!r){ main.innerHTML = loadingHtml(); return; }   // H8: الوحدة في الطريق
   main.innerHTML = r.v();
   decorate(main);
+  ensureH1(main);
   // H23: سطر التاريخ المقروء («15 أكتوبر 2026») تحت كل حقل تاريخ من البداية (checkDate في actions.js يستمع لـ change)
   main.querySelectorAll('input[type=date]').forEach(el => el.dispatchEvent(new Event('change', {bubbles: true})));
   if (r.update) r.update();
@@ -219,7 +250,7 @@ function renderMain(){
 }
 /* H24: مسار التنقل (أعلى الصفحة) والتذييل (أسفلها) في صفحات الزائر فقط، بأسلوب المنصات الحكومية.
    يُضافان داخل أول عنصر في #main (العنصر ذو data-view يبقى أولاً لأن دوال update تبحث عنه) */
-const VISITOR_PAGES = ['found', 'handin', 'browse', 'item', 'claim', 'gclaim', 'report', 'mine', 'office', 'privacy', 'service', 'numbers', 'a11y', 'login'];
+const VISITOR_PAGES = ['found', 'handin', 'browse', 'item', 'claim', 'gclaim', 'report', 'mine', 'done', 'office', 'privacy', 'service', 'numbers', 'a11y', 'login'];
 // خطوة المسار: [النص، المسار، params] — الأخيرة هي الصفحة الحالية (بلا رابط)
 function trail(){
   const {name, params: p = {}} = S.route;
@@ -227,7 +258,7 @@ function trail(){
   const cur = {
     found: [t('term.handin')], handin: [found, t('hi.title')], browse: [t('nav.browse')],
     item: [browse, t('bc.item')], claim: [browse, t('cl.title')], gclaim: [browse, t('cl.title')],
-    report: [svc, t('rp.title')], mine: [t('nav.mine')], office: [t('foot.office')], privacy: [t('foot.legal')],
+    report: [svc, t('rp.title')], mine: [t('nav.mine')], done: [[t('nav.mine'), 'mine'], t('done.crumb')], office: [t('foot.office')], privacy: [t('foot.legal')],
     service: ['claim', 'report', 'handin'].includes(p.id) ? [svc, t('svc.' + p.id + '.name')] : [t('svc.details')], numbers: [t('num.title')], a11y: [t('foot.a11y')], login: [t('login.titleIn')],
   }[name];
   return cur ? [[t('nav.home'), homeRoute()], ...cur] : null;
@@ -237,6 +268,16 @@ function crumbs(){
   return `<nav class="crumbs" aria-label="${t('bc.aria')}"><ol>${tr.map(x => typeof x === 'string'
     ? `<li><span aria-current="page">${x}</span></li>`
     : `<li><button class="link" data-act="nav" data-r="${x[1]}">${x[0]}</button></li>`).join('')}</ol></nav>`;
+}
+/* H31: لكل صفحة عنوان h1 (لقارئ الشاشة ولنقل التركيز عند التنقل). صفحات الرسالة الواحدة (مثل «لديك طلب على هذا الغرض»
+   أو «سجّل الدخول») بلا عنوان ظاهر: نضيف لها عنواناً مخفياً باسم الصفحة من مسار التنقل، بعد المسار إن وُجد */
+function ensureH1(main){
+  const box = main.firstElementChild; if (!box || main.querySelector('h1')) return;
+  const tr = trail(), last = tr ? tr[tr.length - 1] : null;
+  const name = typeof last === 'string' ? last : t('app.name');
+  const h = `<h1 class="sr-only">${name}</h1>`;
+  const nav = box.querySelector(':scope > .crumbs');
+  if (nav) nav.insertAdjacentHTML('afterend', h); else box.insertAdjacentHTML('afterbegin', h);
 }
 function decorate(main){
   const o = curOffice(), box = main.firstElementChild;
@@ -268,7 +309,7 @@ function renderHeader(){
       <div class="brand-wrap" data-keep="brand"><button class="brand" data-act="nav" data-r="${homeRoute()}" aria-label="${t('app.name')} — ${t('nav.home')}">${LOGO}<span class="wordmark">${t('app.name')}</span></button>${brandLogo(bo, 'light', 'hdr-logo', 'mark')}</div>
       ${S.config && (o || S.mode === 'admin') ? `<nav class="top-links" aria-label="${t('ui.navigation')}">${navItems().filter(n => !(n.r === 'staff' && n.tab && S.route.name === 'staff')).map(n => {
         const on = S.route.name === n.r && (!n.tab || (n.r === 'staff' ? S.staffTab : S.adminTab) === n.tab);
-        return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}">${n.l}${tabNum(n.b, 0)}</button>`;
+        return `<button class="${on ? 'on' : ''}" data-act="nav" data-r="${n.r}" data-tab="${n.tab || ''}"${on ? ' aria-current="page"' : ''}>${n.l}${tabNum(n.b, 0)}</button>`;
       }).join('')}</nav>` : ''}
       <div class="top-actions">
         ${aaBtn}${langBtn}${acct}
@@ -351,10 +392,16 @@ export function renderSheet(){
   const el = $('#sheet');
   document.documentElement.classList.toggle('sheet-open', !!S.sheet);
   if (!S.sheet){ el.hidden = true; el.innerHTML = ''; if (sheetFrom?.isConnected) sheetFrom.focus({preventScroll: true}); sheetFrom = null; return; }
-  if (el.hidden) sheetFrom = document.activeElement;
+  const opening = el.hidden;
+  if (opening) sheetFrom = document.activeElement;
   el.hidden = false;
-  el.innerHTML = `<div class="sheet-backdrop" data-act="closeSheet"></div><div class="sheet-panel" role="dialog" aria-modal="true">${S.sheet}</div>`;
-  const f = el.querySelector('input,textarea'); if (f) setTimeout(() => f.focus(), 60);
+  el.innerHTML = `<div class="sheet-backdrop" data-act="closeSheet"></div><div class="sheet-panel" role="dialog" aria-modal="true" tabindex="-1">${S.sheet}</div>`;
+  // H31: اسم النافذة لقارئ الشاشة = أول عنوان فيها (أو أول نص عريض، كاسم صاحب الحساب)؛ كانت «نافذة» بلا اسم
+  const panel = el.querySelector('.sheet-panel'), h = panel.querySelector('h1,h2,h3,b');
+  if (h){ if (!h.id) h.id = 'sheet-t'; panel.setAttribute('aria-labelledby', h.id); }
+  // التركيز داخل النافذة عند فتحها: أول حقل، وإلا النافذة نفسها (فيُعلَن اسمها). إعادة رسم نافذة مفتوحة لا تنقله
+  const f = el.querySelector('input:not([type=hidden]),textarea');
+  if (f) setTimeout(() => f.focus(), 60); else if (opening) panel.focus({preventScroll: true});
 }
 export function openSheet(html){
   const wasOpen = !!S.sheet;
