@@ -40,6 +40,7 @@ export const S = {
   counts: {},                    // أعداد من الخادم (getCountFromServer)
   stats: {},                     // الإحصاءات: رقم المكتب ← {items} (تُجلب عند فتح صفحتها فقط)
   logs: {},                      // للموظف: سجل الحيازة لكل غرض فُتح (رقم الغرض ← قائمة أو 'loading')
+  clogs: {},                     // H34: للموظف: قيود السجل لكل طلب استلام فُتحت بطاقته (رقم الطلب ← قائمة أو 'loading')
   finders: {},                   // للموظف: صاحب إشعار التسليم المرتبط بالغرض (رقم الإشعار ← uid)، لتنبيه تضارب المصالح
   showStale: false,              // للموظف: إظهار البلاغات القديمة (أكثر من 60 يوماً دون تجديد)
   adminList: [],                 // للإدارة: حسابات المديرين (admins)
@@ -393,7 +394,8 @@ export function claimerHist(c, open){
   return {n: others.length, rejected: others.filter(x => x.status === 'rejected').length};
 }
 // عند فتح بطاقة طلب بيد الموظف (actions.js): نبدأ قراءة سجل صاحبه
-export const openClaimCard = id => { const c = S.claims.find(x => x.id === id) || (S.claimHist || []).find(x => x.id === id); if (c) claimerHist(c, true); };
+// H34: ومسار الطلب الكامل من السجل (قراءة واحدة عند أول فتح)
+export const openClaimCard = id => { const c = S.claims.find(x => x.id === id) || (S.claimHist || []).find(x => x.id === id); if (c){ claimerHist(c, true); ensureClaimLogs(c); } };
 // الأحداث التي لم تُرَ بعد
 export function staffKeys(){
   const {since, keys} = staffSeen(), seen = new Set(keys);
@@ -605,6 +607,15 @@ export async function ensureLogs(i){
   S.logs[i.id] = 'loading';
   try { S.logs[i.id] = (await dbx.list('logs', [['officeId', '==', i.officeId], ['itemId', '==', i.id]])).sort((a, b) => a.at - b.at); }
   catch (e){ errH('logs')(e); S.logs[i.id] = []; }
+  changed();
+}
+/* H34: قيود السجل لطلب استلام واحد (للموظف): كل قرار عليه بتاريخه ومن اتخذه (قبول، رفض، سؤال، ربط، تسليم، انتهاء، إعادة تفعيل…).
+   قراءة واحدة عند فتح بطاقته (officeId == و claimId ==، بلا فهرس مركّب)، وتُضاف إليها قيود عمليات هذا الجهاز (workflow.commit) */
+export async function ensureClaimLogs(c){
+  if (!c || !db || !c.officeId || S.clogs[c.id] || !(S.isAdmin || (S.staffDoc?.offices || []).includes(c.officeId))) return;
+  S.clogs[c.id] = 'loading';
+  try { S.clogs[c.id] = (await dbx.list('logs', [['officeId', '==', c.officeId], ['claimId', '==', c.id]])).sort((a, b) => a.at - b.at); }
+  catch (e){ errH('claim logs')(e); S.clogs[c.id] = []; }
   changed();
 }
 // للإدارة: «سجل العمليات» لمكتب مختار، عند الطلب فقط (officeId == و action in)

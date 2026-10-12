@@ -3,7 +3,7 @@ import { icon, LOGO, brandOf, CATS, cat, catName, isGrouped, isHiddenCat, colorN
 import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, tAr, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode, iHandedIn, ensureRegs, regAt } from '../state.js';
-import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack, telLink, reviewDaysOf, pickupDaysOf, delegateOf } from './common.js';
+import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack, telLink, reviewDaysOf, pickupDaysOf, delegateOf, updOf } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
 import { aiReady } from '../firebase.js';
@@ -516,7 +516,7 @@ export function foundCardMine(f, focus){
     : st === 'received' ? `<div class="note ok">${icon('check')}<span>${it ? t('hi.receivedRef', {ref: `<b>${esc(it.ref)}</b>`}) : t('hi.received')}</span></div>`
     : `<div class="btn-row"><button class="btn sm ghost" data-act="delFound" data-id="${esc(f.id)}">${icon('trash')}${t('c.delete')}</button></div>`;
   const next = st === 'pending' ? t('ns.hand', {place: esc(oPlace(o) || oName(o))}) : t('ns.f.' + st);
-  return mcard({key: 'f:' + f.id, open: focus, fresh: FRESH.has('f:' + f.id), muted: f.status !== 'pending', pillHtml: pill(FOUND_STATUS, st), next,
+  return mcard({key: 'f:' + f.id, open: focus, fresh: FRESH.has('f:' + f.id), upd: updOf(f), muted: f.status !== 'pending', pillHtml: pill(FOUND_STATUS, st), next,
     head: `${it ? `<span class="ref">${esc(it.ref)}</span>` : f.code ? `<span class="meta" dir="ltr">${esc(f.code)}</span>` : ''}<h3>${esc(f.sub ? subLabel(f.sub) : catName(f.cat))}</h3>`,
     body: `<span class="meta">${icon(cat(f.cat).icon)}${esc([spotText(f), fmtDate(f.foundDate)].filter(Boolean).join(' · '))}</span>
       <span class="meta">${icon('building')}${esc(officeName(f.officeId))}</span>${whenLine('c.sentAt', f.createdAt)}
@@ -570,7 +570,7 @@ export function claimCardMine(c){
     : c.status === 'expired' && c.note === tAr('sys.itemUnavailable') ? t('ns.gone')
     : c.status === 'expired' && c.note && c.note !== tAr('sys.pickupEnded') ? t('ns.ended')
     : c.status === 'cancelled' && c.cancelledAt ? t('ns.withdrawn') : t('ns.' + c.status);
-  return mcard({key: 'c:' + c.id, id: 'claim-' + c.id, open: !!need, fresh: FRESH.has('c:' + c.id), muted: CLAIM_DONE.includes(c.status), tone: need || late ? 'warn' : '', pillHtml: gw && c.status === 'pending' ? `<span class="pill info">${t('gc.matching')}</span>` : pill(CLAIM_STATUS, c.status), next,
+  return mcard({key: 'c:' + c.id, id: 'claim-' + c.id, open: !!need, fresh: FRESH.has('c:' + c.id), upd: updOf(c), muted: CLAIM_DONE.includes(c.status), tone: need || late ? 'warn' : '', pillHtml: gw && c.status === 'pending' ? `<span class="pill info">${t('gc.matching')}</span>` : pill(CLAIM_STATUS, c.status), next,
     head: `<span class="refs">${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}<b dir="ltr" class="req-no">${esc(claimNo(c))}</b></span><h3>${i ? esc(showTitle(i)) : c.grouped ? t('grp.' + c.cat + '.title') : esc(t(gone ? 'mine.goneTitle' : 'c.loadingDots'))}</h3>`,
     body: `${top}
       <span class="meta">${icon('building')}${esc(officeName(c.officeId))}</span>
@@ -625,7 +625,7 @@ export function reportCardMine(r, focus){
   const need = reportNeed(r);
   const next = r.status !== 'open' ? t(r.closedReason === 'office' ? 'ns.closedOffice' : r.closedReason === 'self' ? 'ns.closedSelf' : 'ns.closed')
     : need === 'stale' ? t('ns.stale') : active ? t('ns.claim') : need === 'sugg' ? t('ns.sugg') : t('ns.search');
-  return mcard({key: 'r:' + r.id, open: focus || !!need, fresh: FRESH.has('r:' + r.id), muted: r.status !== 'open', tone: need ? 'warn' : '', pillHtml: pill(REPORT_STATUS, r.status), next,
+  return mcard({key: 'r:' + r.id, open: focus || !!need, fresh: FRESH.has('r:' + r.id), upd: updOf(r), muted: r.status !== 'open', tone: need ? 'warn' : '', pillHtml: pill(REPORT_STATUS, r.status), next,
     // H23: وقت الإرسال في البطاقة المطوية نفسها
     head: `<span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}</span><h3>${esc(r.title)}</h3>${whenLine('c.sentAt', r.createdAt)}`,
     body: `<div><span class="meta">${r.color ? colorDot(r.color) + esc(colorName(r.color)) + ' · ' : ''}${t('st.lostOn', {date: relDayT(r.lostDate)})}</span><span class="meta">${icon('building')}${esc(officeName(r.officeId))}</span>

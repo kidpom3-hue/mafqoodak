@@ -4,7 +4,7 @@ import { t, hasKey } from '../i18n.js';
 import { LS, esc, relDay, relTime, colorDot, isBuilding, roomWord, spotText, showTitle, when, fullWhen, fmtDate, fmtDateFull, isoDay, okMs, isoMs } from '../utils.js';
 import { aiReady } from '../firebase.js';   // H8: ai.js يُحمَّل عند الحاجة فقط
 import { THEMES, theme, TEXTS, textSize } from '../theme.js';
-import { S, isStaffHere, answered, singleMode } from '../state.js';
+import { S, isStaffHere, answered, singleMode, lastAt } from '../state.js';
 
 /* H27: هاتف المكتب رابط اتصال بلمسة (tel:) في الجوال. النص كما كتبه المكتب، والرابط أرقام فقط (و+ في أوله)،
    فلا يُحقن في href شيء من بيانات المكتب */
@@ -100,8 +100,10 @@ export const whenLine = (key, ms) => okMs(ms) ? `<span class="meta when">${icon(
 export const relT = ms => okMs(ms) ? `<time title="${esc(fullWhen(ms))}">${relTime(ms)}</time>` : '';
 export const relDayT = s => s ? `<time datetime="${esc(s)}" title="${esc(fmtDateFull(s))}">${relDay(s)}</time>` : '';
 /* G2: مسار طلب الاستلام: خط عمودي صغير بالأحداث الموجودة فقط، مرتّبة بالوقت
-   staff: نص «أجاب صاحب الطلب» بدل «أجبت» */
-export function claimTimeline(c, staff = false){
+   staff: نص «أجاب صاحب الطلب» بدل «أجبت».
+   H34: كل تحديث على الطلب بتاريخه ووقته الكاملين، من إرساله حتى نهايته: ومنه التفويض بالاستلام والتقييم.
+   timelineEvents = [مفتاح النص، الوقت] (يستخدمها أيضاً مسار الموظف المكتمل من السجل في staff.js) */
+export function timelineEvents(c, staff = false){
   const ev = [['ctl.sent', c.createdAt]];
   if (c.askedAt) ev.push(['ctl.asked', c.askedAt]);
   if (c.answer && c.answeredAt) ev.push([staff ? 'ctl.answeredStaff' : 'ctl.answered', c.answeredAt]);
@@ -110,10 +112,17 @@ export function claimTimeline(c, staff = false){
   if (c.doneAt) ev.push(['ctl.done', c.doneAt]);
   // H20: سحبه صاحبه
   if (c.cancelledAt) ev.push([staff ? 'ctl.withdrawnStaff' : 'ctl.withdrawn', c.cancelledAt]);
-  ev.sort((a, b) => a[1] - b[1]);
+  // H34: فوّض صاحبُ الطلب شخصاً بالاستلام (H33)، وقيّم الخدمة بعد الاستلام
+  const d = delegateOf(c); if (d?.at) ev.push([staff ? 'ctl.delegatedStaff' : 'ctl.delegated', d.at]);
+  if (c.ratedAt) ev.push([staff ? 'ctl.ratedStaff' : 'ctl.rated', c.ratedAt]);
+  return ev.filter(e => okMs(e[1])).sort((a, b) => a[1] - b[1]);
+}
+// سطر حدث في المسار: النص، والتاريخ والوقت كاملان (<time datetime>)، ومن قام به وملاحظته (مسار الموظف فقط)
+export const ctlRow = (label, ms, extra = '') => `<li><b>${label}</b> <time datetime="${isoMs(ms)}">${when(ms)}</time>${extra}</li>`;
+export function claimTimeline(c, staff = false){
   // H23: آخر موعد للاستلام لا يُكرَّر هنا: يظهر في بطاقة الرمز (صاحب الطلب) وفي سطر المهلة (الموظف)
-  return `<ol class="ctl" aria-label="${t('ctl.title')}">${ev.filter(e => typeof e[1] === 'number' && e[1] > 0)
-    .map(([k, ms]) => `<li><b>${t(k)}</b> <span>${when(ms)}</span></li>`).join('')}</ol>`;
+  return `<div class="ctl-box"><span class="ctl-h">${icon('clock')}${t('ctl.title')}</span>
+    <ol class="ctl" aria-label="${t('ctl.title')}">${timelineEvents(c, staff).map(([k, ms]) => ctlRow(t(k), ms)).join('')}</ol></div>`;
 }
 // حالة الفتح والطي التي اختارها المستخدم (تبقى عند إعادة الرسم الحيّ): مفتاح البطاقة ← مفتوحة؟ (actions.js يحدّثها)
 export const CARD_OPEN = new Map(), ENDED_OPEN = new Map();
@@ -125,10 +134,13 @@ export function tabNum(newCount, count){
   if (newCount) return `<span class="count"><span aria-hidden="true">${newCount}</span><span class="sr-only">${t('mine.newSr', {n: newCount})}</span></span>`;
   return count ? `<span class="tab-n">${count}</span>` : '';
 }
-export function mcard({key, id = '', open, head, pillHtml, next, tone = '', body, fresh, muted}){
+// H34: upd = وقت آخر تحديث (ملّي ثانية): سطر صغير «آخر تحديث: قبل ساعة» في الملخّص، وعليه التاريخ الكامل تلميحاً
+export const updOf = x => Math.max(lastAt(x), Number(x?.delegate?.at) || 0);
+export function mcard({key, id = '', open, head, pillHtml, next, tone = '', body, fresh, muted, upd = 0}){
   return `<details class="mcard${tone === 'warn' ? ' attn' : ''}${fresh ? ' new' : ''}${muted ? ' muted' : ''}" data-card="${esc(key)}"${id ? ` id="${esc(id)}"` : ''} ${openOf(key, open) ? 'open' : ''}>
     <summary class="mcard-sum"><span class="mcard-top"><span class="mcard-h">${head}</span>${pillHtml}</span>
-      <span class="next ${tone}">${icon(tone === 'warn' ? 'alert' : 'fwd')}<span>${next}</span></span></summary>
+      <span class="next ${tone}">${icon(tone === 'warn' ? 'alert' : 'fwd')}<span>${next}</span></span>
+      ${okMs(upd) ? `<span class="upd">${t('c.lastUpd', {when: relT(upd)})}</span>` : ''}</summary>
     <div class="mcard-body">${body}</div>
   </details>`;
 }

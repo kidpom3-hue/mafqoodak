@@ -224,6 +224,54 @@ let afterDelegate = null;
   await ctx.close();
 }
 
+// ---------- 7) H34: تاريخ ظاهر لكل تحديث على الطلب ----------
+{
+  const h = 3600e3;
+  const tl = {
+    'items/t1': item('t1', {cat: 'bags', sub: 'حقيبة ظهر', title: 'حقيبة ظهر', status: 'returned', returnedAt: now - 2 * h}), 'itemSecrets/t1': secret(),
+    // طلب مكتمل: أُرسل، سُئل وأجاب، عُدّل، قُبل، فُوّض شخص، سُلّم، قُيّم
+    'claims/t1_zed': claim('t1', 'zed', {createdAt: now - 9 * h, editedAt: now - 8.5 * h, question: 'ما لون الميدالية؟', askedAt: now - 8 * h, askedBy: 'staffA', answer: 'زرقاء', answeredAt: now - 7 * h,
+      status: 'done', decidedAt: now - 6 * h, decidedBy: 'staffA', delegate: {name: 'سالم', last4: '5678', at: now - 5 * h}, doneAt: now - 2 * h, doneBy: 'staffA',
+      handoverNote: 'استلمه المفوَّض: سالم — آخر 4: 5678', rating: 5, ratedAt: now - h}),
+    // قيود السجل: قُبل ثم أُلغي القبول ثم قُبل من جديد، وسؤال، وتسليم (السجل يحفظ كل قرار؛ الطلب يحفظ آخر قرار فقط)
+    'logs/l1': {officeId: O, itemId: 't1', claimId: 't1_zed', reportId: '', action: 'ask', by: 'staffA', at: now - 8 * h, note: 'ما لون الميدالية؟'},
+    'logs/l2': {officeId: O, itemId: 't1', claimId: 't1_zed', reportId: '', action: 'approve', by: 'staffA', at: now - 6.8 * h, note: ''},
+    'logs/l3': {officeId: O, itemId: 't1', claimId: 't1_zed', reportId: '', action: 'reject', by: 'staffA', at: now - 6.5 * h, note: 'خطأ'},
+    'logs/l4': {officeId: O, itemId: 't1', claimId: 't1_zed', reportId: '', action: 'reactivate', by: 'staffA', at: now - 6.2 * h, note: ''},
+    'logs/l5': {officeId: O, itemId: 't1', claimId: 't1_zed', reportId: '', action: 'approve', by: 'staffA', at: now - 6 * h, note: ''},
+    'logs/l6': {officeId: O, itemId: 't1', claimId: 't1_zed', reportId: '', action: 'handover', by: 'staffA', at: now - 2 * h, note: 'استلمه المفوَّض: سالم — آخر 4: 5678', checks: ['ho.generic', 'ho.byDelegate']},
+  };
+  // صاحب الطلب: كل حدث بتاريخ ظاهر (<time datetime>)، و«آخر تحديث» في الملخّص
+  const z = await open(zed, 'visitor', {...base(), ...tl});
+  await go(z.p, 'mine');
+  const mz = await z.p.evaluate(() => { const c = document.querySelector('details[data-card="c:t1_zed"]'); if (!c) return null;
+    return {upd: !!c.querySelector('summary .upd time[title]'), rows: [...c.querySelectorAll('.ctl li')].map(li => ({t: li.querySelector('b')?.textContent, d: !!li.querySelector('time[datetime]')}))}; });
+  expect(mz?.upd, 'المسار: لا «آخر تحديث» في ملخّص بطاقة الطلب');
+  expect(mz?.rows.length === 8 && mz.rows.every(r => r.d), 'المسار (صاحب الطلب): ليس كل حدث بتاريخ ظاهر ' + JSON.stringify(mz?.rows));
+  const zl = (mz?.rows || []).map(r => r.t);
+  for (const k of ['ctl.sent', 'ctl.edited', 'ctl.asked', 'ctl.answered', 'ctl.dec.approved', 'ctl.delegated', 'ctl.done', 'ctl.rated'])
+    expect(zl.includes(await T(z.p, k)), 'المسار (صاحب الطلب): ينقص ' + k);
+  expect(!z.errs.length, 'المسار (صاحب الطلب): ' + z.errs.join(' | '));
+  await z.ctx.close();
+  // الموظف: كل قرار من السجل (قبول، رفض، إعادة، قبول، تسليم) بتاريخه ومن قام به، بلا تكرار للقرار الأخير
+  const s = await open(staff, 'staff', {...base(), ...tl});
+  await go(s.p, 'staff', {tab: 'claims'});
+  await s.p.evaluate(() => document.querySelector('#st-claims-ended')?.click()); await s.p.waitForTimeout(400);
+  await s.p.evaluate(() => document.querySelector('[data-act=claimHist]')?.click()); await s.p.waitForTimeout(700);
+  // فتح البطاقة بالنقر على ملخّصها كما يفعل الموظف (يقرأ قيود السجل لهذا الطلب)
+  await s.p.evaluate(() => document.querySelector('details[data-card="s:t1_zed"] > summary')?.click()); await s.p.waitForTimeout(900);
+  const ms = await s.p.evaluate(() => { const c = document.querySelector('details[data-card="s:t1_zed"]'); if (!c) return null;
+    return [...c.querySelectorAll('.ctl li')].map(li => ({t: li.querySelector('b')?.textContent, d: !!li.querySelector('time[datetime]'), by: !!li.querySelector('.ctl-by')})); });
+  const labels = ms?.map(r => r.t) || [];
+  const approve = await T(s.p, 'log.approve'), reject = await T(s.p, 'log.reject'), react = await T(s.p, 'log.reactivate'), hand = await T(s.p, 'log.handover');
+  expect(labels.filter(x => x === approve).length === 2 && labels.includes(reject) && labels.includes(react) && labels.includes(hand), 'المسار (الموظف): قرارات السجل ناقصة ' + JSON.stringify(labels));
+  expect(!labels.includes(await T(s.p, 'ctl.dec.approved')) && !labels.includes(await T(s.p, 'ctl.done')) && !labels.includes(await T(s.p, 'ctl.asked')), 'المسار (الموظف): قرار مكرر من الطلب والسجل معاً');
+  expect(labels.includes(await T(s.p, 'ctl.delegatedStaff')) && labels.includes(await T(s.p, 'ctl.ratedStaff')) && labels.includes(await T(s.p, 'ctl.answeredStaff')), 'المسار (الموظف): أحداث صاحب الطلب ناقصة');
+  expect(ms?.length && ms.every(r => r.d) && ms.filter(r => r.by).length === 6, 'المسار (الموظف): حدث بلا تاريخ أو قرار بلا اسم من قام به ' + JSON.stringify(ms));
+  expect(!s.errs.length, 'المسار (الموظف): ' + s.errs.join(' | '));
+  await s.ctx.close();
+}
+
 await browser.close(); server.close();
 if (fails.length){ console.log(`✘ ${fails.length} من ${checks}:\n- ` + fails.join('\n- ')); process.exit(1); }
-console.log(`✔ إثبات الملكية سليم: ${checks} فحصاً (سجل أغراضي بوقت الخادم، ونسخته في الطلب، وقوة الإثبات وسبب قبول الثمين الضعيف، والتفويض، والتسليم لصاحب الطلب أو مفوَّضه فقط، وتجاوز الإدارة، والإيصال).`);
+console.log(`✔ إثبات الملكية سليم: ${checks} فحصاً (سجل أغراضي بوقت الخادم، ونسخته في الطلب، وقوة الإثبات وسبب قبول الثمين الضعيف، والتفويض، والتسليم لصاحب الطلب أو مفوَّضه فقط، وتجاوز الإدارة، والإيصال، وH34: تاريخ ظاهر لكل تحديث على الطلب ومسار الموظف الكامل من السجل).`);

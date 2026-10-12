@@ -1470,3 +1470,17 @@ table.t td>.link{min-height:36px;display:inline-flex;align-items:center}
 .rcpt-note{color:var(--muted);text-align:center}
 @media (max-width:480px){ .rcpt-facts{grid-template-columns:minmax(0,1fr)} .rcpt-facts dd{margin-bottom:6px} }
 @media print{ .rcpt{border-color:#999;background:#fff;color:#000} .receipt-page .rcpt{min-height:240mm} }
+
+/* ---------- H34: تاريخ ظاهر لكل تحديث على الطلب ----------
+   «مسار الطلب» بعنوان صغير ظاهر، وكل حدث بتاريخه ووقته (وللموظف: من قام به وملاحظته)، و«آخر تحديث» في ملخّص كل بطاقة */
+.ctl-box{display:flex;flex-direction:column;gap:6px}
+.ctl-h{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--ink)}
+.ctl-h svg{width:15px;height:15px;color:var(--muted)}
+.ctl li time{color:var(--muted)}
+/* من قام بالحدث: سطر صغير تحت التاريخ، والاسم داخل السطر (.person في غيره flex بصورة 28px) */
+.ctl .ctl-by{display:flex;align-items:center;gap:4px;font-size:12.5px}
+.ctl .ctl-by .person{display:inline-flex;gap:4px;font-weight:600}
+.ctl .ctl-by .person img{width:18px;height:18px}
+.ctl .tl-note{display:block;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.mcard-sum .upd{grid-column:1;font-size:12px;color:var(--muted)}
+.mcard-sum .upd time{color:inherit}
