@@ -18,7 +18,7 @@ export const firebaseConfig = {
 // رقم إصدار التطبيق (H6): يظهر بخط صغير في أسفل قائمة الحساب وفي التذييل، لتتأكد أن جوالك يعرض آخر نسخة.
 // ارفعه مع CACHE في sw.js في كل Pull Request (الرقمان متساويان دائماً: APP_VERSION '23' ⇔ CACHE 'mafqoodak-v23').
 // tools/check-i18n.mjs يفشل إن اختلفا.
-export const APP_VERSION = '53';
+export const APP_VERSION = '54';
 
 // 2) إعدادات التطبيق
 export const SETTINGS = {
@@ -47,9 +47,9 @@ export const SETTINGS = {
   // معطّلة افتراضياً؛ فعّلها فقط إن كانت أنظمة المنشأة تسمح بإعطاء الغرض لمن وجده.
   allowReturnToFinder: false,
 
-  // App Check (اختياري، المرحلة H0): مفتاح موقع reCAPTCHA v3 (Site key، لا المفتاح السري).
-  // فارغ = معطّل والتطبيق يعمل كما هو. debug: true للتجربة على localhost فقط. الخطوات في README.md
-  appCheck: {siteKey: '', debug: false},
+  // App Check (المرحلة H0، وH35: reCAPTCHA Enterprise): مفتاح الموقع (Site key) عام ولا خطر في وضعه هنا.
+  // فارغ = معطّل. debug يبقى false دائماً في النشر (ولا يعمل إلا على localhost أصلاً). الخطوات في README.md
+  appCheck: {siteKey: '6Lcfz-stAAAAAGiOjXxFhWTvh8v07X1vraJne1VP', debug: false},
 
   // H19: وضع المكتب الواحد. رقم المكتب هنا = الزائر يدخله مباشرة: لا قائمة مواقع ولا أنواع منشآت.
   // لوحة الإدارة تبقى متعددة المواقع. اتركه '' لإظهار قائمة المواقع للزوار.
