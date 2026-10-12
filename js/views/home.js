@@ -40,7 +40,6 @@ export function vHome(){
           ${icon('search')}<input id="hq" name="q" type="search" placeholder="${t('home.searchPh')}" autocomplete="off" aria-label="${t('home.searchAria')}">
           <button class="btn" type="submit">${t('home.search')}</button>
         </form>
-        ${officeLine(o)}
       </div>
       ${TAG_ART}
       <div class="cta3 cta2">
@@ -81,13 +80,8 @@ export function vHome(){
   </div>`;
 }
 
-// H26: سطر معلومات المكتب تحت البحث: المكان · ساعات العمل · الهاتف (كل عنصر فقط إن كانت بياناته موجودة)
-// H29: بلا نقاط فاصلة (كانت تبقى وحدها في أول السطر حين يلتف)؛ الأيقونة تفصل العناصر، والهاتف بـ telLink كبقية الصفحات
-function officeLine(o){
-  const parts = [oPlace(o) && `<span>${icon('pin')}${esc(oPlace(o))}</span>`, oHours(o) && `<span>${icon('clock')}${esc(oHours(o))}</span>`,
-    o?.phone && `<span>${icon('phone')}${telLink(o.phone)}</span>`].filter(Boolean);
-  return parts.length ? `<p class="hh-info" aria-label="${t('home.officeInfo')}">${parts.join('')}</p>` : '';
-}
+// H30: حُذف سطر المكان والأوقات والهاتف من الواجهة بطلب المالك (لا حاجة له فيها). تبقى في صفحة «المكتب»
+//      وحيث يحتاجها الزائر للاستلام (صفحة الغرض، وبطاقة رمز الاستلام، وبطاقة الخدمة)
 // H26: صف مضغوط في «أحدث المفقودات» (أيقونة التصنيف + العنوان + سطر صغير)، زرّ يفتح الغرض أو طلب الوصف
 const miniRow = ({act, ic, title, sub, ref = ''}) => `<li><button class="mini-row" ${act}><span class="mr-ic">${icon(ic)}</span>
   <span class="grow"><b>${esc(title)}</b><small>${ref ? `<span class="ref">${esc(ref)}</span> ` : ''}${sub}</small></span>${icon('fwd')}</button></li>`;

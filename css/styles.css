@@ -1276,12 +1276,6 @@ ul.sf-links{list-style:none;margin:0;padding:0;display:flex;flex-direction:colum
 
 
 /* ================= H26 (طُلب باسم H25): رئيسية أقصر، وبلاغ بلا حاجز، وبحث فارغ يقود إلى البلاغ ================= */
-/* سطر معلومات المكتب تحت البحث في الواجهة: المكان · الساعات · الهاتف */
-.hh-info{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0;font-size:13px;color:var(--hero-muted)}
-.hh-info>span:not(.dot){display:inline-flex;align-items:center;gap:5px}
-.hh-info svg{width:15px;height:15px;color:var(--hero-hl);flex:none}
-.hh-info a{color:var(--hero-ink);text-decoration:underline;text-decoration-color:var(--hero-line);text-underline-offset:3px}
-.hh-info .dot{opacity:.6}
 /* «أحدث المفقودات» بأقل من 3 أغراض: صفوف مضغوطة بلا مساحة صورة */
 .latest-mini{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden}
 .latest-mini li+li{border-top:1px solid var(--line)}
@@ -1383,10 +1377,7 @@ a.tel{color:var(--primary);font-weight:600;text-decoration:underline;text-decora
    1) اختيار الصورة في البلاغ وإشعار التسليم وتعديل الغرض: عمود الأزرار كان ينكمش إلى 20px فيلتف «اختر صورة» على سطرين */
 .photo-drop .col{flex:1 1 auto}
 .photo-drop .btn,.filebtn{white-space:nowrap}
-/* 2) سطر المكتب في الواجهة بلا نقاط فاصلة (كانت تبقى وحدها أول السطر عند الالتفاف): الأيقونة تفصل العناصر،
-      ورابط الهاتف (telLink) بلون الواجهة الداكنة لا بلون الروابط العادية */
-.hh-info{gap:6px 16px}
-.hh-info a.tel{color:var(--hero-ink);font-weight:500;text-decoration-color:var(--hero-line)}
+/* 2) (H30: حُذف سطر المكان والأوقات والهاتف من الواجهة، ومعه أنماطه .hh-info) */
 /* 3) «تذكّرني على هذا الجهاز» في صفحة الدخول: الخيار في إطار، والتلميح تحته بمحاذاة نصه (خارج label حتى يبقى اسم الخيار قصيراً لقارئ الشاشة) */
 .remember{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .remember .check{font-weight:600;color:var(--ink);cursor:pointer;min-height:28px;align-items:center}

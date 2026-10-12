@@ -239,7 +239,6 @@ export const EN = {
   "br.searchNone": "Didn't find it?",
   "br.searchNoneSub": "File a report and you'll get an alert as soon as a similar item is recorded.",
   "br.searchReport": "File a report",
-  "home.officeInfo": "Office details",
   "home.privacyMore": "Details",
   "ui.accountOf": "My account: {name}",
   "ui.signInShort": "Sign in",
