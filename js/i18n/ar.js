@@ -239,7 +239,6 @@ export const AR = {
   "br.searchNone": "لم تجده؟",
   "br.searchNoneSub": "قدّم بلاغاً، ويصلك تنبيه فور تسجيل غرض مشابه.",
   "br.searchReport": "تقديم بلاغ",
-  "home.officeInfo": "معلومات المكتب",
   "home.privacyMore": "التفاصيل",
   "ui.accountOf": "حسابي: {name}",
   "ui.signInShort": "دخول",

@@ -4,7 +4,7 @@
 //    إعادة التحديد تعيد كل شيء كما كان. ونافذة الحساب تذكر أن الجهاز مشترك.
 // 2) زر «دخول» في الترويسة وأنت في صفحة الدخول: «الصفحة الحالية»، ولا يمسح وجهة العودة بعد الدخول.
 // 3) نصوص لا تنكسر: «اختر صورة» في سطر واحد (كان العمود ينكمش إلى 20px)، و«2:30 م» لا ينقسم على سطرين،
-//    ولا نقاط فاصلة يتيمة في سطر المكتب بالواجهة. على 320 و390 باللغتين، وبالخط العادي والكبير جداً.
+//    والواجهة بلا سطر المكان والأوقات والهاتف (H30: حُذف منها بطلب المالك؛ يبقى في صفحة المكتب). على 320 و390 باللغتين، وبالخط العادي والكبير جداً.
 // التشغيل: cd tools && npm run device   (لمتصفح مثبّت مسبقاً: CHROMIUM_PATH=/path/to/chromium npm run device)
 import http from 'http';
 import fs from 'fs';
@@ -141,8 +141,14 @@ for (const lang of ['ar', 'en']) for (const width of [320, 390]) for (const text
   if (!text) expect(rangeLines === 1, `3 (${tag}): فترة العمل على ${rangeLines} أسطر بدل سطر واحد`);
   expect(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `3 (${tag}): تمرير أفقي في صفحة المكتب`);
   await go(p, 'home');
-  expect(await p.evaluate(() => !document.querySelector('.hh-info .dot') && !!document.querySelector('.hh-info a.tel')), `3 (${tag}): سطر المكتب في الواجهة بنقاط فاصلة أو بلا رابط هاتف`);
+  // H30: لا مكان ولا أوقات ولا هاتف في الواجهة (لا السطر القديم .hh-info ولا رابط اتصال ولا أيقونات الموقع والساعة)
+  const heroInfo = await p.evaluate(() => { const h = document.querySelector('.hero-home'); if (!h) return 'لا واجهة';
+    return [h.querySelector('.hh-info') && '.hh-info', h.querySelector('a.tel, a[href^="tel:"]') && 'رابط الهاتف'].filter(Boolean).join('، '); });
+  expect(heroInfo === '', `3 (${tag}): سطر المكان والأوقات والهاتف ما زال في الواجهة (${heroInfo})`);
   expect(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `3 (${tag}): تمرير أفقي في الواجهة`);
+  // ويبقى في صفحة المكتب (المكان والأوقات ورابط الاتصال)
+  await go(p, 'office');
+  expect(await p.evaluate(() => !!document.querySelector('a.tel[href^="tel:"]')), `3 (${tag}): صفحة المكتب بلا رابط هاتف المكتب`);
   expect(!p.errs.length, `3 (${tag}): أخطاء في الصفحة: ${p.errs.join(' | ')}`);
   await ctx.close();
 }
@@ -153,4 +159,4 @@ if (fails.length){
   for (const f of fails) console.log('- ' + f);
   process.exit(1);
 }
-console.log(`✔ الجهاز المشترك وثبات النصوص: ${checks} فحصاً («تذكّرني»، والدخول في الجلسة، والنسخة في الذاكرة، وزر الدخول، و«اختر صورة»، والأوقات، وسطر المكتب).`);
+console.log(`✔ الجهاز المشترك وثبات النصوص: ${checks} فحصاً («تذكّرني»، والدخول في الجلسة، والنسخة في الذاكرة، وزر الدخول، و«اختر صورة»، والأوقات، والواجهة بلا سطر المكتب).`);
