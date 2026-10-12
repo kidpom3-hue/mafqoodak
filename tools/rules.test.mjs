@@ -1093,5 +1093,69 @@ await t('v21-6: ويتغير حاله بقيده', upItem(A, 'lx1', {status: 'ar
 await t('v21-6: لكن لا يتغير الحقل القديم نفسه', updateDoc(doc(A, 'items/lx2'), {oldField: 'جديد', updatedAt: now}), false);
 await t('v21-6: وإعادة كتابته تحذف الحقل القديم', batch(A, (b, r) => b.set(r('items/lx3'), pub('lx3'))));
 
+
+// ── v22 (H33): «سجل أغراضي» بوقت الخادم، ونسخته في طلب الاستلام، والمفوَّض بالاستلام، وأسئلة المعرّف الفريد ──
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  for (const [k, cat] of [['v22p1', 'phones'], ['v22p2', 'phones'], ['v22b1', 'bags'], ['v22b2', 'bags'], ['v22b3', 'bags'], ['v22i1', 'ids'], ['v22d1', 'bags']]){
+    await setDoc(doc(d, 'items/' + k), pub(k, cat)); await setDoc(doc(d, 'itemSecrets/' + k), sec); }
+  await setDoc(doc(d, 'belongings/gBob'), {uid: 'bob', cat: 'phones', title: 'جوال بوب', serial: 'BOB12345', at: Timestamp.fromMillis(now - 30 * DAY)}); });
+const REG = {uid: 'alice', cat: 'phones', title: 'جوال الدراسة', brand: 'Apple', model: 'iPhone 13', serial: 'F2LXK9ABCD', mark: 'ملصق قطة'};
+await t('v22-1: غير موثّق لا يسجّل غرضاً', mk(dave, 'belongings/gDave', {...REG, uid: 'dave', at: serverTimestamp()}), false);
+await t('v22-1: لا وقت تسجيل قديم (من الجهاز)', mk(alice, 'belongings/g0', {...REG, at: Timestamp.fromMillis(now - 30 * DAY)}), false);
+await t('v22-1: لا وقت تسجيل رقمي', mk(alice, 'belongings/g0', {...REG, at: Date.now()}), false);
+await t('v22-1: لا تسجيل للنقود', mk(alice, 'belongings/g0', {...REG, cat: 'cash', at: serverTimestamp()}), false);
+await t('v22-1: ولا للوثائق الرسمية', mk(alice, 'belongings/g0', {...REG, cat: 'ids', at: serverTimestamp()}), false);
+await t('v22-1: لا تسجيل بلا رقم تسلسلي ولا علامة', mk(alice, 'belongings/g0', {uid: 'alice', cat: 'phones', title: 'جوال', at: serverTimestamp()}), false);
+await t('v22-1: ولا باسم حساب آخر', mk(alice, 'belongings/g0', {...REG, uid: 'bob', at: serverTimestamp()}), false);
+await t('v22-1: ولا بحقل غير معروف', mk(alice, 'belongings/g0', {...REG, at: serverTimestamp(), note: 'x'}), false);
+await t('v22-1: ولا دون حدّ الإغراق (rate)', setDoc(doc(alice, 'belongings/g0'), {...REG, at: serverTimestamp()}), false);
+await t('v22-1: يسجّل غرضه بوقت الخادم', mk(alice, 'belongings/g1', {...REG, at: serverTimestamp()}));
+await t('v22-1: وغرضاً بعلامة مميزة فقط', mk(alice, 'belongings/g2', {uid: 'alice', cat: 'bags', title: 'حقيبة اللابتوب', mark: 'ميدالية نجمة', at: serverTimestamp()}));
+await t('v22-2: صاحبه يقرأ سجله', getDoc(doc(alice, 'belongings/g1')));
+await t('v22-2: ويستعلم عنه', q(alice, 'belongings', ['uid', '==', 'alice']));
+await t('v22-2: غيره لا يقرؤه', getDoc(doc(bob, 'belongings/g1')), false);
+await t('v22-2: ولا الموظف', getDoc(doc(A, 'belongings/g1')), false);
+await t('v22-2: ولا استعلام سجل غيره', q(bob, 'belongings', ['uid', '==', 'alice']), false);
+await t('v22-3: لا يُعدَّل التسجيل (ولا من صاحبه)', updateDoc(doc(alice, 'belongings/g1'), {serial: 'NEW00000'}), false);
+let G1 = null; await env.withSecurityRulesDisabled(async c => { G1 = (await getDoc(doc(c.firestore(), 'belongings/g1'))).data(); });
+const snap = (x = {}) => ({id: 'g1', at: G1.at, cat: 'phones', title: G1.title, brand: G1.brand, model: G1.model, serial: G1.serial, mark: G1.mark, ...x});
+await t('v22-4: لا نسخة بوقت أقدم من التسجيل', mk(alice, 'claims/v22p1_alice', claim('v22p1', 'alice', {reg: snap({at: Timestamp.fromMillis(now - 60 * DAY)})})), false);
+await t('v22-4: ولا برقم تسلسلي مختلف', mk(alice, 'claims/v22p1_alice', claim('v22p1', 'alice', {reg: snap({serial: 'XXXXABCD'})})), false);
+await t('v22-4: ولا بتسجيل حساب آخر', mk(alice, 'claims/v22p1_alice', claim('v22p1', 'alice', {reg: {id: 'gBob', at: Timestamp.fromMillis(now - 30 * DAY), cat: 'phones', title: 'جوال بوب', serial: 'BOB12345'}})), false);
+await t('v22-4: ولا من تصنيف آخر', mk(alice, 'claims/v22b1_alice', claim('v22b1', 'alice', {reg: snap()})), false);
+await t('v22-4: ولا بحقل غير معروف فيها', mk(alice, 'claims/v22p1_alice', claim('v22p1', 'alice', {reg: snap({extra: 1})})), false);
+await t('v22-4: ولا بتسجيل غير موجود', mk(alice, 'claims/v22p1_alice', claim('v22p1', 'alice', {reg: snap({id: 'nope'})})), false);
+await t('v22-4: طلب معه نسخة مطابقة من سجله، وأسئلة المعرّف الفريد', mk(alice, 'claims/v22p1_alice', claim('v22p1', 'alice', {reg: snap(), details: {serial: 'ABCD', sim: 'STC', model: 'iPhone 13'}})));
+await t('v22-4: سؤال آخر 4 من بطاقة المحفظة مسموح', mk(bob, 'claims/v22b2_bob', claim('v22b2', 'bob', {details: {cardLast4: '1234'}})));
+await t('v22-5: لا تُضاف نسخة السجل بتعديل الطلب', updateDoc(doc(bob, 'claims/v22b2_bob'), {reg: {id: 'gBob', at: Timestamp.fromMillis(now - 30 * DAY), cat: 'phones', title: 'جوال بوب', serial: 'BOB12345'}, editedAt: Date.now()}), false);
+await t('v22-5: ولا تتغير بتعديله', updateDoc(doc(alice, 'claims/v22p1_alice'), {reg: snap({serial: 'ZZZZ0000'}), editedAt: Date.now()}), false);
+await t('v22-5: الموظف لا يغيّرها', updateDoc(doc(A, 'claims/v22p1_alice'), {reg: snap({serial: 'ZZZZ0000'})}), false);
+await t('v22-5: حذف التسجيل لاحقاً لا يغيّر الطلب المرسل', deleteDoc(doc(alice, 'belongings/g2')));
+await t('v22-5: ولا يحذف أحد سجل غيره', deleteDoc(doc(bob, 'belongings/g1')), false);
+// المفوَّض بالاستلام
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  await setDoc(doc(d, 'claims/v22d1_carol'), {...claim('v22d1', 'carol', {claimantName: 'كارول', idLast4: '4321'}), status: 'approved', decidedAt: now, decidedBy: 'staffA', pickupBy: now + 7 * DAY});
+  await setDoc(doc(d, 'claims/v22b3_carol'), {...claim('v22b3', 'carol'), status: 'pending'});
+  await setDoc(doc(d, 'claims/' + gid('carol', 'ids', T1)), {...gc('carol', 'ids', T1), itemId: 'v22i1', status: 'approved', decidedAt: now, decidedBy: 'staffA'}); });
+const DLG = () => ({name: 'سالم أخو كارول', last4: '5678', at: Date.now()});
+await t('v22-6: صاحب الطلب المقبول يفوّض شخصاً بالاستلام', updateDoc(doc(carol, 'claims/v22d1_carol'), {delegate: DLG()}));
+await t('v22-6: لا تفويض لطلب قيد المراجعة', updateDoc(doc(carol, 'claims/v22b3_carol'), {delegate: DLG()}), false);
+await t('v22-6: ولا في الوثائق الرسمية', updateDoc(doc(carol, 'claims/' + gid('carol', 'ids', T1)), {delegate: DLG()}), false);
+await t('v22-6: ولا بآخر 4 غير رقمية', updateDoc(doc(carol, 'claims/v22d1_carol'), {delegate: {...DLG(), last4: 'abcd'}}), false);
+await t('v22-6: ولا باسم قصير', updateDoc(doc(carol, 'claims/v22d1_carol'), {delegate: {...DLG(), name: 'س'}}), false);
+await t('v22-6: ولا بوقت قديم', updateDoc(doc(carol, 'claims/v22d1_carol'), {delegate: {...DLG(), at: Date.now() - 3 * DAY}}), false);
+await t('v22-6: ولا بحقل غير معروف', updateDoc(doc(carol, 'claims/v22d1_carol'), {delegate: {...DLG(), phone: '0500000000'}}), false);
+await t('v22-6: ولا مع تغيير حقل آخر', updateDoc(doc(carol, 'claims/v22d1_carol'), {delegate: DLG(), idLast4: '0000'}), false);
+await t('v22-6: غير صاحب الطلب لا يفوّض', updateDoc(doc(bob, 'claims/v22d1_carol'), {delegate: DLG()}), false);
+await t('v22-6: والموظف لا يكتب التفويض', updateDoc(doc(A, 'claims/v22d1_carol'), {delegate: DLG()}), false);
+await t('v22-6: صاحب الطلب يلغي التفويض', updateDoc(doc(carol, 'claims/v22d1_carol'), {delegate: deleteField()}));
+// «حذف حسابي»: نسخة السجل والمفوَّض تُمسحان أيضاً
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  await setDoc(doc(d, 'claims/an2_carol'), {...claim('an1', 'carol', {claimantName: 'كارول', idLast4: '4321'}), status: 'done', doneAt: now,
+    reg: {id: 'gx', at: Timestamp.fromMillis(now - 9 * DAY), cat: 'bags', title: 'حقيبة', mark: 'نجمة'}, delegate: {name: 'سالم', last4: '5678', at: now}}); });
+await t('v22-7: لا مسح يُبقي نسخة السجل', updateDoc(doc(carol, 'claims/an2_carol'), {...wipe(), delegate: deleteField()}), false);
+await t('v22-7: ولا يُبقي المفوَّض', updateDoc(doc(carol, 'claims/an2_carol'), {...wipe(), reg: deleteField()}), false);
+await t('v22-7: المسح الكامل مع السجل والمفوَّض مسموح', updateDoc(doc(carol, 'claims/an2_carol'), {...wipe(), reg: deleteField(), delegate: deleteField()}));
+
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

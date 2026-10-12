@@ -3,7 +3,7 @@ import { icon, LOGO, statusLabel, MODE_LABEL, brandOf } from './constants.js';
 import { t } from './i18n.js';
 import { $, $$, esc, toast, SS } from './utils.js';
 import { S, curOffice, modes, homeRoute, unseenCount, staffNew, getPhoto, getName, getEmail, SHARE_RE, OFFICE_RE, singleMode, STAFF_TABS, TAB_RE } from './state.js';
-import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, vReportForm, vMine, vOffice, vDone } from './views/visitor.js';
+import { vPick, vBrowse, updateBrowse, vItem, vClaimForm, updateClaimRegs, vReportForm, vMine, vOffice, vDone } from './views/visitor.js';
 import { syncTitle } from './notify.js';   // H31: عنوان الصفحة في تبويب المتصفح (اسم الصفحة + المكتب)
 import { vLogin, vSetup, vNotConfigured } from './views/auth.js';
 import { vHome, updateHome, vFound, vHandin, footer, fillFootQr } from './views/home.js';
@@ -22,8 +22,12 @@ const ROUTES = {
   handin: {live: false, v: vHandin, after: initForm},
   browse: {live: true, v: vBrowse, update: updateBrowse},
   item: {live: true, v: vItem},
-  claim: {live: false, v: vClaimForm},
-  gclaim: {live: false, v: vClaimForm},   // H11: طلب مجمّع بالوصف ({cat})
+  claim: {live: false, v: vClaimForm, update: updateClaimRegs},   // H33: update يملأ «سجل أغراضي» عند وصوله
+  gclaim: {live: false, v: vClaimForm, update: updateClaimRegs},   // H11: طلب مجمّع بالوصف ({cat})
+  // H33: «سجل أغراضي» (تسجيل الأجهزة قبل ضياعها) وإيصال التسليم المطبوع
+  regs: {live: true, lazy: 'regs', v: 'vRegs'},
+  regAdd: {live: false, lazy: 'regs', v: 'vRegForm'},
+  receipt: {live: true, lazy: 'print', v: 'vReceipt'},
   report: {live: false, v: vReportForm, after: initForm},
   mine: {live: true, v: vMine},   // H4: التنبيهات تُقرأ بالنقر على التبويب أو فتح البطاقة، لا بمجرد الدخول
   done: {live: false, v: vDone},   // H31: صفحة التأكيد بعد إرسال بلاغ أو طلب أو إشعار ({kind, id, …})
@@ -250,7 +254,7 @@ function renderMain(){
 }
 /* H24: مسار التنقل (أعلى الصفحة) والتذييل (أسفلها) في صفحات الزائر فقط، بأسلوب المنصات الحكومية.
    يُضافان داخل أول عنصر في #main (العنصر ذو data-view يبقى أولاً لأن دوال update تبحث عنه) */
-const VISITOR_PAGES = ['found', 'handin', 'browse', 'item', 'claim', 'gclaim', 'report', 'mine', 'done', 'office', 'privacy', 'service', 'numbers', 'a11y', 'login'];
+const VISITOR_PAGES = ['found', 'handin', 'browse', 'item', 'claim', 'gclaim', 'report', 'mine', 'done', 'office', 'privacy', 'service', 'numbers', 'a11y', 'login', 'regs', 'regAdd'];
 // خطوة المسار: [النص، المسار، params] — الأخيرة هي الصفحة الحالية (بلا رابط)
 function trail(){
   const {name, params: p = {}} = S.route;
@@ -259,6 +263,7 @@ function trail(){
     found: [t('term.handin')], handin: [found, t('hi.title')], browse: [t('nav.browse')],
     item: [browse, t('bc.item')], claim: [browse, t('cl.title')], gclaim: [browse, t('cl.title')],
     report: [svc, t('rp.title')], mine: [t('nav.mine')], done: [[t('nav.mine'), 'mine'], t('done.crumb')], office: [t('foot.office')], privacy: [t('foot.legal')],
+    regs: [t('rg.title')], regAdd: [[t('rg.title'), 'regs'], t('rg.addTitle')],
     service: ['claim', 'report', 'handin'].includes(p.id) ? [svc, t('svc.' + p.id + '.name')] : [t('svc.details')], numbers: [t('num.title')], a11y: [t('foot.a11y')], login: [t('login.titleIn')],
   }[name];
   return cur ? [[t('nav.home'), homeRoute()], ...cur] : null;

@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v21 (H29: الإعلان العام للغرض بحقوله المعروفة فقط وبأطوال محدودة؛ v20 (H28: حذف تقييم الصفحات pageFeedback؛ v19 (H27: «حذف حسابي» يمسح بيانات الطلب المنتهي ولا يكتب فيه قيماً جديدة)؛ v18 (H25: «هل كانت هذه الصفحة مفيدة؟» عدّادات مجمّعة بلا بيانات شخصية؛ v17 (H23: من سلّم الغرض لا يطلب استلامه ولا يُربط طلبه به؛ v16 (H22: حد يومي للإنشاء لكل حساب، والأدلة الفارغة لا تُملأ بعد 24 ساعة إلا مكان العثور، وحدود config وprivate وpublicStats؛ v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
+// قواعد حماية بيانات مفقودك — الإصدار v22 (H33: إثبات الملكية بمستوى عالمي: «سجل أغراضي» بوقت تسجيل من الخادم لا يُعدَّل، ونسخته في طلب الاستلام تطابقه حرفياً، وتفويض شخص بالاستلام لطلب مقبول، وأسئلة الرقم التسلسلي وآخر 4 من بطاقة المحفظة؛ v21 (H29: الإعلان العام للغرض بحقوله المعروفة فقط وبأطوال محدودة؛ v20 (H28: حذف تقييم الصفحات pageFeedback؛ v19 (H27: «حذف حسابي» يمسح بيانات الطلب المنتهي ولا يكتب فيه قيماً جديدة)؛ v18 (H25: «هل كانت هذه الصفحة مفيدة؟» عدّادات مجمّعة بلا بيانات شخصية؛ v17 (H23: من سلّم الغرض لا يطلب استلامه ولا يُربط طلبه به؛ v16 (H22: حد يومي للإنشاء لكل حساب، والأدلة الفارغة لا تُملأ بعد 24 ساعة إلا مكان العثور، وحدود config وprivate وpublicStats؛ v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -191,7 +191,36 @@ service cloud.firestore {
     // (نفس القائمة في DETAIL_KEYS في js/constants.js — عدّلهما معاً)
     function detailKeys() {
       return ['amount', 'denoms', 'holder', 'docName', 'docLast4', 'issuer', 'cardName', 'cashInside', 'model', 'lockscreen',
-              'mark', 'keyCount', 'keyring', 'carBrand', 'engraving', 'size', 'caseDesc', 'inside', 'bookName', 'nameOn'];
+              'mark', 'keyCount', 'keyring', 'carBrand', 'engraving', 'size', 'caseDesc', 'inside', 'bookName', 'nameOn',
+              // v22 (H33): آخر 4 من الرقم التسلسلي أو IMEI، وشركة الشريحة، وآخر 4 من بطاقة داخل المحفظة
+              'serial', 'sim', 'cardLast4'];
+    }
+    // ── v22 (H33): «سجل أغراضي» ──
+    function regDoc(id) { return /databases/$(database)/documents/belongings/$(id); }
+    // تصنيفات لا تُسجَّل (نفس REG_BLOCK في js/constants.js — عدّلهما معاً): النقود والوثائق الرسمية
+    function regCatOk(c) { return c is string && c.size() > 0 && c.size() <= 40 && !(c in ['cash', 'ids']); }
+    // نسخة السجل في طلب الاستلام: مطابقة حرفياً لوثيقة السجل نفسها (ومنها وقت التسجيل من الخادم)، لصاحب الطلب، ومن تصنيف الطلب.
+    // فلا يستطيع أحد أن يدّعي تسجيلاً أقدم مما هو، ولا أن يغيّر رقماً تسلسلياً بعد أن يرى الغرض
+    function regOk(d, claimCat) {
+      return d.reg is map
+        && d.reg.keys().hasOnly(['id', 'at', 'cat', 'title', 'brand', 'model', 'serial', 'color', 'mark'])
+        && d.reg.id is string && d.reg.id.size() > 0 && d.reg.id.size() <= 40
+        && get(regDoc(d.reg.id)).data.uid == me()
+        && d.reg.at == get(regDoc(d.reg.id)).data.at
+        && d.reg.get('cat', '') == get(regDoc(d.reg.id)).data.cat && get(regDoc(d.reg.id)).data.cat == claimCat
+        && d.reg.get('title', '') == get(regDoc(d.reg.id)).data.get('title', '')
+        && d.reg.get('brand', '') == get(regDoc(d.reg.id)).data.get('brand', '')
+        && d.reg.get('model', '') == get(regDoc(d.reg.id)).data.get('model', '')
+        && d.reg.get('serial', '') == get(regDoc(d.reg.id)).data.get('serial', '')
+        && d.reg.get('color', '') == get(regDoc(d.reg.id)).data.get('color', '')
+        && d.reg.get('mark', '') == get(regDoc(d.reg.id)).data.get('mark', '');
+    }
+    // المفوَّض بالاستلام: الاسم كما في هويته وآخر 4 أرقام منها، ووقت التفويض «الآن»
+    function delegateOk(x) {
+      return x is map && x.keys().hasOnly(['name', 'last4', 'at'])
+        && x.name is string && x.name.size() >= 3 && x.name.size() <= 120
+        && x.last4 is string && x.last4.matches('[0-9]{4}')
+        && x.at is number && x.at > request.time.toMillis() - 86400000 && x.at < request.time.toMillis() + 86400000;
     }
     function validDetails(d) {
       return !('details' in d) || (d.details is map
@@ -502,6 +531,25 @@ service cloud.firestore {
       allow delete: if signedIn() && (report().uid == me() || isAdmin());
     }
 
+    // v22 (H33): «سجل أغراضي»: الطالب يسجّل جهازه ورقمه التسلسلي قبل أن يضيع (مثل برامج تسجيل الممتلكات في الجامعات).
+    // يراه صاحبه فقط. وقت التسجيل (at) وقت الخادم نفسه، والوثيقة لا تُعدَّل أبداً (للتصحيح: حذف ثم تسجيل جديد بوقت جديد)،
+    // فتسجيلٌ أقدم من العثور على الغرض دليل لا يُزوَّر. الموظف يرى نسخته في طلب الاستلام (reg) لا الوثيقة نفسها
+    match /belongings/{regId} {
+      function validReg(d) {
+        return d.keys().hasOnly(['uid', 'cat', 'sub', 'title', 'brand', 'model', 'serial', 'color', 'mark', 'at'])
+          && d.uid == me() && regCatOk(d.cat) && d.at == request.time
+          && d.title is string && d.title.size() >= 3 && d.title.size() <= 80
+          && strMax(d, 'sub', 200) && strMax(d, 'brand', 40) && strMax(d, 'model', 60)
+          && strMax(d, 'serial', 40) && strMax(d, 'color', 60) && strMax(d, 'mark', 120)
+          // معرّف واحد على الأقل يميّزه: الرقم التسلسلي أو علامة مميزة
+          && (d.get('serial', '') != '' || d.get('mark', '') != '');
+      }
+      allow read: if signedIn() && resource.data.uid == me();
+      allow create: if verified() && validReg(request.resource.data) && rateOk();
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.uid == me();
+    }
+
     // طلبات الاستلام: يراها صاحبها وموظفو المكتب، ويغيّر حالتها الموظف فقط
     match /claims/{claimId} {
       // v19 (H27): «حذف حسابي» يمسح ولا يكتب: الحقول الشخصية فارغة (أو غير موجودة) بعد العملية
@@ -509,11 +557,13 @@ service cloud.firestore {
       function anonCleared() {
         return blank('color') && blank('brand') && blank('lostSpot') && blank('bldg') && blank('room') && blank('lostDate')
           && blank('answer') && blank('claimantName') && blank('idLast4') && blank('handoverNote') && blank('ratingNote')
-          && request.resource.data.get('details', {}).size() == 0;
+          && request.resource.data.get('details', {}).size() == 0
+          // v22 (H33): نسخة السجل (الرقم التسلسلي) والمفوَّض (اسمه وآخر 4 من هويته) تُمسح أيضاً
+          && !('reg' in request.resource.data) && !('delegate' in request.resource.data);
       }
       allow read: if signedIn() && (resource.data.uid == me() || isStaffOf(resource.data.officeId));
       allow create: if verified()
-        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'details', 'no', 'status', 'createdAt', 'proofs', 'cat', 'grouped'])
+        && request.resource.data.keys().hasOnly(['itemId', 'officeId', 'uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'reportId', 'claimantName', 'idLast4', 'details', 'no', 'status', 'createdAt', 'proofs', 'cat', 'grouped', 'reg'])
         // v9: الطلب الجديد بلا codeHash؛ بصمة الرمز في claimCodes تُنشأ في العملية نفسها
         && existsAfter(codeDoc(claimId))
         // v7: عدد صور الإثبات المرفقة (0–2)، وحدّ الطلبات الجارية وحدّ التصنيف (claimQuota في العملية نفسها)، ونطاق بريد الكلية
@@ -537,6 +587,9 @@ service cloud.firestore {
         && (!('reportId' in request.resource.data) || request.resource.data.reportId == ''
             || get(/databases/$(database)/documents/reports/$(request.resource.data.reportId)).data.uid == me())
         && fresh(request.resource.data, 'createdAt') && rateOk()
+        // v22 (H33): نسخة «سجل أغراضي» إن أُرفقت (تصنيف الطلب المجمّع مكتوب فيه، والعادي من غرضه)
+        && (!('reg' in request.resource.data) || regOk(request.resource.data, request.resource.data.get('grouped', false) == true ? request.resource.data.get('cat', '')
+             : get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.cat))
         && (
           // طلب على غرض محدد: طلب واحد فقط لكل مستخدم على كل غرض (رقم الطلب = رقم الغرض_رقم المستخدم)،
           // والمحجوز يقبل طلباً منافساً: صاحبه الحقيقي يستطيع الاعتراض قبل التسليم
@@ -605,6 +658,13 @@ service cloud.firestore {
           && strMax(request.resource.data, 'bldg', 40) && strMax(request.resource.data, 'room', 60)
           && isDay(request.resource.data, 'lostDate') && dayOk('lostDate') && strMax(request.resource.data, 'claimantName', 120)
           && (!('idLast4' in request.resource.data) || request.resource.data.idLast4.matches('[0-9]{4}')))
+        // v22 (H33): صاحب الطلب المقبول يفوّض شخصاً بالاستلام (أو يلغي التفويض)، إلا في الوثائق الرسمية (لصاحبها فقط).
+        // الموظف يسلّم لصاحب الطلب أو لمفوَّضه فقط، ويطابق آخر 4 أرقام من الهوية التي أمامه
+        || (signedIn() && resource.data.uid == me() && resource.data.status == 'approved'
+          && onlyChanges(['delegate'])
+          && (resource.data.get('grouped', false) == true ? resource.data.get('cat', '')
+               : get(/databases/$(database)/documents/items/$(resource.data.itemId)).data.cat) != 'ids'
+          && (!('delegate' in request.resource.data) || delegateOk(request.resource.data.delegate)))
         // قياس الرضا: صاحب الطلب المكتمل يقيّمه مرة واحدة (1–5 وتعليق اختياري)
         || (signedIn() && resource.data.uid == me() && resource.data.status == 'done' && !('rating' in resource.data)
           && onlyChanges(['rating', 'ratingNote', 'ratedAt'])
@@ -614,7 +674,7 @@ service cloud.firestore {
         // (المرفوض يبقى حتى لا يُحذف ويُعاد إرساله لتخمين التفاصيل من جديد)
         || (signedIn() && resource.data.uid == me() && resource.data.status in ['done', 'rejected', 'expired', 'cancelled']
           && request.resource.data.uid == 'deleted' && request.resource.data.proof == ''
-          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'claimantName', 'idLast4', 'handoverNote', 'details', 'ratingNote', 'anonymizedAt'])
+          && onlyChanges(['uid', 'proof', 'color', 'brand', 'lostSpot', 'bldg', 'room', 'lostDate', 'answer', 'claimantName', 'idLast4', 'handoverNote', 'details', 'ratingNote', 'anonymizedAt', 'reg', 'delegate'])
           // v19 (H27): المسح فقط: كل حقل في القائمة فارغ بعد العملية، فلا يكتب صاحب الطلب قيماً جديدة في سجل المكتب
           // (كان يستطيع مثلاً تغيير ملاحظة التسليم «استلمه: الاسم — آخر 4» وهو يحذف حسابه)، ووقت المسح «الآن»
           && anonCleared() && freshIfChanged('anonymizedAt'));

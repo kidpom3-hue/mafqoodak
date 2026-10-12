@@ -9,6 +9,7 @@ const LOADERS = {
   stats: () => import('./stats.js'),
   audit: () => import('./views/audit.js'),
   print: () => import('./views/print.js'),
+  regs: () => import('./views/regs.js'),   // H33: «سجل أغراضي»
   gov: () => import('./views/gov.js'),
   qr: () => import('./qr.js'),
   ai: () => import('./ai.js'),

@@ -1421,3 +1421,52 @@ table.t td>.link{min-height:36px;display:inline-flex;align-items:center}
 #main h1[tabindex="-1"]:focus,#main[tabindex="-1"]:focus,#s-body>h2:focus,.sheet-panel:focus{outline:none}
 /* 4) تباين: سطر «اعرضه لموظف المكتب» في بطاقة رمز الاستلام كان شفافاً (3.97:1 على الذهبي)؛ الآن بلون كامل (5:1 فأكثر) */
 .code-hero .hint{opacity:1}
+
+/* ---------- H33: إثبات الملكية بمستوى عالمي ----------
+   خانة المعرّف الفريد (الرقم التسلسلي، آخر 4 من بطاقة، النقش) وتلميحها، و«سجل أغراضي»، وقوة الإثبات في جدول المقارنة،
+   والمفوَّض بالاستلام، وإيصال التسليم المطبوع */
+.field.uniq .hint{display:flex;gap:6px;align-items:flex-start}
+.field.uniq .hint svg{width:14px;height:14px;flex:none;margin-top:3px;color:var(--primary)}
+.note.reg-pick{flex-wrap:wrap}
+.note.reg-pick>.grow{display:flex;flex-direction:column;gap:8px;min-width:0}
+.note.reg-pick p{margin:0}
+.reg-pick .opt{background:var(--surface);color:var(--ink)}
+.reg-pick .opt>.grow{display:flex;flex-direction:column;gap:2px;min-width:0}
+.reg-pick .opt[aria-pressed="true"]{border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}
+.reg-pick .opt svg{width:20px;height:20px;flex:none}
+.reg-card .reg-h{display:flex;gap:10px;align-items:center}
+.reg-card .reg-h>svg{width:26px;height:26px;flex:none;color:var(--primary)}
+.reg-card h3{margin:0;font-size:16px;overflow-wrap:anywhere}
+.reg-card .facts dd{overflow-wrap:anywhere}
+.rg-why h2{font-size:17px;margin:0 0 8px}
+.rg-list{margin:0;padding-inline-start:22px;display:grid;gap:8px;line-height:1.8}
+.rg-where{margin-top:14px}
+.cmp-reg-at{display:flex;gap:8px;align-items:flex-start;margin:0;padding:8px 10px;font-size:12.5px;font-weight:600;border-top:1px solid var(--line)}
+.cmp-reg-at svg{width:16px;height:16px;flex:none;margin-top:2px}
+.cmp-reg-at.ok{background:var(--ok-soft);color:var(--ok)}
+.cmp-reg-at.warn{background:var(--warn-soft);color:var(--warn)}
+.cmp-warn.bad{background:var(--bad-soft);color:var(--bad)}
+.strength{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:8px 10px;border-top:1px solid var(--line)}
+.strength .pill svg{width:13px;height:13px}
+.strength .meta{flex:1 1 220px}
+.note.deleg{flex-wrap:wrap}
+.note.deleg>.grow{display:flex;flex-direction:column;gap:8px;min-width:0}
+.note.deleg p{margin:0}
+.check.override{color:var(--bad)}
+/* إيصال التسليم: A4 عمودي، ألوان الطباعة الفاتحة */
+.rcpt{background:var(--surface);border:2px solid var(--line);border-radius:12px;padding:28px 22px;display:flex;flex-direction:column;gap:14px;max-width:760px;width:100%;margin-inline:auto}
+.rcpt-brand{display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--f-display);font-size:20px}
+.rcpt-brand .logo{width:34px;height:34px}
+.rcpt-logo{height:44px;max-width:180px}
+.rcpt-title{font-family:var(--f-display);font-size:clamp(22px,5vw,30px);font-weight:700;text-align:center;margin:0}
+.rcpt-facts{display:grid;grid-template-columns:minmax(0,9em) minmax(0,1fr);gap:10px 14px;margin:0;padding:14px;border:1px solid var(--line);border-radius:10px}
+.rcpt-facts dt{font-weight:700;color:var(--muted)}
+.rcpt-facts dd{margin:0;overflow-wrap:anywhere}
+.rcpt-pledge{margin:0;line-height:1.9}
+.rcpt-sign{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin-top:18px}
+.rcpt-sign>div{display:flex;flex-direction:column;gap:30px}
+.rcpt-sign span{font-weight:700}
+.rcpt-sign i{display:block;border-bottom:1px solid var(--ink);height:1px}
+.rcpt-note{color:var(--muted);text-align:center}
+@media (max-width:480px){ .rcpt-facts{grid-template-columns:minmax(0,1fr)} .rcpt-facts dd{margin-bottom:6px} }
+@media print{ .rcpt{border-color:#999;background:#fff;color:#000} .receipt-page .rcpt{min-height:240mm} }
