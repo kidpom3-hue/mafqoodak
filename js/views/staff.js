@@ -52,7 +52,8 @@ export function updateStaff(){
     <div class="stat"><b>${S.counts.returned ?? '…'}</b><span>${t('home.statReturned')}</span></div>
     ${over ? `<div class="stat hot"><b>${over}</b><span>${t('st.overKeep')}</span></div>` : ''}
     ${late ? `<div class="stat hot"><b>${late}</b><span>${t('st.sLate')}</span></div>` : ''}`;
-  $$('#s-tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === S.staffTab));
+  // H31: التبويب الحالي معلَن لقارئ الشاشة (aria-current)، لا باللون وحده
+  $$('#s-tabs button').forEach(b => { const on = b.dataset.v === S.staffTab; b.classList.toggle('on', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   // H2: في الجوال (تحت 768px) «أضف غرضاً» زر رئيسي بعرض كامل (add-full) والأدوات الثلاث في «المزيد» (more-btn)؛
   // وفي الكمبيوتر كما كانت: الزر في صف البحث (add-inline) والأدوات ظاهرة (tools-row). الإظهار والإخفاء في CSS
   if (toolsTab !== S.staffTab || !$('#s-tools').innerHTML){
@@ -77,13 +78,19 @@ export function updateStaff(){
       </div>`;   // H23: البلاغات أيضاً فيها بحث بالمكان والحجم نفسيهما
     const ss = $('#sstatus'); if (ss) ss.value = S.staffStatus;
   }
-  $('#s-body').innerHTML = S.staffTab === 'claims' ? staffClaims() : S.staffTab === 'reports' ? staffReports() : staffItems();
+  $('#s-body').innerHTML = staffBody();
   // H23: ظهور خفيف (150ms) عند تبديل التبويب فقط، لا مع كل تحديث حي (يحترم prefers-reduced-motion في CSS)
   if (bodyTab !== S.staffTab){ bodyTab = S.staffTab; const b = $('#s-body'); b.classList.remove('tab-in'); void b.offsetWidth; b.classList.add('tab-in'); }
   hydrate();
   migrateItems();   // نقل تفاصيل الأغراض القديمة إلى الملف السري (مرة واحدة)
   migrateSpots();   // نقل مكان العثور من الإعلان العام إلى الملف السري (المرحلة E5)
   migratePublic();  // H16: حقل public لكل غرض قديم (مرة واحدة لكل جهاز ومكتب)
+}
+/* محتوى التبويب الحالي في اللوحة (يُستدعى أيضاً من البحث والفلتر في actions.js).
+   H31: يبدأ بعنوان مخفي (h2) باسم التبويب: تسلسل العناوين بلا قفزة (h1 المكتب ← h2 التبويب ← h3 البطاقات)، ويأخذ التركيز عند تبديل التبويب */
+export function staffBody(){
+  const tabH = `<h2 class="sr-only" id="s-tab-h" tabindex="-1">${t(S.staffTab === 'claims' ? 'st.tabClaims' : S.staffTab === 'reports' ? 'nav.reports' : 'nav.store')}</h2>`;
+  return tabH + (S.staffTab === 'claims' ? staffClaims() : S.staffTab === 'reports' ? staffReports() : staffItems());
 }
 // تنبيه مدة الحفظ: قائمة ما تجاوزها مع إجراء جماعي «تصرّف»، وما سينتهي خلال 7 أيام
 function retentionBox(){
@@ -131,7 +138,7 @@ const claimUid = id => [...S.claims, ...(S.claimHist || [])].find(c => c.id === 
 export function timeline(i){
   ensureLogs(i);
   const L = S.logs[i.id];
-  const head = `<div class="section-title">${icon('clock')}${t('tl.title')}</div>`;
+  const head = `<h2 class="section-title">${icon('clock')}${t('tl.title')}</h2>`;
   if (!Array.isArray(L)) return `<div class="panel">${head}<div class="loading sm" aria-busy="true"><span class="spin"></span></div></div>`;
   const claims = [...S.claims, ...(S.claimHist || [])].filter((c, k, a) => c.itemId === i.id && a.findIndex(x => x.id === c.id) === k);
   const events = [...(L.some(e => e.action === 'create') ? [] : [{action: 'create', at: i.createdAt, by: i.createdBy, legacy: true}]), ...L,

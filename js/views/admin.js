@@ -40,7 +40,7 @@ export function adminOverview(){
       <div class="stat"><b>${S.staffList.length}</b><span>${t('adm.sStaff')}</span></div>
       <div class="stat"><b>${pendInv}</b><span>${t('inv.pending')}</span></div>
     </div>
-    <div class="panel"><div class="section-title">${t('adm.byOffice')}</div>
+    <div class="panel"><h2 class="section-title">${t('adm.byOffice')}</h2>
       <div class="table-wrap"><table class="t"><thead><tr><th scope="col">${t('adm.colOffice')}</th><th scope="col">${t('adm.colAvail')}</th><th scope="col">${t('adm.colRes')}</th><th scope="col">${t('adm.colRet')}</th><th scope="col">${t('adm.colRate')}</th></tr></thead><tbody>
       ${S.offices.map(o => { const x = C?.[o.id]; const a = x?.available ?? '…', r = x?.reserved ?? '…', d = x?.returned ?? '…'; const tot = x ? x.available + x.reserved + x.returned + x.disposed : 0;
         return `<tr><td><button class="link" data-act="stats" data-id="${esc(o.id)}">${esc(oName(o))}</button>${o.active === false ? ` <span class="pill mute">${t('adm.off')}</span>` : ''}</td><td class="n">${a}</td><td class="n">${r}</td><td class="n">${d}</td><td class="n">${tot ? Math.round(100 * x.returned / tot) + '%' : '—'}</td></tr>`; }).join('')}
@@ -84,7 +84,7 @@ export function adminPeople(){
   const act = S.offices.filter(o => o.active !== false);
   const invites = S.invites.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return `
-    <div class="section-title">${icon('plus')}${t('inv.title')}</div>
+    <h2 class="section-title">${icon('plus')}${t('inv.title')}</h2>
     <form data-form="invite" class="panel" novalidate>
       <div class="field"><label for="inv-email">${t('inv.email')}</label><input id="inv-email" name="email" type="email" class="input" dir="ltr" autocomplete="off" required placeholder="name@example.com"></div>
       <div class="field" role="group" aria-labelledby="inv-off"><span class="label" id="inv-off">${t('inv.offices')}</span>
@@ -93,20 +93,20 @@ export function adminPeople(){
       <div class="form-err" hidden></div>
       <button class="btn" type="submit" style="align-self:flex-start">${icon('check')}${t('inv.send')}</button>
     </form>
-    <div class="section-title">${t('inv.pending')} ${tabNum(0, invites.length)}</div>
+    <h2 class="section-title">${t('inv.pending')} ${tabNum(0, invites.length)}</h2>
     ${invites.length ? `<div class="list">${invites.map(v => `<div class="box">
       <div class="box-head"><div><b dir="ltr">${esc(v.id)}</b>${whenLine('c.sentAt', v.createdAt)}</div><span class="pill warn">${t('inv.waiting')}</span></div>
       <div class="tags">${(v.offices || []).map(id => `<span class="tagchip">${esc(oname(id))}</span>`).join('')}</div>
       <div class="btn-row"><button class="btn sm danger" data-act="cancelInvite" data-id="${esc(v.id)}">${icon('x')}${t('inv.cancel')}</button></div>
     </div>`).join('')}</div>` : `<p class="muted">${t('inv.none')}</p>`}
-    <div class="section-title">${t('adm.current')}</div>
+    <h2 class="section-title">${t('adm.current')}</h2>
     <div class="note">${icon('shield')}<span>${t('adm.ownerNote')}</span></div>
     ${S.staffList.length ? `<div class="list">${S.staffList.map(s => `<div class="box">
       <div class="box-head"><div>${person(s.id)}${email(s.id)}<span class="meta">${esc(s.note || '')}</span></div>${isAdm(s.id) ? `<span class="pill ok">${t('adm.isAdmin')}</span>` : ''}</div>
       <div class="tags">${(s.offices || []).map(id => `<span class="tagchip">${esc(oname(id))}</span>`).join('')}</div>
       <div class="btn-row">${adminBtn(s.id)}<button class="btn sm danger" data-act="revoke" data-id="${esc(s.id)}">${icon('x')}${t('adm.revoke')}</button></div>
     </div>`).join('')}</div>` : `<p class="muted">${t('adm.noStaff')}</p>`}
-    <div class="section-title">${t('adm.admins')}</div>
+    <h2 class="section-title">${t('adm.admins')}</h2>
     <p class="muted">${t('adm.adminsHint')}</p>
     <div class="list">${admOnly.map(a => `<div class="box"><div class="box-head"><div>${person(a.id)}${email(a.id)}</div>${adminBtn(a.id)}</div></div>`).join('')}</div>`;
 }

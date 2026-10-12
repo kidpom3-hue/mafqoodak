@@ -52,15 +52,18 @@ function currentKeys(){
 const known = new Set(); let who = null, armedAt = 0;
 // H6: شارة أيقونة التطبيق والعدد في عنوان الصفحة = الجديد غير المقروء فقط (نفس أرقام الشريط السفلي)، لا عدد العناصر:
 // للموظف أحداث «الاستلام» و«البلاغات» الجديدة، ولغيره تنبيهات «طلباتي» غير المقروءة
-function staffBadge(){
+// H31: وفي العنوان اسم الصفحة الحالية (S.pageName يضبطه ui.js بعد كل رسم): «طلباتي - المكتب | مفقودك»
+export function syncTitle(){
   const n = isStaffHere() ? staffNew('claims') + staffNew('reports') : S.uid ? unseenCount() : 0;
   // H21: اسم المكتب في عنوان الصفحة (والتبويب)
   const o = curOffice();
-  document.title = (n ? `(${n}) ` : '') + (o ? t('app.titleOf', {office: oName(o)}) : t('app.title'));
+  const base = o ? (S.pageName ? t('app.pageOf', {page: S.pageName, office: oName(o)}) : t('app.titleOf', {office: oName(o)}))
+    : S.pageName ? t('app.pageOfApp', {page: S.pageName}) : t('app.title');
+  document.title = (n ? `(${n}) ` : '') + base;
   try { if (n) navigator.setAppBadge?.(n); else navigator.clearAppBadge?.(); } catch {}
 }
 export function checkNotify(){
-  staffBadge();
+  syncTitle();
   if (who !== S.uid){ who = S.uid; known.clear(); armedAt = Date.now() + 6000; }   // مهلة أولى: الموجود عند الفتح لا يُشعَر به
   if (!S.uid) return;
   const fresh = currentKeys().filter(k => !known.has(k));

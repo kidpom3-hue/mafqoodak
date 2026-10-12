@@ -172,7 +172,7 @@ export function vFound(){
       <li><b>${t('found.s3')}</b><span>${t('found.s3d')}</span></li>
     </ol>
     <div class="panel">
-      <div class="section-title">${icon('building')}${t('found.where')}</div>
+      <h2 class="section-title">${icon('building')}${t('found.where')}</h2>
       <dl class="facts">
         <dt>${t('found.office')}</dt><dd>${esc(oPlace(o) || oName(o))}</dd>
         ${oHours(o) ? `<dt>${t('found.hours')}</dt><dd>${esc(oHours(o))}</dd>` : ''}
@@ -180,7 +180,7 @@ export function vFound(){
       </dl>
     </div>
     <div class="panel handin-cta">
-      <div class="section-title">${icon('bell')}${t('hi.ctaTitle')}</div>
+      <h2 class="section-title">${icon('bell')}${t('hi.ctaTitle')}</h2>
       <p class="muted">${t('hi.ctaBody')}</p>
       <button class="btn" data-act="nav" data-r="handin" style="align-self:flex-start">${icon('plus')}${t('hi.ctaBtn')}</button>
     </div>

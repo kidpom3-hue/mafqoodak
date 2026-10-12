@@ -481,6 +481,8 @@ async function submitForm(form){
     // v7: مكتب يشترط بريد الكلية
     if (!claimEmailOk(S.offices.find(o => o.id === officeId), S.me?.email)){ busy(form, false); return formErr(form, t('cl.domainNeed')); }
     const proofs = (FORM.proofs || []).slice(0, 2);
+    // رقم الطلب القصير (REQ-…) يظهر في صفحة التأكيد وفي «طلباتي»
+    const no = 'REQ-' + refCode(4);
     // v9: رمز 8 أحرف؛ بصمته في claimCodes (لا يقرؤها أحد) تُنشأ مع الطلب، والطلب نفسه بلا codeHash
     const code = genCode(); const codeHash = await sha(id + ':' + code);
     // H29: نسخة الرمز على الجهاز احتياطية (الأصل في users/{uid}/private/codes). في الجهاز المشترك تبقى في الجلسة فقط
@@ -489,7 +491,7 @@ async function submitForm(form){
       // خانات التصنيف فقط (الوثائق والنقود بلا لون ولا ماركة)، وإجابات أسئلته في details
       // رقم الطلب القصير يظهر للمستخدم والموظف، ويُبحث به في تبويب الاستلام
       // H7: مع حدّ الإغراق (rate/{uid} في العملية نفسها)
-      await createLimited('claims/' + id, {itemId: i?.id || '', officeId, uid: S.uid, no: 'REQ-' + refCode(4), proof: val('proof').slice(0, 1200), details,
+      await createLimited('claims/' + id, {itemId: i?.id || '', officeId, uid: S.uid, no, proof: val('proof').slice(0, 1200), details,
         ...(gcat ? {grouped: true, cat: gcat} : {}),
         color: q.fields.includes('color') ? val('color') : '', brand: q.fields.includes('brand') ? val('brand').slice(0, 40) : '',
         claimantName: val('claimantName').slice(0, 120), idLast4: last4,
@@ -512,7 +514,9 @@ async function submitForm(form){
         ? t('a.claimDenied')
         : t('a.claimFail'));
     }
-    busy(form, false); toast(t(gcat ? (isHiddenCat(catId) ? 'gc.sentHidden' : 'gc.sent') : 'a.claimSent')); S.hist = []; go('mine', {}, false);
+    // H31: صفحة التأكيد برقم الطلب والخطوات التالية (بدل رسالة عابرة ثم «طلباتي»)
+    busy(form, false); S.hist = [];
+    go('done', {kind: gcat ? (isHiddenCat(catId) ? 'cash' : 'gclaim') : 'claim', id, no, title: i ? showTitle(i) : '', cat: catId, officeId, at: createdAt}, false);
     return;
   }
 
@@ -537,14 +541,16 @@ async function submitForm(form){
       const withPhoto = !!FORM.photo && !sens;
       // إجابات أسئلة التصنيف (اختيارية) تُحفظ لتعبئة طلب الاستلام منها لاحقاً
       const {details} = readDetails(form, catId, 'report');
+      const at = Date.now();
+      // H31: بلا رسالة نجاح عابرة: صفحة التأكيد (done) هي التأكيد
       const ok = await write(() => createLimited('reports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), color: claimOf(catId).fields.includes('color') ? val('color') : '',
         ...(Object.keys(details).length ? {details} : {}),
-        title: val('title'), desc: val('desc'), spot: val('spot'), bldg, room, lostDate: val('lostDate') || today(), photo: false, status: 'open', createdAt: Date.now()}), t('a.reportSaved'));
+        title: val('title'), desc: val('desc'), spot: val('spot'), bldg, room, lostDate: val('lostDate') || today(), photo: false, status: 'open', createdAt: at}));
       if (ok && withPhoto){
         cachePhoto('r_' + id, FORM.photo);
         if (await write(() => dbx.set('reportPhotos/' + id, {data: FORM.photo}))) await write(() => dbx.update('reports/' + id, {photo: true}));
       }
-      busy(form, false); if (ok){ clearDraft('report'); S.hist = []; go('mine', {focus: id}, false); }
+      busy(form, false); if (ok){ clearDraft('report'); S.hist = []; go('done', {kind: 'report', id, title: val('title'), cat: catId, officeId: S.officeId, at}, false); }
       return;
     }
 
@@ -774,10 +780,11 @@ async function submitForm(form){
     busy(form, true);
     const id = dbx.newId('foundReports');
     // كود قصير يُريه الواجد لموظف المكتب فيفتح إشعاره مباشرة (بحروف رقم القيد نفسها)
-    const code = refCode(6);
+    const code = refCode(6), at = Date.now();
     const ok = await write(() => createLimited('foundReports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), spot: val('spot'), bldg, room,
-      foundDate: val('foundDate') || today(), note: val('note').slice(0, 500), code, status: 'pending', createdAt: Date.now()}), t('hi.sent'));
-    busy(form, false); if (ok){ clearDraft('handin'); S.hist = []; go('mine', {focus: id}, false); }
+      foundDate: val('foundDate') || today(), note: val('note').slice(0, 500), code, status: 'pending', createdAt: at}));
+    // H31: صفحة التأكيد: رقم التسليم ومكان المكتب وأوقاته (الخطوة التالية تسليم الغرض نفسه)
+    busy(form, false); if (ok){ clearDraft('handin'); S.hist = []; go('done', {kind: 'handin', id, code, cat: catId, officeId: S.officeId, at}, false); }
     return;
   }
   // قياس الرضا: تقييم الطلب المكتمل مرة واحدة (القواعد تمنع التقييم الثاني)
@@ -1079,6 +1086,8 @@ const ACT = {
   openCard(el){ openCard(el.dataset.tab, el.dataset.card, el.dataset.ended === '1'); },
   // H27: «متابعة» في الصفحة الرئيسية: «طلباتي» مفتوحة على البطاقة التي تنتظره
   resume(el){ go('mine'); openCard(el.dataset.tab, el.dataset.card); },
+  // H31: أزرار صفحة التأكيد: «طلباتي» (والبطاقة الجديدة مفتوحة) أو الرئيسية، بلا خطوة في السجل (الرجوع لا يعيد التأكيد)
+  doneGo(el){ S.hist = []; if (el.dataset.r === 'mine') go('mine', el.dataset.id ? {focus: el.dataset.id} : {}, false); else go(homeRoute(), {}, false); },
   fcat(el){ S.filter.cat = el.dataset.id; updateBrowse(); },
   catGo(el){ S.filter.cat = el.dataset.id; S.filter.q = ''; S.filter.status = 'available'; go('browse'); },
   fstatus(el){ S.filter.status = el.dataset.v; updateBrowse(); },
@@ -1529,9 +1538,9 @@ export function bindEvents(){
     const t = e.target;
     if (t.id === 'q'){ S.filter.q = t.value; clearTimeout(qTimer); qTimer = setTimeout(updateBrowse, 120); }
     if (t.name === 'ratingNote'){ const f = t.closest('form'); if (f) (RATE_DRAFT[f.dataset.id] ||= {}).note = t.value; }
-    if (t.id === 'rq'){ S.reportQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffReports(); hydrate(); }, 120); }   // H23
-    if (t.id === 'cq'){ S.claimQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffClaims(); hydrate(); }, 120); }
-    if (t.id === 'sq'){ S.staffQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffItems(); hydrate(); }, 120); }
+    if (t.id === 'rq'){ S.reportQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffBody(); hydrate(); }, 120); }   // H23
+    if (t.id === 'cq'){ S.claimQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffBody(); hydrate(); }, 120); }
+    if (t.id === 'sq'){ S.staffQ = t.value; clearTimeout(qTimer); qTimer = setTimeout(() => { $('#s-body').innerHTML = SM().staffBody(); hydrate(); }, 120); }
     // v9: رمز الاستلام: أحرف كبيرة وأرقام لاتينية، وشرطة بعد الأحرف الأربعة الأولى (الرموز القديمة: 6 أرقام)
     if (t.name === 'code' && t.classList.contains('code-input')){ const v = normPickup(t.value); t.value = /^\d{1,6}$/.test(v) || v.length <= 4 ? v : v.slice(0, 4) + '-' + v.slice(4); }
     // خانات الأرقام في أسئلة التصنيف: الأرقام الهندية إلى لاتينية، وحذف ما ليس رقماً
@@ -1545,7 +1554,7 @@ export function bindEvents(){
     if (t.id === 'l-remember') rememberDevice(t.checked);   // H29: «تذكّرني على هذا الجهاز»
     if (t.id === 'frange'){ S.filter.range = t.value; updateBrowse(); }
     if (t.id === 'sstatus'){
-      S.staffStatus = t.value; $('#s-body').innerHTML = SM().staffItems(); hydrate();
+      S.staffStatus = t.value; $('#s-body').innerHTML = SM().staffBody(); hydrate();
       // المُسلَّم والمؤرشف والمُتصرَّف فيه تُجلب عند اختيار الفلتر فقط
       if (t.value !== 'active') loadExtraItems(t.value);
     }

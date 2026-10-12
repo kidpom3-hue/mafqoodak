@@ -102,3 +102,49 @@ console.log(`✔ رقم الإصدار ${ver} متطابق في js/config.js وs
   if (!cspVer || vers.length !== 1 || vers[0] !== cspVer){ console.log(`✘ إصدار Firebase غير متطابق: CSP = ${cspVer || 'غير موجود'}، والروابط = ${vers.join(', ') || 'لا شيء'}. غيّرها كلها إلى الإصدار نفسه (index.html وjs/firebase.js وjs/ai.js).`); process.exit(1); }
   console.log(`✔ سياسة CSP تحوي بصمة ${inline.length} سكربت مضمّن، ولا معالجات مضمّنة في index.html، وإصدار Firebase ${cspVer} متطابق فيها وفي الكود.`);
 }
+
+// H31: قواعد الصياغة (H24) في القاموسين، حتى لا يعود نص مخالف مع أي إضافة:
+// لا «!»، ولا «كود» (بل «رمز»)، ولا صيغة المتكلم الجمع (نحن، أرسلنا، سنخبرك… / we, our, us)،
+// وكل «اضغط «…»» يقتبس نص زر موجوداً في القاموس نفسه حرفياً (عدا أزرار نظام iPhone في خطوات التثبيت، والمتغيرات {…})
+{
+  const flat = o => Object.entries(o).flatMap(([k, v]) => typeof v === 'string' ? [[k, v]] : Object.entries(v).map(([f, s]) => [`${k}#${f}`, s]));
+  const ar = flat(AR), en = flat(EN), bad = [];
+  const plain = s => s.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, '');
+  for (const [k, v] of [...ar, ...en]) if (plain(v).includes('!')) bad.push(`«!» في ${k}: ${v.slice(0, 60)}`);
+  for (const [k, v] of ar) if (/كود/.test(v)) bad.push(`«كود» (اكتب «رمز») في ${k}`);
+  // حدود الكلمة العربية: بداية/نهاية النص أو مسافة أو علامة ترقيم (\b لا يعمل مع الحروف العربية)
+  const B = '(?:^|[\\s«»"\'(،.؛:؟—–-])', E = '(?=$|[\\s«»"\')،.؛:؟—–-])';
+  const WE_AR = new RegExp(B + '(?:و|ف)?(?:نحن|لدينا|عندنا|يسعدنا|نرجو|نعتذر|نشكرك|نأسف|سن(?:خبر|نبّه|نبه|رسل|راجع|تواصل|ساعد)[\\u0600-\\u06FF]*|ن(?:خبر|نبّه|نبه|رسل|راجع|تواصل)[\\u0600-\\u06FF]*|(?:أرسل|سجّل|سجل|استلم|راجع|حفظ|أضف|وجد|تلقّي|تلقي)نا)' + E, 'u');
+  for (const [k, v] of ar) if (WE_AR.test(plain(v))) bad.push(`صيغة المتكلم الجمع في ${k}: ${plain(v).slice(0, 60)}`);
+  for (const [k, v] of en) if (/\b(?:we|we'll|we've|we're|our|ours|us)\b/i.test(plain(v))) bad.push(`first person plural in ${k}: ${plain(v).slice(0, 60)}`);
+  const OS = new Set(['إضافة', 'إضافة إلى الشاشة الرئيسية', 'Add', 'Add to Home Screen']);
+  for (const [list, re] of [[ar, /(?:اضغط|اختر) «([^»]+)»/g], [en, /\b(?:[Tt]ap|[Pp]ress|[Cc]lick|[Ss]elect|[Cc]hoose) “([^”]+)”/g]]){
+    const labels = new Set(list.map(([, v]) => plain(v).trim()));
+    for (const [k, v] of list) for (const m of v.matchAll(re)){ const q = m[1].trim(); if (!labels.has(q) && !OS.has(q) && !/^\{\w+\}$/.test(q)) bad.push(`${k}: «${q}» ليس نص زر في القاموس (اقتبس نص الزر الحالي حرفياً)`); }
+  }
+  if (bad.length){ console.log(bad.join('\n') + `\n✘ ${bad.length} مخالفة لقواعد الصياغة (CLAUDE.md، H24).`); process.exit(1); }
+  console.log('✔ قواعد الصياغة: لا «!» ولا «كود» ولا صيغة المتكلم الجمع، وكل «اضغط «…»» يقتبس زراً موجوداً.');
+}
+
+// H31: سرعة الفتح والعمل دون اتصال:
+// 1) قائمة <link rel="modulepreload"> في index.html = الوحدات الفورية (كل ما يستورده main.js مباشرة أو بالتسلسل) بلا زيادة ولا نقص:
+//    الناقصة تُنزَّل متأخرة على التتابع، والزائدة (وحدة كسولة من lazy.js) تُنزَّل بلا حاجة في كل زيارة
+// 2) قائمة SHELL في sw.js فيها كل ملفات js (الفورية والكسولة) وكل ملف شعار في BRANDS، ليعمل التطبيق كاملاً دون اتصال
+{
+  const eager = new Set();
+  const walk = f => { if (eager.has(f)) return; eager.add(f);
+    for (const m of fs.readFileSync(path.join(root, f), 'utf8').matchAll(/^import\s(?:[^'"]*?\sfrom\s)?['"](\.{1,2}\/[^'"]+)['"]/gm)) walk(path.posix.normalize(path.posix.join(path.posix.dirname(f), m[1]))); };
+  walk('js/main.js');
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const pre = new Set([...html.matchAll(/rel="modulepreload" href="(js\/[^"]+)"/g)].map(m => m[1]));
+  const bad = [...[...eager].filter(f => !pre.has(f)).map(f => `ينقص modulepreload في index.html: ${f}`), ...[...pre].filter(f => !eager.has(f)).map(f => `modulepreload لوحدة غير فورية (كسولة أو غير مستخدمة): ${f}`)];
+  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  const shell = new Set([...(sw.match(/const SHELL = \[([\s\S]*?)\];/) || [, ''])[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]));
+  const jsAll = ['js', 'js/views', 'js/i18n'].flatMap(d => fs.readdirSync(path.join(root, d)).filter(f => f.endsWith('.js')).map(f => `${d}/${f}`));
+  for (const f of jsAll) if (!shell.has(f)) bad.push(`ينقص SHELL في sw.js: ./${f}`);
+  const logos = [...fs.readFileSync(path.join(root, 'js/constants.js'), 'utf8').matchAll(/'(icons\/college\/[^']+)'/g)].map(m => m[1]);
+  for (const f of new Set(logos)){ if (!shell.has(f)) bad.push(`ينقص SHELL في sw.js: ./${f}`); if (!fs.existsSync(path.join(root, f))) bad.push(`ملف شعار غير موجود: ${f}`); }
+  for (const f of shell) if (f && !fs.existsSync(path.join(root, f))) bad.push(`في SHELL ملف غير موجود: ./${f}`);
+  if (bad.length){ console.log(bad.join('\n') + `\n✘ ${bad.length} مشكلة في التحميل المسبق أو قائمة العمل دون اتصال.`); process.exit(1); }
+  console.log(`✔ modulepreload = الوحدات الفورية (${eager.size})، وSHELL فيه كل ملفات js (${jsAll.length}) والشعارات.`);
+}

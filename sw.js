@@ -1,7 +1,7 @@
 // Service Worker: يحفظ ملفات التطبيق ليفتح بسرعة ويعمل عند ضعف الاتصال.
 // الاستراتيجية: الشبكة أولاً (لتظهر تعديلاتك فوراً)، ثم النسخة المحفوظة إذا انقطع الاتصال.
 // عند تغيير أسماء الملفات غيّر رقم الإصدار هنا.
-const CACHE = 'mafqoodak-v49';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
+const CACHE = 'mafqoodak-v50';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
 // H27: الخطوط (مجلد fonts) في مخزن مستقل لا يُمسح مع كل إصدار (الملفات لا تتغير؛ اسم جديد للخط = ملف جديد).
 // تُحفظ عند أول استخدام فقط، فلا يُعاد تنزيل 350 KB مع كل تحديث. غيّر الرقم هنا فقط إن استبدلت ملف خط بالاسم نفسه
 const FONTS = 'mafqoodak-fonts-v1';
@@ -16,7 +16,7 @@ const SHELL = [
   './js/views/common.js', './js/views/home.js', './js/views/visitor.js', './js/views/staff.js', './js/views/admin.js', './js/views/auth.js', './js/views/privacy.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
   // H15: شعار المؤسسة لمكتب الكلية (ملوّن وأبيض، والنجمة وحدها للترويسة)
-  './icons/college/tvtc-logo.png', './icons/college/tvtc-logo-white.png', './icons/college/tvtc-mark.png', './icons/college/tvtc-mark-white.png',
+  './icons/college/tvtc-logo.webp', './icons/college/tvtc-logo-white.webp', './icons/college/tvtc-mark.webp', './icons/college/tvtc-mark-white.webp',
 ];
 
 self.addEventListener('install', e => {

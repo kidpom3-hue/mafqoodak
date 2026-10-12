@@ -4,7 +4,7 @@ import { icon, oName, oPlace, oHours } from '../constants.js';
 import { esc, fmtDate, isoDay, TZ } from '../utils.js';
 import { t, tp, locale } from '../i18n.js';
 import { S, curOffice } from '../state.js';
-import { backBtn, telLink } from './common.js';
+import { backBtn, telLink, reviewDaysOf, pickupDaysOf } from './common.js';
 import { loadPublicStats } from '../stats.js';
 
 /* ---------- بطاقة الخدمة ---------- */
@@ -12,8 +12,7 @@ export const SERVICES = ['claim', 'report', 'handin'];
 // زر «ابدأ الخدمة»: الاستلام يبدأ من البحث عن الغرض، والبلاغ والتسليم من نموذجيهما
 const START = {claim: 'browse', report: 'report', handin: 'handin'};
 const list = key => t(key).split('|').filter(Boolean);
-export const reviewDaysOf = o => Math.max(1, Math.min(30, Number(o?.reviewDays) || 2));
-const pickupDaysOf = o => Math.max(1, Math.min(60, Number(o?.pickupDays) || 7));
+// مدة المراجعة ومهلة الاستلام: reviewDaysOf وpickupDaysOf في common.js (H31: تحتاجهما صفحة التأكيد أيضاً)
 
 // المصطلحات الموحّدة في كل الواجهة (المرحلة F): اسم واحد لكل مفهوم. كانت في صفحة المكتب، ومكانها الآن فهرس الخدمات (مطوية)
 const TERMS = ['report', 'claim', 'handin', 'ref', 'reqNo', 'code'];
