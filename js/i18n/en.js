@@ -1718,4 +1718,10 @@ export const EN = {
   "rg.where2": "Laptop: the label underneath, or “About this device” in Settings.",
   "rg.where3": "Earbuds and watches: inside the case or in the paired phone's settings.",
   "rg.where4": "Any device: its original box or purchase receipt.",
+  // H34: a visible date for every update on a request
+  "c.lastUpd": "Last update: {when}",
+  "ctl.delegated": "You authorised someone to collect",
+  "ctl.delegatedStaff": "The claimant authorised someone to collect",
+  "ctl.rated": "You rated the service",
+  "ctl.ratedStaff": "The claimant rated the service",
 };

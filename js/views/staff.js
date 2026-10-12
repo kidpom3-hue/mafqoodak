@@ -2,8 +2,8 @@
 import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, GROUP_EXPIRE_DAYS, isHiddenCat, isHighValue } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText, hasKey } from '../i18n.js';
-import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, groupKeyLabel, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist, isOwner, regAt } from '../state.js';
-import { backBtn, relT, relDayT, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, mcard, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf, delegateOf } from './common.js';
+import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, groupKeyLabel, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist, isOwner, regAt, ensureClaimLogs } from '../state.js';
+import { backBtn, relT, relDayT, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, timelineEvents, ctlRow, mcard, updOf, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf, delegateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry, migratePublic } from '../migrate.js';
@@ -420,14 +420,14 @@ export function claimCardStaff(c, opts){
       ${i && ['clear', 'blur', 'none'].includes(i.photo) ? `<figure><div class="row-thumb">${icon('camera')}<img data-photo="p_${esc(i.id)}" alt="" hidden></div><figcaption>${t('st.itemPhoto')}</figcaption></figure>` : ''}
       ${Array.from({length: nProofs}, (_, k) => `<figure><div class="row-thumb">${icon('camera')}<img data-photo="cp_${esc(c.id)}_${k}" alt="" hidden></div><figcaption>${t('st.proofPhoto', {n: k + 1})}</figcaption></figure>`).join('')}
     </div>` : '';
-  return mcard({key: 's:' + c.id, open: opts?.open, fresh: opts?.fresh, muted: !['pending', 'approved'].includes(c.status), tone: warn ? 'warn' : '',
+  return mcard({key: 's:' + c.id, open: opts?.open, fresh: opts?.fresh, upd: updOf(c), muted: !['pending', 'approved'].includes(c.status), tone: warn ? 'warn' : '',
     // H17: بلاغ النقود قبل القبول = «قيد المطابقة» عند الموظف كما عند صاحبه
     pillHtml: c.status === 'pending' && c.grouped && isHiddenCat(c.cat) ? `<span class="pill info">${t('gc.matching')}</span>` : pill(CLAIM_STATUS, c.status), next,
     head: `<span class="refs"><b dir="ltr" class="req-no">${esc(claimNo(c))}</b>${i ? `<span class="ref">${esc(i.ref)}</span>` : ''}</span><h3>${orphan ? t('st.orphanTitle') : i ? esc(showTitle(i)) : c.grouped && !iid ? t('grp.' + c.cat + '.title') : t('c.loadingDots')}</h3>${c.grouped ? `<span class="pill info">${t('gc.pill')}</span>` : ''}${person(c.uid)}${prior ? `<span class="pill ok prior">${icon('bell')}${t('st.priorReport')}</span>` : ''}${regEarly ? `<span class="pill ok prior">${icon('shield')}${t('st.regPill')}</span>` : ''}`,
     body: `<div class="box-head"><div class="claim-who">${month >= 3 ? `<span class="pill bad">${t('st.manyClaims', {claims: tp('n.claim', month)})}</span>` : ''}${rv ? `<span class="pill bad">${t('st.rival')}</span>` : ''}${c.status === 'pending' && answered(c) ? `<span class="pill info">${t('qa.answered')}</span>` : ''}</div></div>
     ${i && S.route.name !== 'item' ? miniItem(full(i)) : ''}
     ${c.editedAt ? `<div class="note info edited">${icon('edit')}<span>${t('st.editedAfter', {when: when(c.editedAt)})}</span></div>` : ''}
-    ${claimTimeline(c, true)}
+    ${claimHistory(c, opts?.open || CARD_OPEN.get('s:' + c.id))}
     ${c.status === 'approved' && c.pickupBy ? `<div class="meta ${late ? 'flag' : ''}">${t(late ? 'st.pickupEnded' : 'st.pickupUntil', {date: dateOf(c.pickupBy)})}</div>` : ''}
     ${dlg ? `<div class="note info deleg">${icon('users')}<span>${t('st.delegate', {name: `<b>${esc(dlg.name)}</b>`, last4: `<b dir="ltr">${esc(dlg.last4)}</b>`})}</span></div>` : ''}
     ${conflictNote(kind)}
@@ -444,6 +444,24 @@ export function claimCardStaff(c, opts){
     ${c.status === 'approved' && c.note ? `<div class="meta">${t('st.approveReason')}: ${esc(c.note)}</div>` : ''}
     ${c.status === 'done' && c.handoverNote ? `<div class="meta">${icon('idcard')}${esc(noteText(c.handoverNote))}</div>` : ''}
     ${actions}${again}`});
+}
+/* H34: مسار الطلب الكامل للموظف: أحداث الطلب نفسه (الإرسال، التعديل، الإجابة، السحب، التفويض، التقييم) مع قيود السجل
+   (كل قبول ورفض وسؤال وربط وتسليم وانتهاء وإعادة تفعيل) بتاريخها ووقتها ومن قام بها. القيود تُقرأ عند فتح البطاقة فقط.
+   حدث من الطلب له قيد في السجل بالوقت نفسه (±15 ثانية) يُعرض مرة واحدة من السجل؛ ويبقى ما لا قيد له (مثل إغلاق الطلبات
+   المنافسة عند التسليم). قبل وصول القيود: مسار الطلب نفسه */
+const NEAR_MS = 15000;
+const STAFF_EV = k => k === 'ctl.asked' || k === 'ctl.done' || k.startsWith('ctl.dec.');
+function claimHistory(c, open){
+  if (open) ensureClaimLogs(c);
+  const L = S.clogs[c.id];
+  if (!Array.isArray(L) || !L.length) return claimTimeline(c, true);
+  const fields = timelineEvents(c, true).filter(([k, ms]) => !STAFF_EV(k) || !L.some(e => Math.abs((e.at || 0) - ms) < NEAR_MS));
+  const ev = [...fields.map(([k, ms]) => ({label: t(k), at: ms})),
+    ...L.filter(e => typeof e.at === 'number').map(e => ({label: logLabel(e.action), at: e.at, by: e.by, note: e.note && !MS_NOTE.test(e.note) ? noteText(e.note) : ''}))]
+    .sort((a, b) => a.at - b.at);
+  return `<div class="ctl-box"><span class="ctl-h">${icon('clock')}${t('ctl.title')}</span>
+    <ol class="ctl" aria-label="${t('ctl.title')}">${ev.map(e => ctlRow(e.label, e.at,
+      `${e.by ? `<span class="ctl-by">${t('tl.by')} ${person(e.by)}</span>` : ''}${e.note ? `<span class="tl-note">${esc(e.note)}</span>` : ''}`)).join('')}</ol></div>`;
 }
 // البحث برقم الطلب (REQ-7K3M أو 7K3M فقط): يطابق الطلبات المفتوحة والسجل المحمّل
 const qNo = s => latinDigits(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -498,7 +516,7 @@ function subTabs(g, defs, cur, body){
 /* إشعار تسليم من واجد (للموظف): «استلمته» يفتح نموذج الغرض معبّأً، و«لم يصل» يغلقه */
 export function foundCardStaff(f, open, fresh){
   const done = S.items.find(i => i.fromFound === f.id);   // سُجّل غرضه ولم يُحدَّث الإشعار (نادر)
-  return mcard({key: 'sf:' + f.id, open, fresh, pillHtml: pill(FOUND_STATUS, f.status), next: t('st.handinNext', {when: when(f.createdAt)}),
+  return mcard({key: 'sf:' + f.id, open, fresh, upd: updOf(f), pillHtml: pill(FOUND_STATUS, f.status), next: t('st.handinNext', {when: when(f.createdAt)}),
     head: `${f.code ? `<span class="meta" dir="ltr">${esc(f.code)}</span>` : ''}<h3>${esc(f.sub ? subLabel(f.sub) : catName(f.cat))}</h3>${person(f.uid)}`,
     body: `<div class="meta">${icon(cat(f.cat).icon)}${esc(catName(f.cat))}${f.sub ? ' — ' + esc(subLabel(f.sub)) : ''}</div>
     <div class="meta">${t('hi.foundAt', {place: esc(spotText(f) || t('it.unknown')), date: fmtDate(f.foundDate)})}</div>
@@ -553,7 +571,7 @@ function reportCardStaff(r, open, fresh){
   const pickRef = r.staffPick ? (item(r.staffPick)?.ref || (ensureItem(r.staffPick), '')) : '';
   const next = !isOpen ? t('st.rNextClosed', {when: when(r.closedAt || r.createdAt)})
     : r.staffPick ? (pickRef ? t('st.rNextPicked', {ref: `<b dir="ltr">${esc(pickRef)}</b>`}) : t('st.rNextPickedNoRef')) : cands.length ? t('st.rNextCands', {n: cands.length}) : t('st.rNextNone');
-  return mcard({key: 'sr:' + r.id, open, fresh, muted: !isOpen, pillHtml: isStale(r) ? `<span class="pill mute">${t('st.oldReport')}</span>` : isOpen ? '' : pill(REPORT_STATUS, r.status), next,
+  return mcard({key: 'sr:' + r.id, open, fresh, upd: updOf(r), muted: !isOpen, pillHtml: isStale(r) ? `<span class="pill mute">${t('st.oldReport')}</span>` : isOpen ? '' : pill(REPORT_STATUS, r.status), next,
     // H23: «أُرسل: 29 سبتمبر 2026 · 2:00 ص (قبل 7 أيام)» في البطاقة المطوية نفسها
     head: `<span class="meta">${icon(cat(r.cat).icon)}${esc(catName(r.cat))}${r.sub ? ' — ' + esc(subLabel(r.sub)) : ''}</span><h3>${esc(r.title)}</h3>${person(r.uid)}${whenLine('c.sentAt', r.createdAt)}`,
     body: `<div>${r.color ? `<span class="meta">${colorDot(r.color)}${esc(colorName(r.color))}</span>` : ''}${whenLine('c.editedAt', r.editedAt)}</div>

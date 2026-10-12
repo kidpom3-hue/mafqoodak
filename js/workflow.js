@@ -43,7 +43,10 @@ async function commit(b, guarded = false){
   RESERVED.delete(b);
   try { await b.commit(); }
   catch (e){ if (guarded && String(e?.code || '').includes('permission-denied')) fail(t('wf.race')); throw e; }
-  for (const e of PENDING_LOGS.get(b) || []) if (Array.isArray(S.logs[e.itemId])) S.logs[e.itemId] = [...S.logs[e.itemId], e];
+  for (const e of PENDING_LOGS.get(b) || []){
+    if (Array.isArray(S.logs[e.itemId])) S.logs[e.itemId] = [...S.logs[e.itemId], e];
+    if (e.claimId && Array.isArray(S.clogs[e.claimId])) S.clogs[e.claimId] = [...S.clogs[e.claimId], e];   // H34: مسار الطلب المفتوح
+  }
 }
 /* v7: إغلاق طلب (رفض، تسليم، انتهاء، إلغاء) في الـ batch نفسه مع:
    - حذف صور الإثبات (claimProofs) وتصفير عددها، لتقليل البيانات الشخصية؛
