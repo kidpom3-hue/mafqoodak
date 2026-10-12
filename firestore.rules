@@ -202,18 +202,25 @@ service cloud.firestore {
     // نسخة السجل في طلب الاستلام: مطابقة حرفياً لوثيقة السجل نفسها (ومنها وقت التسجيل من الخادم)، لصاحب الطلب، ومن تصنيف الطلب.
     // فلا يستطيع أحد أن يدّعي تسجيلاً أقدم مما هو، ولا أن يغيّر رقماً تسلسلياً بعد أن يرى الغرض
     function regOk(d, claimCat) {
+      // H36: وثيقة السجل تُقرأ مرة واحدة في متغيّر (r) بدل 10 استدعاءات get() متكررة،
+      // لأن كل تكرار يُحسب من حدّ الألف تعبير في القاعدة، فكان كل طلب معه نسخة من السجل يُرفض
+      let x = d.reg;
+      let r = get(regDoc(x.id)).data;
+      return r.uid == me()
+        && x.at == r.at
+        && x.get('cat', '') == r.cat && r.cat == claimCat
+        && x.get('title', '') == r.get('title', '')
+        && x.get('brand', '') == r.get('brand', '')
+        && x.get('model', '') == r.get('model', '')
+        && x.get('serial', '') == r.get('serial', '')
+        && x.get('color', '') == r.get('color', '')
+        && x.get('mark', '') == r.get('mark', '');
+    }
+    // شكل نسخة السجل (يُفحص قبل قراءة وثيقة السجل)
+    function regShape(d) {
       return d.reg is map
         && d.reg.keys().hasOnly(['id', 'at', 'cat', 'title', 'brand', 'model', 'serial', 'color', 'mark'])
-        && d.reg.id is string && d.reg.id.size() > 0 && d.reg.id.size() <= 40
-        && get(regDoc(d.reg.id)).data.uid == me()
-        && d.reg.at == get(regDoc(d.reg.id)).data.at
-        && d.reg.get('cat', '') == get(regDoc(d.reg.id)).data.cat && get(regDoc(d.reg.id)).data.cat == claimCat
-        && d.reg.get('title', '') == get(regDoc(d.reg.id)).data.get('title', '')
-        && d.reg.get('brand', '') == get(regDoc(d.reg.id)).data.get('brand', '')
-        && d.reg.get('model', '') == get(regDoc(d.reg.id)).data.get('model', '')
-        && d.reg.get('serial', '') == get(regDoc(d.reg.id)).data.get('serial', '')
-        && d.reg.get('color', '') == get(regDoc(d.reg.id)).data.get('color', '')
-        && d.reg.get('mark', '') == get(regDoc(d.reg.id)).data.get('mark', '');
+        && d.reg.id is string && d.reg.id.size() > 0 && d.reg.id.size() <= 40;
     }
     // المفوَّض بالاستلام: الاسم كما في هويته وآخر 4 أرقام منها، ووقت التفويض «الآن»
     function delegateOk(x) {
@@ -588,7 +595,7 @@ service cloud.firestore {
             || get(/databases/$(database)/documents/reports/$(request.resource.data.reportId)).data.uid == me())
         && fresh(request.resource.data, 'createdAt') && rateOk()
         // v22 (H33): نسخة «سجل أغراضي» إن أُرفقت (تصنيف الطلب المجمّع مكتوب فيه، والعادي من غرضه)
-        && (!('reg' in request.resource.data) || regOk(request.resource.data, request.resource.data.get('grouped', false) == true ? request.resource.data.get('cat', '')
+        && (!('reg' in request.resource.data) || regShape(request.resource.data) && regOk(request.resource.data, request.resource.data.get('grouped', false) == true ? request.resource.data.get('cat', '')
              : get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.cat))
         && (
           // طلب على غرض محدد: طلب واحد فقط لكل مستخدم على كل غرض (رقم الطلب = رقم الغرض_رقم المستخدم)،
