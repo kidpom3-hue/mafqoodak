@@ -252,7 +252,8 @@ function renderHeader(){
     : S.uid ? `<button class="avatar-btn" data-keep="acct" data-act="account" aria-label="${t('ui.accountOf', {name: esc(S.me?.name || '')})}" title="${t('ui.accountOf', {name: esc(S.me?.name || '')})}">${safeAvatar(S.me?.photo) ? `<img src="${esc(S.me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span>${esc((S.me?.name || '?').trim().charAt(0))}</span>`}</button>`
     // H3: تحت 400px يصبح زر الدخول أيقونة فقط (النص مخفي بصرياً ويبقى اسمه في aria-label)، فيتسع اسم المكتب
     // H26: غير المسجّل يرى كلمة «دخول» نصاً في كل المقاسات (لا أيقونة وحدها)
-    : `<button class="btn sm ghost login-btn" data-act="login" aria-label="${t('ui.signIn')}" title="${t('ui.signIn')}">${icon('users')}<span class="login-txt">${t('ui.signInShort')}</span></button>`;
+    // H29: في صفحة الدخول نفسها الزر يُعلَّم «الصفحة الحالية» ولا يعيد فتحها (كان يمسح وجهة العودة بعد الدخول)
+    : `<button class="btn sm ghost login-btn" data-act="login" aria-label="${t('ui.signIn')}" title="${t('ui.signIn')}"${S.route.name === 'login' ? ' aria-current="page"' : ''}>${icon('users')}<span class="login-txt">${t('ui.signInShort')}</span></button>`;
   // زر اللغة: يعرض اللغة الأخرى («EN» في العربية، «عربي» في الإنجليزية)
   const langBtn = `<button class="lang-btn" data-act="lang" lang="${t('lang.otherCode')}" aria-label="${t('lang.switch')}" title="${t('lang.switch')}"><span class="lang-txt">${t('lang.other')}</span>${icon('globe')}</button>`;
   // H4: «Aa» يفتح نافذة العرض (المظهر وحجم الخط)

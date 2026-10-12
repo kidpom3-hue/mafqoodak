@@ -8,7 +8,8 @@ import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, wri
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
-  deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification } from './firebase.js';
+  deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification,
+  sharedDevice, rememberDevice, rememberReady } from './firebase.js';
 import { go, back, renderAll, refresh, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar, lockEvidence, FORM_HOOKS } from './ui.js';
 import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor.js';
 // H8: لوحة الموظف والإحصاءات والذكاء الاصطناعي والأمثلة تُحمَّل عند الحاجة (lazy.js). SM() = وحدة staff.js المحمّلة
@@ -123,8 +124,9 @@ function restoreDraft(form){
   });
   fill();
   const sp = form.querySelector('[name=spot]'); if (sp){ onSpotChange(form, sp.value); fill(); }   // المبنى والقاعة بعد إظهار خاناتهما
-  if (d.photo && !cat(one('cat')).sensitive && form.querySelector('#pv')){
-    FORM.photo = d.photo; form.querySelector('#pv').innerHTML = `<img src="${d.photo}" alt="">`;
+  // H29: صورة المسودة تُقبل صورة data:image فقط، وتُهرَّب قبل وضعها في الصفحة (لا تُبنى HTML من قيمة مخزّنة كما هي)
+  if (typeof d.photo === 'string' && d.photo.startsWith('data:image/') && !cat(one('cat')).sensitive && form.querySelector('#pv')){
+    FORM.photo = d.photo; form.querySelector('#pv').innerHTML = `<img src="${esc(d.photo)}" alt="">`;
     const rm = form.querySelector('#rm-photo'); if (rm) rm.hidden = false;
   }
   form.querySelectorAll('input[type=date]').forEach(el => el.dispatchEvent(new Event('change', {bubbles: true})));
@@ -382,6 +384,7 @@ async function submitForm(form){
     if (signup && pass.length < 8) return formErr(form, t('a.passShort'), 'password');
     busy(form, true);
     try {
+      await rememberReady();   // H29: «تذكّرني» يُطبَّق قبل الدخول (الجلسة فقط في الجهاز المشترك)
       if (signup){
         const cred = await createUserWithEmailAndPassword(auth, email, pass);
         const name = val('name') || email.split('@')[0];
@@ -480,7 +483,8 @@ async function submitForm(form){
     const proofs = (FORM.proofs || []).slice(0, 2);
     // v9: رمز 8 أحرف؛ بصمته في claimCodes (لا يقرؤها أحد) تُنشأ مع الطلب، والطلب نفسه بلا codeHash
     const code = genCode(); const codeHash = await sha(id + ':' + code);
-    LS.set('codes', {...LS.get('codes', {}), [id]: code});
+    // H29: نسخة الرمز على الجهاز احتياطية (الأصل في users/{uid}/private/codes). في الجهاز المشترك تبقى في الجلسة فقط
+    const keep = sharedDevice() ? SS : LS; keep.set('codes', {...keep.get('codes', {}), [id]: code});
     try {
       // خانات التصنيف فقط (الوثائق والنقود بلا لون ولا ماركة)، وإجابات أسئلته في details
       // رقم الطلب القصير يظهر للمستخدم والموظف، ويُبحث به في تبويب الاستلام
@@ -909,7 +913,7 @@ async function doApprove(c, reason = ''){
 }
 // تسجيل الخروج على جهاز مشترك: نمسح رموز الاستلام والتنبيهات المقروءة وتفعيل الإشعارات من المتصفح،
 // ونسخة Firestore المحفوظة (IndexedDB)، ثم نعيد تحميل الصفحة حتى لا يبقى شيء من بيانات الحساب في الذاكرة
-function wipeDevice(){ ['codes', 'seen', 'staffSeen', 'notify', 'prof'].forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} }); }
+function wipeDevice(){ ['codes', 'seen', 'staffSeen', 'notify', 'prof'].forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} }); SS.del('codes'); }
 
 const ACT = {
   nav(el){
@@ -925,10 +929,13 @@ const ACT = {
     if (fromNav && r !== homeRoute()) tabEntry();
   },
   back(){ back(); },
-  login(){ go('login', {next: S.route.name === 'login' ? null : S.route}); },
+  // H29: في صفحة الدخول لا شيء (كان يعيد فتحها بلا وجهة عودة، فيذهب المستخدم بعد الدخول إلى الرئيسية بدل نموذجه)
+  login(){ if (S.route.name === 'login') return; go('login', {next: S.route}); },
   loginMode(el){ go('login', {...S.route.params, mode: el.dataset.v}, false); },
   async google(){
     const p = new GoogleAuthProvider();
+    // H29: في الجهاز المشترك تظهر قائمة اختيار الحساب دائماً، فلا يدخل أحد بحساب Google السابق دون أن يختاره
+    if (sharedDevice()) p.setCustomParameters({prompt: 'select_account'});
     try { await signInWithPopup(auth, p); }
     catch (e){
       if (String(e?.code).includes('popup-blocked') || String(e?.code).includes('operation-not-supported')) return signInWithRedirect(auth, p);
@@ -958,7 +965,7 @@ const ACT = {
         <div class="opt-row"><span class="label">${icon('contrast')}${t('th.label')}</span>${themePicker()}</div>
         <div class="opt-row"><span class="label">${icon('info')}${t('tx.label')}</span>${textPicker()}</div>
         <button class="opt" data-act="signOut">${icon('x')}${t('acc.signOut')}</button>
-        <p class="hint">${icon('info')}${t('acc.shared')}</p>
+        <p class="hint">${icon('info')}${t(sharedDevice() ? 'acc.sharedOn' : 'acc.shared')}</p>
         <button class="opt" data-act="nav" data-r="privacy">${icon('lock')}${t('acc.privacy')}</button>
         <button class="opt" data-act="deleteAccount" style="color:var(--bad)">${icon('trash')}${t('acc.delete')}</button>
         <p class="app-ver">${t('ui.version', {v: APP_VERSION})}</p>
@@ -1535,6 +1542,7 @@ export function bindEvents(){
   });
   app.addEventListener('change', e => {
     const t = e.target;
+    if (t.id === 'l-remember') rememberDevice(t.checked);   // H29: «تذكّرني على هذا الجهاز»
     if (t.id === 'frange'){ S.filter.range = t.value; updateBrowse(); }
     if (t.id === 'sstatus'){
       S.staffStatus = t.value; $('#s-body').innerHTML = SM().staffItems(); hydrate();

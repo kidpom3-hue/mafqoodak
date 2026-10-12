@@ -82,10 +82,11 @@ export function vHome(){
 }
 
 // H26: سطر معلومات المكتب تحت البحث: المكان · ساعات العمل · الهاتف (كل عنصر فقط إن كانت بياناته موجودة)
+// H29: بلا نقاط فاصلة (كانت تبقى وحدها في أول السطر حين يلتف)؛ الأيقونة تفصل العناصر، والهاتف بـ telLink كبقية الصفحات
 function officeLine(o){
   const parts = [oPlace(o) && `<span>${icon('pin')}${esc(oPlace(o))}</span>`, oHours(o) && `<span>${icon('clock')}${esc(oHours(o))}</span>`,
-    o?.phone && `<span>${icon('phone')}<a href="tel:${esc(String(o.phone).replace(/[^\d+]/g, ''))}" dir="ltr">${esc(o.phone)}</a></span>`].filter(Boolean);
-  return parts.length ? `<p class="hh-info" aria-label="${t('home.officeInfo')}">${parts.join('<span class="dot" aria-hidden="true">·</span>')}</p>` : '';
+    o?.phone && `<span>${icon('phone')}${telLink(o.phone)}</span>`].filter(Boolean);
+  return parts.length ? `<p class="hh-info" aria-label="${t('home.officeInfo')}">${parts.join('')}</p>` : '';
 }
 // H26: صف مضغوط في «أحدث المفقودات» (أيقونة التصنيف + العنوان + سطر صغير)، زرّ يفتح الغرض أو طلب الوصف
 const miniRow = ({act, ic, title, sub, ref = ''}) => `<li><button class="mini-row" ${act}><span class="mr-ic">${icon(ic)}</span>

@@ -133,8 +133,8 @@ await t('4) تسليم مباشر: ملاحظة في itemSecrets + إلغاء ا
   b.update(r('items/i3'), {status: 'returned', returnedAt: now, updatedAt: now, reservedFor: ''});
   b.set(r('logs/' + lid()), logDoc('staffA', 'status:returned', {itemId: 'i3'}));
 }));
-// ملاحظة: القواعد لا تمنع handoverNote في items (ليس ضمن secretKeys)، والتطبيق لا يكتبه هناك أبداً — مذكور في docs/AUDIT.md
-await t('القواعد تقبل handoverNote في items (التطبيق لا يكتبه هناك)', updateDoc(doc(A, 'items/i3'), {handoverNote: 'x'}));
+// v21 (H29): كانت القواعد تقبل handoverNote (وأي حقل آخر) في items؛ الآن حقول الإعلان العام المعروفة فقط (ومكانه itemSecrets)
+await t('v21: handoverNote في items مرفوض (حقل غير معروف في الإعلان العام)', updateDoc(doc(A, 'items/i3'), {handoverNote: 'x'}), false);
 await t('صاحب الطلب الملغى يجهّله عند حذف حسابه', updateDoc(doc(carol, 'claims/i3_carol'), {uid: 'deleted', proof: '', color: '', brand: '', lostSpot: '', bldg: '', room: '', lostDate: '', anonymizedAt: now}));
 
 // ── 7) التصرّف بعد مدة الحفظ ──
@@ -1072,6 +1072,26 @@ await t('v19-1: ولا إجابات أسئلة', updateDoc(doc(carol, 'claims/an
 await t('v19-1: ولا يُبقي الاسم كما هو', updateDoc(doc(carol, 'claims/an1_carol'), (({claimantName, ...x}) => x)(wipe())), false);
 await t('v19-2: ولا وقت مسح قديماً', updateDoc(doc(carol, 'claims/an1_carol'), {...wipe(), anonymizedAt: Date.now() - 3 * DAY}), false);
 await t('v19-3: المسح الكامل مسموح', updateDoc(doc(carol, 'claims/an1_carol'), wipe()));
+
+// ── v21 (H29): الإعلان العام للغرض بحقوله المعروفة فقط وبأطوال محدودة ──
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  // أغراض قديمة فيها حقل لم يعد معروفاً: تُعدَّل كالمعتاد، ويُحذف الحقل بإعادة كتابتها (كما يفعل الترحيل)، ولا يتغير الحقل نفسه.
+  // lx1 انتهت مدة حفظه (KEEP_PAST) ليؤرشفه الموظف
+  await setDoc(doc(d, 'items/lx1'), {...pub('lx1'), keepUntil: KEEP_PAST, oldField: 'قديم'}); await setDoc(doc(d, 'itemSecrets/lx1'), sec);
+  for (const k of ['lx2', 'lx3']){ await setDoc(doc(d, 'items/' + k), {...pub(k), oldField: 'قديم'}); await setDoc(doc(d, 'itemSecrets/' + k), sec); } });
+await t('v21-1: لا غرض جديد بحقل غير معروف', setDoc(doc(A, 'items/v21a'), {...pub('v21a'), note: 'x'}), false);
+await t('v21-1: الغرض الجديد بحقوله المعروفة مسموح', setDoc(doc(A, 'items/v21b'), {...pub('v21b'), fromReport: 'r1', pubColor: 'black'}));
+await t('v21-2: لا عنوان ضخم في غرض جديد', setDoc(doc(A, 'items/v21c'), {...pub('v21c'), title: 'x'.repeat(5000)}), false);
+await t('v21-2: ولا رقم قيد طويل', setDoc(doc(A, 'items/v21c'), {...pub('v21c'), ref: 'TCA-' + 'X'.repeat(60)}), false);
+await t('v21-3: لا يُضاف حقل غير معروف لغرض موجود', updateDoc(doc(A, 'items/v21b'), {extra: 'x', updatedAt: now}), false);
+await t('v21-4: ولا نوع ضخم عند التعديل', updateDoc(doc(A, 'items/v21b'), {sub: 'x'.repeat(300), updatedAt: now}), false);
+await t('v21-5: قيمة صورة غير معروفة مرفوضة', updateDoc(doc(A, 'items/v21b'), {photo: 'big', updatedAt: now}), false);
+await t('v21-5: الصورة المموّهة مع لونها العام مسموحة', updateDoc(doc(A, 'items/v21b'), {photo: 'blur', pubColor: 'navy', updatedAt: now}));
+await t('v21-5: ووقت تعديل بنوع خاطئ مرفوض', updateDoc(doc(A, 'items/v21b'), {updatedAt: 'x'}), false);
+await t('v21-6: غرض قديم بحقل غير معروف يُعدَّل كالمعتاد', updateDoc(doc(A, 'items/lx1'), {sub: 'حقيبة ظهر', updatedAt: now}));
+await t('v21-6: ويتغير حاله بقيده', upItem(A, 'lx1', {status: 'archived', reservedFor: '', updatedAt: now}));
+await t('v21-6: لكن لا يتغير الحقل القديم نفسه', updateDoc(doc(A, 'items/lx2'), {oldField: 'جديد', updatedAt: now}), false);
+await t('v21-6: وإعادة كتابته تحذف الحقل القديم', batch(A, (b, r) => b.set(r('items/lx3'), pub('lx3'))));
 
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);
