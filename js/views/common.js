@@ -1,5 +1,5 @@
 // عناصر واجهة مشتركة بين الصفحات
-import { icon, otype, otypeName, oCity, brandOf, cat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf, statusLabel, ITEM_STATUS, latinDigits } from '../constants.js';
+import { icon, otype, otypeName, oCity, brandOf, cat, normCat, CATS, COLORS, catName, colorName, subName, subLabel, spotLabel, claimOf, statusLabel, ITEM_STATUS, latinDigits, detailValue } from '../constants.js';
 import { t, hasKey } from '../i18n.js';
 import { LS, esc, relDay, relTime, colorDot, isBuilding, roomWord, spotText, showTitle, when, fullWhen, fmtDate, fmtDateFull, isoDay, okMs, isoMs } from '../utils.js';
 import { aiReady } from '../firebase.js';   // H8: ai.js يُحمَّل عند الحاجة فقط
@@ -149,7 +149,7 @@ export const person = uid => `<span class="person"><img data-avatar="${esc(uid)}
 // ids (H9): جزء من التصنيفات فقط (الأزرار السريعة في نموذج الإضافة، ثم البقية داخل «كل التصنيفات»)
 export function catPicker(sel, ids = null){
   const list = ids ? ids.map(id => CATS.find(c => c.id === id)).filter(Boolean) : CATS;
-  return `<div class="catpick" role="radiogroup" aria-label="${t('c.category')}">${list.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${sel === c.id ? 'checked' : ''}>${icon(c.icon)}<span>${esc(catName(c.id))}</span></label>`).join('')}</div>`;
+  return `<div class="catpick${ids ? '' : ' all'}" role="radiogroup" aria-label="${t('c.category')}">${list.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${normCat(sel) === c.id ? 'checked' : ''}>${icon(c.icon)}<span>${esc(catName(c.id))}</span></label>`).join('')}</div>`;
 }
 export function subsPicker(catId, sel){
   const subs = catId ? cat(catId).subs : []; sel = subName(sel);   // الاسم القديم يُختار باسمه الحالي
@@ -171,17 +171,33 @@ export const dfOpt = (k, o) => t(`df.${k}.${o}`);
 export const detailReq = (d, mode) => mode === 'item' ? d.req === 'both' || d.req === 'staff' : mode === 'claim' ? d.req === 'both' || d.req === 'claim' : false;
 /* H1: part يقسّم خانات طلب الاستلام: 'req' المطلوبة فقط (ظاهرة دائماً)، و'opt' الاختيارية فقط
    (داخل «تفاصيل إضافية» المطوية)، وبدونه كل الخانات (نموذج الغرض والبلاغ). العرض فقط: ما يُحفظ لا يتغيّر */
+// H37: علامة الخانة الإلزامية (النجمة للعين فقط؛ required على الخانة نفسها لقارئ الشاشة)
+export const reqMark = () => ` <span class="req-mark" aria-hidden="true">*</span>`;
+/* H37: «اسم الغرض باختصار» (البلاغ ونموذج الغرض): بعد التصنيف مباشرة، إلزامي، 40 حرفاً مع عدّاد (data-count في actions.js)،
+   ومثاله يتبدّل مع التصنيف (data-nameph، onCatChange) دون مسح ما كُتب. بلا لون في الأمثلة: اللون خانة مستقلة */
+export const NAME_MAX = 40;
+export const namePh = catId => { const k = 'nm.ph.' + normCat(catId); return t(catId && hasKey(k) ? k : 'nm.ph'); };
+export function nameField(id, v, catId){
+  v = String(v || '');
+  return `<div class="field req"><label for="${id}">${t('rp.name')}${reqMark()}</label>
+    <input id="${id}" name="title" class="input" required maxlength="${NAME_MAX}" data-count="1" data-nameph="1" autocomplete="off" aria-describedby="${id}-h" value="${esc(v)}" placeholder="${esc(namePh(catId))}">
+    <div class="name-foot"><span class="hint" id="${id}-h">${t('nm.hint')}</span><span class="char-n" id="${id}-n" dir="ltr">${v.length}/${NAME_MAX}</span></div></div>`;
+}
+// H37: مثال الخانة حسب التصنيف (df.<cat>.<k>.ph) وإلا العام (df.<k>.ph)
+const dfPh = (catId, k) => hasKey(`df.${catId}.${k}.ph`) ? t(`df.${catId}.${k}.ph`) : hasKey(`df.${k}.ph`) ? t(`df.${k}.ph`) : '';
 export function catFields(catId, src = {}, mode = 'item', part = ''){
   if (!catId) return '';
   const q = claimOf(catId), det = src?.details || {};
   const show = req => !part || (part === 'req') === !!req;
-  const opt = on => on ? '' : ` <span class="hint">${t('c.optional')}</span>`;
+  // H37: لا «(اختياري)» على الخانات: الإلزامية عليها نجمة، والاختيارية تحت سطر «تفاصيل إضافية»
+  const opt = on => on ? reqMark() : '';
   const colorLabel = hasKey(`df.${catId}.color`) ? t(`df.${catId}.color`) : t(mode === 'claim' ? 'cl.color' : 'c.color');
   const brandReq = mode === 'claim' && q.req.includes('brand');
-  const out = [];
+  const out = [], secret = [];
   if (q.fields.includes('color') && show(mode === 'claim' && q.req.includes('color'))) out.push(`<div class="field"><span class="label">${colorLabel}</span>${colorPicker(src?.color || '', mode === 'claim')}</div>`);
+  const brandPh = hasKey(`if.brandPh.${catId}`) ? t(`if.brandPh.${catId}`) : t('if.brandPh');
   if (q.fields.includes('brand') && mode !== 'report' && show(brandReq)) out.push(`<div class="field"><label for="cf-brand">${t('if.brand')}${mode === 'item' ? ` <span class="hint">${t('if.staffOnly')}</span>` : opt(brandReq)}</label>
-    <input id="cf-brand" name="brand" class="input" maxlength="40" autocomplete="off" value="${esc(src?.brand || '')}" ${mode === 'item' ? `placeholder="${t('if.brandPh')}"` : ''}></div>`);
+    <input id="cf-brand" name="brand" class="input" maxlength="40" autocomplete="off" value="${esc(src?.brand || '')}" placeholder="${esc(brandPh)}" ${brandReq ? 'required' : ''}></div>`);
   for (const d of q.details){
     if (mode === 'claim' && d.as) continue;   // الاسم وآخر 4 أرقام في صندوق الهوية أصلاً
     const id = `cf-${d.k}`, v = det[d.k] || '', req = detailReq(d, mode);
@@ -189,18 +205,33 @@ export function catFields(catId, src = {}, mode = 'item', part = ''){
     // هو أقوى ما يثبت الملكية، فلا يُخفى في «تفاصيل إضافية»
     if (!show(req || !!d.unique)) continue;
     // (النص داخل span: التلميح flex، وكل عنصر فيه مباشرة يصبح قطعة مستقلة فينكسر ترتيب «*#06#»)
-    const hint = d.unique && hasKey(`df.${d.k}.hint`) ? `<span class="hint">${icon('shield')}<span>${t(`df.${d.k}.hint`)}</span></span>` : '';
+    const hk = hasKey(`df.${catId}.${d.k}.hint`) ? `df.${catId}.${d.k}.hint` : `df.${d.k}.hint`;
+    const hint = d.unique && hasKey(hk) ? `<span class="hint">${icon('shield')}<span>${t(hk)}</span></span>` : '';
+    const ph = dfPh(catId, d.k), phA = ph ? ` placeholder="${esc(ph)}"` : '';
+    if (d.type === 'pick'){
+      // H37: الاختيار أزرار سريعة (لا قائمة منسدلة)، وأولها «لا أعرف» (قيمة فارغة = لا شيء يُحفظ)
+      const opts = ['', ...d.opts], cur = d.opts.includes(v) ? v : '';
+      secret.push(`<div class="field${req ? ' req' : ''}"><span class="label" id="${id}-l">${dfLabel(catId, d.k)}${opt(req)}</span>
+        <div class="subs pick" role="radiogroup" aria-labelledby="${id}-l">${opts.map(o => `<label><input type="radio" name="d_${d.k}" value="${o}" ${cur === o ? 'checked' : ''}>${o ? dfOpt(d.k, o) : t('df.pickUnknown')}</label>`).join('')}</div></div>`);
+      continue;
+    }
     const lab = `<label for="${id}">${dfLabel(catId, d.k)}${opt(req)}</label>`;
-    const ph = hasKey(`df.${d.k}.ph`) ? ` placeholder="${esc(t(`df.${d.k}.ph`))}"` : '';
-    const input = d.type === 'pick'
-      ? `<select id="${id}" name="d_${d.k}" class="input"><option value="">${t('df.pickNone')}</option>${d.opts.map(o => `<option value="${o}" ${v === o ? 'selected' : ''}>${dfOpt(d.k, o)}</option>`).join('')}</select>`
-      : d.type === 'text' ? `<input id="${id}" name="d_${d.k}" class="input" maxlength="80" autocomplete="off" value="${esc(v)}"${ph}>`
-      // H33: الرقم التسلسلي أو IMEI: يُلصق كاملاً (40 خانة) ويُحفظ آخر 4 منه فقط (detailValue). بلا .num-in (ذلك المرشّح يحذف الحروف)
-      : d.type === 'tail' ? `<input id="${id}" name="d_${d.k}" class="input" dir="ltr" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" value="${esc(v)}"${ph}>`
-      : `<input id="${id}" name="d_${d.k}" class="input num-in" inputmode="numeric" dir="ltr" autocomplete="off" maxlength="${d.type === 'last4' ? 4 : 9}" value="${esc(v)}"${ph}>`;
-    out.push(`<div class="field${req ? ' req' : ''}${d.unique ? ' uniq' : ''}">${lab}${input}${hint}</div>`);
+    const rq = req ? ' required' : '';
+    const input = d.type === 'text' ? `<input id="${id}" name="d_${d.k}" class="input" maxlength="80" autocomplete="off" value="${esc(v)}"${phA}${rq}>`
+      // H33: الرقم التسلسلي أو IMEI: يُلصق كاملاً (40 خانة) ويُحفظ آخر 4 منه فقط (detailValue). بلا .num-in (ذلك المرشّح يحذف الحروف).
+      // H37: لوحة أرقام في الجوالات (IMEI أرقام)، وتحته «سيُحفظ: ••••4521» حين يُلصق رقم أطول (data-tail في actions.js)
+      : d.type === 'tail' ? `<input id="${id}" name="d_${d.k}" class="input" dir="ltr" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" data-tail="1" aria-describedby="${id}-save"${catId === 'phones' ? ' inputmode="numeric"' : ''} value="${esc(v)}"${phA}${rq}>
+        <span class="hint tail-save" id="${id}-save" ${String(v).replace(/[^0-9A-Za-z]/g, '').length > 4 ? '' : 'hidden'}>${t('df.tailSave', {v: `<b dir="ltr">••••${esc(detailValue(d, v))}</b>`})}</span>`
+      : `<input id="${id}" name="d_${d.k}" class="input num-in" inputmode="numeric" dir="ltr" autocomplete="off" maxlength="${d.type === 'last4' ? 4 : 9}" value="${esc(v)}"${phA}${rq}>`;
+    secret.push(`<div class="field${req ? ' req' : ''}${d.unique ? ' uniq' : ''}">${lab}${input}${hint}</div>`);
   }
-  return out.join('');
+  // H37: سطر «تفاصيل إضافية» فوق الخانات الاختيارية (البلاغ ونموذج الغرض الكامل؛ في الإضافة السريعة هو عنوان «تفاصيل إضافية» المطوية)،
+  // وتحت الخانات الخاصة (IMEI، الخلفية، الغطاء…): لا تظهر للعامة
+  const all = [...out, ...secret];
+  if (!all.length) return '';
+  const head = mode !== 'claim' && !part ? `<p class="xd-h">${icon('plus')}<span>${t('xd.head')}</span></p>` : '';
+  const lock = mode !== 'claim' && secret.length ? `<p class="hint xd-lock">${icon('lock')}<span>${t('xd.private')}</span></p>` : '';
+  return head + all.join('') + lock;
 }
 // كيف تظهر صورة الغرض للعامة (يختارها الموظف)
 export function photoModePicker(sel = 'blur'){

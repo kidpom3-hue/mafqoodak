@@ -2,7 +2,7 @@
 // كل انتقال يُكتب في writeBatch واحد (الغرض + الطلبات + قيد في السجل logs)،
 // فإما ينجح كله أو لا يُكتب منه شيء، حتى لا تبقى البيانات ناقصة إذا انقطع الاتصال.
 import { dbx, deleteField, arrayRemove } from './firebase.js';
-import { isHighValue, pubFlag, isHiddenCat, detailValue, claimOf, cat, keepUntilOf } from './constants.js';
+import { isHighValue, pubFlag, isHiddenCat, detailValue, claimOf, cat, normCat, keepUntilOf } from './constants.js';
 import { makeRef, publicTitle, today } from './utils.js';
 import { S, full, item, isOwner } from './state.js';
 import { SETTINGS } from './config.js';
@@ -393,6 +393,16 @@ export const canDeleteItem = i => !!i && (S.isAdmin || i.sample === true
 
 /* v9: تعديل غرض من نموذج الموظف: batch واحد فيه update للحقول المعدّلة فقط (لا status ولا reservedFor ولا returnedAt
    ولا disposal)، والتفاصيل السرية كاملة، وقيد «تعديل» في السجل */
+/* H37: نقل غرض من تصنيف أُلغي (قوارير وحافظات) إلى «أخرى». تغيير التصنيف يحتاج قيداً في العملية نفسها (v14)،
+   فيمر عبر itemUpdate مع قيد recat. يستدعيه migrateCats (migrate.js) عند فتح لوحة الموظف */
+export async function recatLegacy(i){
+  const to = normCat(i.cat);
+  if (to === i.cat) return;
+  const b = dbx.batch();
+  itemUpdate(b, i, {cat: to, updatedAt: Date.now()});
+  log(b, i.officeId, 'recat', {itemId: i.id, note: tAr('sys.recat')});
+  await commit(b);
+}
 export async function editItem(i, patch, secret){
   for (const k of ['status', 'reservedFor', 'returnedAt', 'disposal', 'disposedAt', 'officeId', 'createdBy', 'createdAt', 'ref', 'sample', 'keepUntil', 'lastLog']) delete patch[k];
   if (patch.cat && !canChangeCat(i.cat, patch.cat)) fail(t('wf.hvDowngrade'));

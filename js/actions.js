@@ -16,7 +16,7 @@ import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor
 // (أزرار لوحة الموظف لا تظهر إلا بعد تحميلها، فهي موجودة عند النقر)
 import { mod, load } from './lazy.js';
 const SM = () => mod('staff');
-import { FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, dfOpt, detailReq, delegateOf } from './views/common.js';
+import { FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, dfOpt, detailReq, delegateOf, namePh } from './views/common.js';
 import { setTheme, setTextSize } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
 import { aiReady } from './firebase.js';
@@ -158,12 +158,15 @@ export function onCatChange(form, catId, sub){
     const memo = form.catMemo ||= {details: {}}, fd = new FormData(form);
     if (form.querySelector('[name=color]')) memo.color = String(fd.get('color') || '');
     if (form.querySelector('[name=brand]')) memo.brand = String(fd.get('brand') || '');
-    for (const el of form.querySelectorAll('[name^=d_]')) memo.details[el.name.slice(2)] = el.value;
+    // H37: أزرار الاختيار (شركة الشريحة…): المختار منها فقط
+    for (const el of form.querySelectorAll('[name^=d_]')) if (el.type !== 'radio' || el.checked) memo.details[el.name.slice(2)] = el.value;
     // H9: نموذج الإضافة السريعة يقسم الخانات: المطلوبة ظاهرة، والاختيارية في «تفاصيل إضافية»
     const opt = form.querySelector('#cat-fields-opt');
     cf.innerHTML = catFields(catId, memo, cf.dataset.mode, opt ? 'req' : '');
     if (opt) opt.innerHTML = catFields(catId, memo, cf.dataset.mode, 'opt');
   }
+  // H37: مثال «اسم الغرض» يتبدّل مع التصنيف، وما كُتب يبقى كما هو
+  const nm = form.querySelector('input[data-nameph]'); if (nm) nm.placeholder = namePh(catId);
   // التصنيف المختار داخل «كل التصنيفات» المطوية: نفتحها حتى يراه الموظف
   const picked = form.querySelector(`input[name=cat]:checked`)?.closest('#cat-all'); if (picked) picked.open = true;
   const sens = cat(catId).sensitive;
@@ -179,6 +182,13 @@ function onSpotChange(form, spot){
   const on = isBuilding(spot); box.hidden = !on;
   const lbl = form.querySelector('#room-label'); if (lbl) lbl.textContent = roomWord(spot);
   if (!on) box.querySelectorAll('input').forEach(i => i.value = '');
+}
+// H37: يُحفظ من الرقم التسلسلي آخر 4 خانات فقط (detailValue)، فيُعرض ما سيُحفظ حين يكون المكتوب أطول
+function syncTail(el){
+  const box = document.getElementById(el.id + '-save'); if (!box) return;
+  const raw = latinDigits(el.value).replace(/[^0-9A-Za-z]/g, '');
+  box.hidden = raw.length <= 4;
+  if (!box.hidden) box.innerHTML = t('df.tailSave', {v: `<b dir="ltr">••••${esc(detailValue({type: 'tail'}, el.value))}</b>`});
 }
 function clearPhoto(form){
   FORM.photo = null; FORM.blob = null; FORM.copyFrom = null; if (FORM.hadPhoto) FORM.removed = true;
@@ -1640,6 +1650,9 @@ export function bindEvents(){
     if (t.classList.contains('code-in')) t.value = normCode(t.value);
     if (t.name === 'idLast4' || t.name === 'rlast4' || t.name === 'last4') t.value = latinDigits(t.value).replace(/\D/g, '').slice(0, 4);
     if (t.name === 'title' && t.closest('form[data-quick]')) unSugg(t.closest('form'), t);
+    // H37: عدّاد «اسم الغرض» (40 حرفاً)، و«سيُحفظ: ••••4521» تحت خانة الرقم التسلسلي عند لصق رقم كامل
+    if (t.dataset.count){ const n = document.getElementById(t.id + '-n'); if (n) n.textContent = `${t.value.length}/${t.maxLength}`; }
+    if (t.dataset.tail) syncTail(t);
   });
   app.addEventListener('change', e => {
     const t = e.target;

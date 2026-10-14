@@ -167,7 +167,9 @@ form{display:flex;flex-direction:column;gap:16px}
 .input:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
 textarea.input{min-height:92px;resize:vertical}
 .two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px}
-.catpick{display:grid;grid-template-columns:repeat(auto-fill,minmax(98px,1fr));gap:8px}
+.catpick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+/* H37: القائمة الكاملة = 12 تصنيفاً في 4 صفوف × 3، و«أخرى» صف أخير بعرض الشبكة */
+.catpick.all label:has(input[value=other]){grid-column:1/-1;flex-direction:row;justify-content:center}
 .catpick label{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;padding:10px 6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:12.5px;font-weight:600;cursor:pointer;line-height:1.35}
 .catpick label svg{width:24px;height:24px;color:var(--muted)}
 .catpick input,.swatches input,.subs input{position:absolute;opacity:0;pointer-events:none}
@@ -1484,3 +1486,17 @@ table.t td>.link{min-height:36px;display:inline-flex;align-items:center}
 .ctl .tl-note{display:block;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
 .mcard-sum .upd{grid-column:1;font-size:12px;color:var(--muted)}
 .mcard-sum .upd time{color:inherit}
+
+/* ===== H37: نموذج إضافة الغرض (البلاغ ونموذج الموظف) ===== */
+/* placeholder مقروء في الوضعين: --muted (4D5761 على الأبيض ≈ 7:1، و9BA6B1 على الداكن ≈ 7:1) بدل رمادي المتصفح الباهت */
+.input::placeholder{color:var(--muted);opacity:1}
+.req-mark{color:var(--bad);font-weight:700}
+.name-foot{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-top:4px}
+.name-foot .hint{margin:0}
+.char-n{flex:none;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.xd-h{display:flex;align-items:center;gap:8px;margin:6px 0 2px;padding-top:12px;border-top:1px solid var(--line);font-weight:600;font-size:14.5px}
+.xd-h svg{width:18px;height:18px;flex:none;color:var(--primary)}
+.xd-lock{display:flex;align-items:flex-start;gap:6px;margin:-4px 0 10px}
+.xd-lock svg{width:14px;height:14px;flex:none;margin-top:3px}
+.tail-save b{letter-spacing:.04em}
+.subs.pick label{min-height:36px;display:inline-flex;align-items:center}

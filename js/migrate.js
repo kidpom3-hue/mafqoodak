@@ -3,7 +3,8 @@
 // المرحلة E5: مكان العثور (spot) سري أيضاً، وينقله migrateSpots لكل غرض محمّل (النشطة، وما جُلب بفلتر الحالة).
 import { dbx, deleteField } from './firebase.js';
 import { S, isStaffHere, cachePhoto } from './state.js';
-import { pubFlag, keepUntilOf } from './constants.js';
+import { pubFlag, keepUntilOf, LEGACY_CATS } from './constants.js';
+import { recatLegacy } from './workflow.js';
 import { LS } from './utils.js';
 import { makeBlur, publicTitle, toast } from './utils.js';
 import { t, tp } from './i18n.js';
@@ -122,6 +123,25 @@ export async function migratePublic(){
     if (!failed) LS.set(key, true);
   } catch (e){ console.warn(e); }
   finally { pubRunning = false; }
+}
+
+/* H37: تصنيف «قوارير وحافظات» أُلغي: أغراض المكتب التي ما زالت به تُنقل إلى «أخرى» (مرة لكل جهاز ومكتب، LS catMig:<office>).
+   غرض واحد في كل عملية مع قيد recat (القواعد تشترط قيداً لكل تغيير تصنيف). الغرض الذي فيه حقول قديمة يُترك لترحيله أولاً */
+let catRunning = false;
+export async function migrateCats(){
+  const office = S.officeId, key = 'catMig:' + office;
+  if (catRunning || !isStaffHere() || !office || LS.get(key, false)) return;
+  catRunning = true;
+  try {
+    const all = await dbx.list('items', [['officeId', '==', office], ['cat', 'in', Object.keys(LEGACY_CATS)]]);
+    let failed = 0;
+    for (const i of all){
+      if (i.photo === true || OLD_KEYS.some(k => k in i && k !== 'spot')){ failed++; continue; }
+      try { await recatLegacy(i); } catch (e){ console.warn(e); failed++; }
+    }
+    if (!failed) LS.set(key, true);
+  } catch (e){ console.warn(e); }
+  finally { catRunning = false; }
 }
 
 /* H18: بريد المستخدمين كان في users/{uid} (يقرؤه كل موظف). صار في users/{uid}/private/profile (صاحبه والإدارة فقط).

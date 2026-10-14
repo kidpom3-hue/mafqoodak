@@ -183,7 +183,7 @@ for (const lang of ['ar', 'en']){
     ['claim', 'claim', {id: 'b1'}, 'form[data-form=claim]', ident, 'claims'],
     ['gclaim', 'gclaim', {cat: 'wallets'}, 'form[data-form=claim]', ident, 'claims'],
     ['cash', 'gclaim', {cat: 'cash'}, 'form[data-form=claim]', ident, 'claims'],
-    ['handin', 'handin', {}, 'form[data-form=handin]', pick('bottles'), 'foundReports'],
+    ['handin', 'handin', {}, 'form[data-form=handin]', pick('other'), 'foundReports'],
   ];
   for (const [kind, route, params, sel, fill, col] of cases){
     const tag = `4 (${lang} ${kind})`;

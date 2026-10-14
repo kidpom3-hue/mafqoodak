@@ -98,6 +98,12 @@ export const LOGO = `<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><p
 // publicName/publicEn: الاسم في الإعلان العام بدل اسم النوع (النقود: «مبلغ مالي» دون المبلغ)
 const CB = ['color', 'brand'];
 const q = (k, type = 'text', req = '', x = {}) => ({k, type, req, ...x});
+/* H37: شركة الشريحة أزرار اختيار (لا نص حر). القيم القديمة المكتوبة نصاً تُفهم بالأسماء الشائعة (SIM_ALIAS)،
+   وما لا يُعرف منها لا يُحسب في المقارنة (لا ✗ آلياً). «لا أعرف» = قيمة فارغة لا تُحفظ */
+const SIMS = ['stc', 'mobily', 'zain', 'salam', 'lebara', 'virgin'];
+const SIM_ALIAS = {stc: 'stc', 'اسيتيسي': 'stc', 'استيسي': 'stc', 'الاتصالات': 'stc', 'الاتصالاتالسعودية': 'stc', 'سوا': 'stc',
+  mobily: 'mobily', 'موبايلي': 'mobily', zain: 'zain', 'زين': 'zain', salam: 'salam', 'سلام': 'salam',
+  lebara: 'lebara', 'ليبارا': 'lebara', virgin: 'virgin', 'فيرجن': 'virgin', 'فيرجين': 'virgin', 'فرجن': 'virgin'};
 /* v7: تقوية إثبات الملكية */
 // الأغراض الثمينة: للتسليم المباشر والحذف بصلاحية الإدارة فقط (H14: القبول بموظف واحد لكل التصنيفات).
 // نفس القائمة highValue() في firestore.rules — عدّلهما معاً
@@ -145,9 +151,9 @@ export const CATS = [
   {id:'wallets', autoSuggest:false, groupPublic:true, name:'محافظ', en:'Wallets', icon:'wallet', subs:['محفظة رجالية','محفظة نسائية','حافظة بطاقات','محفظة جوال'], subsEn:["Men's wallet","Women's wallet",'Card holder','Phone wallet'],
     claim:{fields: CB, details: [q('cardName'), q('cardLast4', 'last4', '', {unique: true}), q('cashInside', 'approx')], hint: 'cl.h.wallets'}},
   {id:'phones', autoSuggest:false, name:'جوالات وأجهزة', en:'Phones & devices', icon:'phone', subs:['جوال','جهاز لوحي','لابتوب','ساعة ذكية'], subsEn:['Phone','Tablet','Laptop','Smartwatch'],
-    claim:{fields: CB, req: ['brand'], details: [q('model'), q('serial', 'tail', '', {unique: true}), q('lockscreen'), q('sim'), q('mark')], hint: 'cl.h.phones'}, staffCheck: 'sc.phones'},
+    claim:{fields: CB, req: ['brand'], details: [q('model'), q('serial', 'tail', '', {unique: true}), q('lockscreen'), q('sim', 'pick', '', {opts: SIMS, alias: SIM_ALIAS}), q('mark')], hint: 'cl.h.phones'}, staffCheck: 'sc.phones'},
   {id:'acc', name:'ملحقات إلكترونية', en:'Electronic accessories', icon:'plug', subs:['سماعات','شاحن','كيبل','باور بانك','فلاش USB','آلة حاسبة'], subsEn:['Headphones','Charger','Cable','Power bank','USB flash drive','Calculator'],
-    claim:{fields: CB, details: [q('serial', 'tail', '', {unique: true}), q('mark')], hint: 'cl.h.acc'}},
+    claim:{fields: CB, details: [q('model'), q('serial', 'tail', '', {unique: true}), q('mark')], hint: 'cl.h.acc'}},
   {id:'keys', autoSuggest:false, groupPublic:true, name:'مفاتيح', en:'Keys', icon:'key', subs:['مفتاح سيارة','مفاتيح منزل','ميدالية','بطاقة دخول'], subsEn:['Car key','House keys','Keyring','Access card'],
     claim:{fields: [], details: [q('keyCount', 'num', 'both'), q('keyring'), q('carBrand')], hint: 'cl.h.keys'}},
   {id:'jewelry', autoSuggest:false, name:'مجوهرات وساعات', en:'Jewellery & watches', icon:'ring', subs:['خاتم','سلسال','أسورة','ساعة يد','أقراط'], subsEn:['Ring','Necklace','Bracelet','Wristwatch','Earrings'],
@@ -162,8 +168,6 @@ export const CATS = [
     claim:{fields: CB, details: [q('size'), q('mark'), q('inside')], hint: 'cl.h.clothes'}},
   {id:'tools', name:'عُدد وأدوات ورش', en:'Workshop tools', icon:'wrench', subs:['عدة يدوية','جهاز قياس','خوذة سلامة','نظارة سلامة','قفازات'], subsEn:['Hand tools','Measuring device','Safety helmet','Safety glasses','Gloves'],
     claim:{fields: CB, details: [q('mark')], hint: 'cl.h.tools'}},
-  {id:'bottles', name:'قوارير وحافظات', en:'Bottles & flasks', icon:'bottle', subs:['قارورة ماء','حافظة قهوة (ترمس)','علبة طعام'], subsEn:['Water bottle','Coffee flask (thermos)','Food container'], retentionDays: 14,
-    claim:{fields: CB, details: [q('mark')], hint: 'cl.h.bottles'}},
   {id:'other', name:'أخرى', en:'Other', icon:'box', subs:[], subsEn:[]},
 ];
 // مفاتيح أسئلة التصنيف المسموحة: نفس قائمة detailKeys() في firestore.rules حرفياً (عدّلهما معاً)
@@ -197,13 +201,13 @@ export function detailValue(d, v){
   if (d.type === 'last4') return v.replace(/\D/g, '').slice(0, 4);
   // H33: آخر 4 خانات من الرقم التسلسلي أو IMEI (حروف لاتينية كبيرة وأرقام فقط؛ O وI تبقيان كما كُتبتا)
   if (d.type === 'tail') return v.replace(/[^0-9A-Za-z]/g, '').toUpperCase().slice(-4);
-  if (d.type === 'pick') return (d.opts || []).includes(v) ? v : '';
+  if (d.type === 'pick') return (d.opts || []).includes(v) ? v : d.alias?.[v.toLowerCase().replace(/[\s\-_.]/g, '')] || '';
   return v.slice(0, 80);
 }
 // مدة الحفظ الفعلية للغرض: مدة التصنيف إن كانت أقصر من مدة المكتب
 export const keepDaysOf = (catId, office) => { const o = Number(office?.retentionDays) || 90, c = cat(catId).retentionDays; return c && c < o ? c : o; };
 /* v14 (H19): نهاية مدة الحفظ بالمللي ثانية = يوم العثور (منتصف الليل UTC) + أيام الحفظ. تُكتب في الغرض عند إنشائه (keepUntil)،
-   والقواعد تتحقق منها (keepOk: نفس retentionDays لـ ids وbottles هناك) ولا يغيّرها إلا المدير.
+   والقواعد تتحقق منها (keepOk: نفس retentionDays لـ ids هناك؛ bottles باقٍ فيها للأغراض القديمة) ولا يغيّرها إلا المدير.
    قبلها لا يؤرشف الموظف الغرض ولا يتصرّف فيه */
 export const keepUntilOf = (catId, office, foundDate) => {
   const d = Date.parse(String(foundDate || '') + 'T00:00:00Z');
@@ -267,13 +271,20 @@ export const statusLabel = e => e ? (isEn() ? e.en : e.l) : '';
 // «مطارة» كانت تُقرأ «مطار» في منصة ستخدم المطارات
 export const LEGACY_SUBS = {'مطارة قهوة': 'حافظة قهوة (ترمس)'};
 export const subName = s => LEGACY_SUBS[s] || s || '';
-export const cat = id => CATS.find(c => c.id === id) || CATS[CATS.length-1];
+/* H37: تصنيفات أُلغيت (12 تصنيفاً = 4 صفوف × 3، و«أخرى» آخرها). «قوارير وحافظات» صار «أخرى»:
+   القيمة القديمة في البيانات تُعرض وتُفرز وتُطابق كأنها «أخرى» (normCat)، وأغراض المكتب نفسها تُنقل إلى other
+   عند فتح لوحة الموظف (migrateCats في migrate.js ← wf.recatLegacy). البلاغات والإشعارات القديمة تبقى كما هي وتُعرض «أخرى» */
+export const LEGACY_CATS = {bottles: 'other'};
+export const normCat = id => LEGACY_CATS[id] || id;
+// أنواع التصنيف الملغى: تبقى قيمتها العربية في البيانات، ولها اسم إنجليزي للعرض
+const LEGACY_SUB_EN = {'قارورة ماء': 'Water bottle', 'حافظة قهوة (ترمس)': 'Coffee flask (thermos)', 'علبة طعام': 'Food container'};
+export const cat = id => CATS.find(c => c.id === normCat(id)) || CATS[CATS.length-1];
 export const catName = id => isEn() ? cat(id).en : cat(id).name;
 // النوع للعرض: القيمة العربية المخزّنة ← اسمها بالإنجليزية إن كانت اللغة إنجليزية
 export function subLabel(s){
   const v = subName(s); if (!isEn() || !v) return v;
   for (const c of CATS){ const k = c.subs.indexOf(v); if (k >= 0) return c.subsEn[k] || v; }
-  return v;
+  return LEGACY_SUB_EN[v] || v;
 }
 // كل أسماء التصنيف والنوع واللون باللغتين (للبحث: كلمة إنجليزية تجد الأغراض العربية)
 export function searchWords(catId, s, colorId){
