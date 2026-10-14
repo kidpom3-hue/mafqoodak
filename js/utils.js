@@ -1,5 +1,5 @@
 // أدوات مساعدة عامة: التواريخ، البحث العربي، المطابقة، الصور
-import { color, colorName, cat, catName, subName, subLabel, searchWords, statusLabel, isBuilding, roomKind, norm, tokens, STOP, latinDigits } from './constants.js';
+import { color, colorName, cat, normCat, catName, subName, subLabel, searchWords, statusLabel, isBuilding, roomKind, norm, tokens, STOP, latinDigits } from './constants.js';
 import { t, tp, locale, isEn } from './i18n.js';
 // كانت هنا سابقاً؛ نعيد تصديرها حتى لا تتغيّر أماكن الاستيراد
 export { isBuilding, norm, tokens, STOP };
@@ -138,7 +138,8 @@ export function textScore(q, i, withPlace = true){
 /* heuristic match between a lost report and a found item, 0-100 */
 export function matchScore(r, it){
   let s = 0;
-  if (r.cat && it.cat === r.cat) s += 40; else if (r.cat && r.cat !== 'other' && it.cat !== 'other') s -= 15;
+  const rc = normCat(r.cat), ic = normCat(it.cat);   // H37: «قوارير» القديمة = «أخرى»
+  if (rc && ic === rc) s += 40; else if (rc && rc !== 'other' && ic !== 'other') s -= 15;
   if (r.sub && subKey(it.sub) === subKey(r.sub)) s += 12;
   if (r.color && it.color === r.color) s += 15;
   const a = new Set(tokens(`${r.title} ${r.desc}`)), b = new Set(tokens(`${it.title} ${it.desc} ${it.sub || ''}`));

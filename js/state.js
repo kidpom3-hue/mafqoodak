@@ -2,7 +2,7 @@
 import { auth, db, dbx, configured, onAuthStateChanged, getRedirectResult, deleteField, sharedDevice } from './firebase.js';
 import { LS, SS, matchScore, toast, dayNum, subKey, setSpotHook, tokens, norm, when } from './utils.js';
 import { t, LANG, saved, setLang, hasKey } from './i18n.js';
-import { oName, spotLabel, cat, catName, COLORS, autoSuggestOk, SUGG_STOP, claimOf, GROUP_DAYS, AMOUNT_TOL } from './constants.js';
+import { oName, spotLabel, cat, normCat, catName, COLORS, autoSuggestOk, SUGG_STOP, claimOf, GROUP_DAYS, AMOUNT_TOL } from './constants.js';
 import { SETTINGS } from './config.js';
 
 // رابط مشاركة غرض: ./#item/<رقم المكتب>/<رقم الغرض> يفتح صفحة الغرض مباشرة
@@ -175,7 +175,7 @@ export function publicClues(r, i){
   return n;
 }
 export function mayBeYours(r, i){
-  if (!r || !i || r.cat !== i.cat || r.officeId !== i.officeId || !autoSuggestOk(r.cat)) return false;
+  if (!r || !i || normCat(r.cat) !== normCat(i.cat) || r.officeId !== i.officeId || !autoSuggestOk(r.cat)) return false;
   if (r.sub && subKey(i.sub) !== subKey(r.sub)) return false;
   const d = dayNum(i.foundDate) - dayNum(r.lostDate);
   if (!isNaN(d) && (d < -1 || d > SUGG_DAYS)) return false;
@@ -187,7 +187,7 @@ const pickActive = r => { if (!r?.staffPick || rejectedOf(r).has(r.staffPick)) r
 function autoRanked(r){
   const no = rejectedOf(r);
   const rej = [...no].map(id => item(id)).filter(Boolean);
-  const like = i => rej.some(x => x.cat === i.cat && subKey(x.sub) === subKey(i.sub) && x.foundDate === i.foundDate) ? 1 : 0;
+  const like = i => rej.some(x => normCat(x.cat) === normCat(i.cat) && subKey(x.sub) === subKey(i.sub) && x.foundDate === i.foundDate) ? 1 : 0;
   return S.items.filter(i => ACTIVE.includes(i.status) && !no.has(i.id) && i.id !== r.staffPick && mayBeYours(r, i) && !iHandedIn(i))
     .map(i => ({i, like: like(i), n: publicClues(r, i)}))
     .sort((a, b) => a.like - b.like || b.n - a.n || (b.i.createdAt || 0) - (a.i.createdAt || 0)).map(x => x.i);

@@ -3,7 +3,7 @@
 import { dbx } from './firebase.js';
 import { MS_NOTE } from './workflow.js';
 import { S, touch } from './state.js';
-import { catName, subLabel, statusLabel, ITEM_STATUS, oName, keepDaysOf } from './constants.js';
+import { normCat, catName, subLabel, statusLabel, ITEM_STATUS, oName, keepDaysOf } from './constants.js';
 import { t, locale } from './i18n.js';
 import { dayNum, daysAgo, isoDay, spotName, today, toast, disposalLabel, TZ, LS } from './utils.js';
 
@@ -82,7 +82,7 @@ export function computeStats(items, office, reports = []){
   const base = n('available') + n('reserved') + returned.length + n('disposed');
   const days = returned.filter(i => i.returnedAt && i.foundDate).map(i => Math.max(0, Math.round(i.returnedAt / 864e5 - dayNum(i.foundDate))));
   // حسب التصنيف: الأكثر أولاً، وما بعد السابع يُجمع في «أخرى»
-  const byCat = Object.values(real.reduce((m, i) => { const k = i.cat || 'other'; (m[k] ||= {id: k, n: 0, ret: 0}).n++; if (i.status === 'returned') m[k].ret++; return m; }, {}))
+  const byCat = Object.values(real.reduce((m, i) => { const k = normCat(i.cat) || 'other'; (m[k] ||= {id: k, n: 0, ret: 0}).n++; if (i.status === 'returned') m[k].ret++; return m; }, {}))
     .sort((a, b) => b.n - a.n);
   const cats = byCat.length > 8 ? [...byCat.slice(0, 7), byCat.slice(7).reduce((o, c) => ({...o, n: o.n + c.n, ret: o.ret + c.ret}), {id: '_rest', n: 0, ret: 0})] : byCat;
   // آخر 6 أشهر: ما وُجد (بتاريخ العثور) وما أُعيد (بتاريخ الإعادة)

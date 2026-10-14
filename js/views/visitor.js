@@ -1,9 +1,9 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
-import { icon, LOGO, brandOf, CATS, cat, catName, isGrouped, isHiddenCat, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired, regCatOk, canDelegate } from '../constants.js';
+import { icon, LOGO, brandOf, CATS, cat, normCat, catName, isGrouped, isHiddenCat, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired, regCatOk, canDelegate } from '../constants.js';
 import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, tAr, noteText } from '../i18n.js';
 import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode, iHandedIn, ensureRegs, regAt } from '../state.js';
-import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack, telLink, reviewDaysOf, pickupDaysOf, delegateOf, updOf } from './common.js';
+import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, nameField, NAME_MAX, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack, telLink, reviewDaysOf, pickupDaysOf, delegateOf, updOf } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
 import { aiReady } from '../firebase.js';
@@ -91,7 +91,7 @@ export function groupCard(g){
 // التصفح العام: الأغراض النشطة فقط (المتاح والمحجوز)، والمُسلَّم يظهر كعدد في العنوان
 export function visibleItems(){
   let arr = pubActive();
-  if (S.filter.cat !== 'all') arr = arr.filter(i => i.cat === S.filter.cat);
+  if (S.filter.cat !== 'all') arr = arr.filter(i => normCat(i.cat) === S.filter.cat);
   if (S.filter.range !== 'all'){ const lim = +S.filter.range; arr = arr.filter(i => daysAgo(i.foundDate) <= lim); }
   const q = tokens(S.filter.q);
   if (q.length) return arr.map(i => ({i, s: textScore(q, i, false)})).filter(x => x.s > 0).sort((a,b) => b.s - a.s || (b.i.createdAt||0) - (a.i.createdAt||0)).map(x => x.i);
@@ -133,7 +133,7 @@ export function updateBrowse(){
   const vis = visibleItems(), q = tokens(S.filter.q);
   // H16: تصنيف مخفي (النقود) مختار: الرسالة وزر البلاغ بدل القائمة
   if (hiddenHere(S.filter.cat)){ res.innerHTML = hiddenNote(S.filter.cat); hydrate(); return; }
-  const pool = pubActive().filter(i => (S.filter.cat === 'all' || i.cat === S.filter.cat)
+  const pool = pubActive().filter(i => (S.filter.cat === 'all' || normCat(i.cat) === S.filter.cat)
     && (S.filter.range === 'all' || daysAgo(i.foundDate) <= +S.filter.range));
   const groups = groupEntries(pool).filter(g => !q.length || groupHit(q, g.group));
   const arr = [...groups.map(groupCard), ...vis.filter(i => !groupedHere(i.cat)).map(card)];
@@ -273,10 +273,10 @@ function claimForm(p){
   // «هذا غرضي — اطلب استلامه» من بلاغ عليه ترشيح: الطلب يُعبّأ من البلاغ تلقائياً ويُربط به (reportId)
   const pre = ed ? null : p.report ? myReports().find(r => r.id === p.report && r.status === 'open') : null;
   // بلاغ مفتوح من التصنيف نفسه: نعرض تعبئة الطلب منه
-  const rep = pre || ed ? null : myReports().find(r => r.status === 'open' && r.cat === catId && r.officeId === o.id);
+  const rep = pre || ed ? null : myReports().find(r => r.status === 'open' && normCat(r.cat) === catId && r.officeId === o.id);
   // أسئلة التصنيف (constants.js): نفس أسئلة الموظف، والإثبات الحر اختياري إن كان في التصنيف سؤال إجباري
   const ids = catId === 'ids', proofOpt = claimHasRequired(catId), q = claimOf(catId);
-  const src = ed ? {color: ed.color, brand: ed.brand, details: ed.details || {}} : pre && pre.cat === catId ? {color: pre.color, details: pre.details || {}} : {};
+  const src = ed ? {color: ed.color, brand: ed.brand, details: ed.details || {}} : pre && normCat(pre.cat) === catId ? {color: pre.color, details: pre.details || {}} : {};
   // قيم الخانات عند التعديل: من الطلب نفسه
   const v = ed ? {name: ed.claimantName, last4: ed.idLast4, proof: ed.proof, spot: ed.lostSpot, bldg: ed.bldg, room: ed.room, date: ed.lostDate}
     : {proof: pre?.desc, spot: pre?.spot, bldg: pre?.bldg, room: pre?.room, date: pre?.lostDate};
@@ -385,9 +385,9 @@ export function vReportForm(){
       ${step(1, 3, t('step.whatQ'), `
       ${photoField(photoKey, t('rp.photo'))}
       <div class="field"><span class="label">${t('c.category')}</span>${catPicker(r?.cat || '')}</div>
+      ${nameField('r-title', r?.title || String(S.route.params.q || '').slice(0, NAME_MAX), r?.cat)}
       <div class="field" id="subs-field" ${hasSubs ? '' : 'hidden'}><span class="label">${t('c.type')}</span><div id="subs">${hasSubs ? subsPicker(r.cat, r.sub) : ''}</div></div>
       <div id="cat-fields" data-mode="report">${r ? catFields(r.cat, r, 'report') : ''}</div>
-      <div class="field"><label for="r-title">${t('rp.name')}</label><input id="r-title" name="title" class="input" required placeholder="${t('rp.namePh')}" maxlength="80" value="${esc(r?.title || String(S.route.params.q || '').slice(0, 80))}"></div>
       ${stepNav(1, 3)}`)}
       ${step(2, 3, t('step.whereQ'), `
       <div class="two">
@@ -397,7 +397,7 @@ export function vReportForm(){
       ${spotExtra(r)}
       ${stepNav(2, 3)}`)}
       ${step(3, 3, t('step.descQ'), `
-      <div class="field"><label for="r-desc">${t('rp.desc')} <span class="hint">${t('c.optional')}</span></label><textarea id="r-desc" name="desc" class="input" placeholder="${t('rp.descPh')}" maxlength="600">${esc(r?.desc || '')}</textarea></div>
+      <div class="field"><label for="r-desc">${t('rp.desc')}</label><textarea id="r-desc" name="desc" class="input" placeholder="${t('rp.descPh')}" maxlength="600">${esc(r?.desc || '')}</textarea></div>
       <div class="step-nav">${stepBack()}<button class="btn" type="submit">${icon(r ? 'check' : 'search')}${t(r ? 'c.saveEdit' : 'rp.send')}</button></div>`)}
     </form>
     ${r ? `<p class="del-link"><button class="link danger" data-act="delReport" data-id="${esc(r.id)}">${icon('trash')}${t('rp.delete')}</button></p>` : ''}

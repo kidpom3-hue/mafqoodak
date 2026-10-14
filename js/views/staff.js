@@ -1,12 +1,12 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
-import { icon, CATS, cat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, GROUP_EXPIRE_DAYS, isHiddenCat, isHighValue } from '../constants.js';
+import { icon, CATS, cat, normCat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, GROUP_EXPIRE_DAYS, isHiddenCat, isHighValue } from '../constants.js';
 import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
 import { t, tp, noteText, hasKey } from '../i18n.js';
 import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, groupKeyLabel, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist, isOwner, regAt, ensureClaimLogs } from '../state.js';
-import { backBtn, relT, relDayT, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, timelineEvents, ctlRow, mcard, updOf, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf, delegateOf } from './common.js';
+import { backBtn, relT, relDayT, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, nameField, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, timelineEvents, ctlRow, mcard, updOf, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf, delegateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
-import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry, migratePublic } from '../migrate.js';
+import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry, migratePublic, migrateCats } from '../migrate.js';
 import { MS_NOTE, expireGroupClaim, OPEN, evidenceLocked } from '../workflow.js';
 import { emailUser } from '../notify.js';   // H9: ملاحظة مدة الإضافة لا تُعرض في السجل
 import { load } from '../lazy.js';   // H32: وحدة الإحصاءات تُحمَّل عند الحاجة فقط (تجديد مؤشرات الزوار)
@@ -86,6 +86,7 @@ export function updateStaff(){
   migrateItems();   // نقل تفاصيل الأغراض القديمة إلى الملف السري (مرة واحدة)
   migrateSpots();   // نقل مكان العثور من الإعلان العام إلى الملف السري (المرحلة E5)
   migratePublic();  // H16: حقل public لكل غرض قديم (مرة واحدة لكل جهاز ومكتب)
+  migrateCats();    // H37: «قوارير وحافظات» الملغى ← «أخرى»
   // H32: مؤشرات الزوار القديمة (شهر سابق أو أسبوع) تُجدَّد في الخلفية، مرة لكل مكتب في كل فتح للوحة (وفحص واحد في اليوم)
   const oid = curOffice()?.id;
   if (oid && pubChecked !== oid){ pubChecked = oid; load('stats').then(m => m.refreshPublicIfStale(oid)).catch(e => console.warn(e)); }
@@ -598,7 +599,7 @@ function acceptBtn(r){
 // الحقول السرية (الاسم التفصيلي، اللون، الماركة، الوصف، المبنى والقاعة، موضع الحفظ) تُقرأ من itemSecrets وتُحفظ فيها
 // H9: أكثر 6 تصنيفات في أغراض المكتب (تُكمَّل بترتيب القائمة)، ومعها التصنيف المختار إن لم يكن منها
 function topCats(o, sel){
-  const n = {}; for (const x of S.items) if (x.officeId === o?.id) n[x.cat] = (n[x.cat] || 0) + 1;
+  const n = {}; for (const x of S.items) if (x.officeId === o?.id) { const k = normCat(x.cat); n[k] = (n[k] || 0) + 1; }
   const ids = Object.keys(n).filter(k => CATS.some(c => c.id === k)).sort((a, b) => n[b] - n[a]).slice(0, 6);
   for (const c of CATS){ if (ids.length >= 6) break; if (!ids.includes(c.id)) ids.push(c.id); }
   if (sel && !ids.includes(sel)) ids[ids.length - 1] = sel;
@@ -649,11 +650,11 @@ export function vItemForm(){
   const spot = `<div class="field"><label for="f-spot">${t('if.spot')}</label><select id="f-spot" name="spot" class="input">${spotOptions(o, src?.spot || '')}</select></div>`;
   const desc = `<div class="field"><label for="f-desc">${t('if.desc')}</label><textarea id="f-desc" name="desc" class="input" maxlength="600" placeholder="${t('if.descPh')}">${esc(src?.desc || '')}</textarea></div>`;
   const rest = `<div class="field"><label for="f-storage">${t('if.storage')} <span class="hint">${t('if.staffOnly')}</span></label><input id="f-storage" name="storage" class="input" maxlength="40" value="${esc(i?.storage || '')}" placeholder="${t('if.storagePh')}"></div>
-      <div class="field"><label for="f-finder">${t('if.finder')} <span class="hint">${t('c.optional')} · ${t('if.staffOnly')}</span></label><input id="f-finder" name="finderNote" class="input" maxlength="80" autocomplete="off" value="${esc(i?.finderNote || '')}" placeholder="${t('if.finderPh')}">
+      <div class="field"><label for="f-finder">${t('if.finder')} <span class="hint">${t('if.staffOnly')}</span></label><input id="f-finder" name="finderNote" class="input" maxlength="80" autocomplete="off" value="${esc(i?.finderNote || '')}" placeholder="${t('if.finderPh')}">
         <span class="hint">${t('if.finderHint')}</span></div>`;
   const secretNote = `<div class="note">${icon('lock')}<span>${t('if.secretNote')}</span></div>`;
   const subs = `<div class="field" id="subs-field" ${src?.cat && cat(src.cat).subs.length ? '' : 'hidden'}><span class="label">${t('c.type')}</span><div id="subs">${src?.cat ? subsPicker(src.cat, src.sub) : ''}</div></div>`;
-  const title = `<div class="field"><label for="f-title">${t('if.title')}</label><input id="f-title" name="title" class="input" required maxlength="80" value="${esc(src?.title || '')}" placeholder="${t('if.titlePh')}"></div>`;
+  const title = nameField('f-title', src?.title, src?.cat);   // H37: بعد التصنيف مباشرة، 40 حرفاً، ومثاله حسب التصنيف
   const hero = `<section class="hero"><div class="hero-kicker">${icon('tag')}${i ? t('if.kEdit', {ref: esc(i.ref)}) : t(r ? 'if.kReport' : f ? 'if.kFound' : 'if.kNew', {office: esc(oName(o))})}</div><h1 class="hero-title">${t(i ? 'if.tEdit' : r ? 'if.tReport' : f ? 'if.tFound' : 'if.tNew')}</h1></section>`;
   if (quick){
     // الظاهر: الصورة، والتصنيف (أكثرها استخداماً أولاً)، والعنوان، والمكان، والتفاصيل السرية المطلوبة للتصنيف. والباقي في «تفاصيل إضافية»
@@ -664,13 +665,13 @@ export function vItemForm(){
       <div class="field" id="cat-field"><span class="label">${t('c.category')}</span>${catPicker(src.cat, top)}
         <details class="more-box all-cats" id="cat-all"><summary>${icon('grid')}<span>${t('if.allCats')}</span>${icon('chev')}</summary>
           <div class="more-body">${catPicker(src.cat, others)}</div></details></div>
-      ${subs}
       ${title}
+      ${subs}
       ${spot}
       ${spotExtra(src)}
       <div id="cat-fields" data-mode="item">${catFields(src.cat, src, 'item', 'req')}</div>
       <details class="more-box" id="if-more">
-        <summary>${icon('plus')}<span>${t('if.more')}</span>${icon('chev')}</summary>
+        <summary>${icon('plus')}<span>${t('xd.head')}</span>${icon('chev')}</summary>
         <div class="more-body">
           <div id="cat-fields-opt">${catFields(src.cat, src, 'item', 'opt')}</div>
           ${desc}
@@ -693,10 +694,10 @@ export function vItemForm(){
     <form data-form="item" class="panel" novalidate ${r ? `data-report="${esc(r.id)}"` : ''} ${f ? `data-found="${esc(f.id)}"` : ''} ${i && evidenceLocked(i) ? 'data-locked="1"' : ''}>
       ${photoField(photoKey, t('if.photo'), photoModePicker(mode), !!i && evidenceLocked(i) && ['clear', 'blur', 'none'].includes(i.photo))}
       <div class="field"><span class="label">${t('c.category')}</span>${catPicker(src?.cat || '')}</div>
+      ${title}
       ${subs}
       ${secretNote}
       <div id="cat-fields" data-mode="item">${catFields(src?.cat, src, 'item')}</div>
-      ${title}
       ${desc}
       <div class="two">
         ${spot}

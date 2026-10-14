@@ -10,7 +10,8 @@
     "fuzz": "node fuzz.mjs",
     "match": "node match.mjs",
     "device": "node device.mjs",
-    "proof": "node proof.mjs"
+    "proof": "node proof.mjs",
+    "form": "node form.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",
