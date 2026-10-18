@@ -41,7 +41,7 @@ const howDemo = o => {
             <span class="md-s3-lbl">${t('mine.code')}</span>
             <div class="md-tag"><svg viewBox="0 0 270 84"><path class="md-tag-str" d="M245 27C251 13 259 5 273 0"/><path class="md-tag-body" d="M14 1H234L269 36V70A13 13 0 0 1 256 83H14A13 13 0 0 1 1 70V14A13 13 0 0 1 14 1Z"/><circle class="md-tag-hole" cx="245" cy="27" r="7"/></svg><span class="md-code-box"><span class="md-code-w"><span class="md-code">K7MA-4XTR</span></span></span></div>
             <span class="md-hint">${t('mine.codeHint')}</span>
-            <div class="md-done"><span class="md-done-ic"><svg viewBox="0 0 24 24"><path class="md-ck" pathLength="1" d="m5 12.5 4.5 4.5L19 7.5"/></svg></span><b>${statusLabel(CLAIM_STATUS.done)}</b></div>
+            <div class="md-done"><span class="md-done-ic"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span><b>${statusLabel(CLAIM_STATUS.done)}</b></div>
           </div>
           <div class="md-ptr"><i></i></div>
         </div>
@@ -70,11 +70,11 @@ export function vHome(){
           <button class="btn" type="submit">${t('home.search')}</button>
         </form>
       </div>
-      ${howDemo(o)}
       <div class="cta3 cta2">
         <button class="cta" data-act="nav" data-r="report"><span class="ci">${icon('bell')}</span><span><b>${t('home.ctaLost')}</b><small>${t('home.ctaLostSub')}</small></span></button>
         <button class="cta" data-act="nav" data-r="found"><span class="ci">${icon('tag')}</span><span><b>${t('home.ctaFound')}</b><small>${t('home.ctaFoundSub')}</small></span></button>
       </div>
+      ${/* H38: المقطع بعد الزرّين في ترتيب الصفحة، فيطابق ترتيب Tab ما يُرى على الهاتف؛ ومن 820px يوضع بجانب العنوان (styles.css) */ ''}${howDemo(o)}
     </section>
 
     <section class="home-sec">
