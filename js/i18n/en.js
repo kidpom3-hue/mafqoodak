@@ -278,6 +278,13 @@ export const EN = {
   "home.how2d": "Choose \"This is mine — claim it\" and give details only the owner would know. Office staff review them.",
   "home.how3": "Collection from the office",
   "home.how3d": "Once your claim is approved, you get an 8-character pickup code. Show it at the office to collect your item.",
+  // H38: the animated «service steps» clip on the home hero (other texts reuse home.how1-3, it.claim, mine.code…)
+  "demo.aria": "Short animation of the service steps",
+  "demo.pause": "Pause animation",
+  "demo.q": "Wallet",
+  "demo.item1": "Men's wallet",
+  "demo.item2": "Women's wallet",
+  "demo.proof": "Has a card with my name",
   "c.loading": "Loading",
   "home.empty": "No found items on record yet",
   "home.emptySub": "Items will show up here as soon as the office logs them.",
