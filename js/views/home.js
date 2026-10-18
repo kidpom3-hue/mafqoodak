@@ -1,5 +1,5 @@
 // الصفحة الرئيسية للمكان المختار + صفحة «وجدت غرضاً»
-import { icon, LOGO, otype, otypeName, oName, oPlace, oHours, oCity, brandOf, cat } from '../constants.js';
+import { icon, LOGO, otype, otypeName, oName, oPlace, oHours, oCity, brandOf, cat, statusLabel, ITEM_STATUS, CLAIM_STATUS } from '../constants.js';
 import { $, esc, today, isoDay, showTitle } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, curOffice } from '../state.js';
@@ -10,16 +10,45 @@ import { officeUrl, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, relDayT,
 import { load } from '../lazy.js';   // H8: رمز QR في التذييل يُحمَّل بعد الرسم
 import { hydrate } from '../ui.js';
 
-const TAG_ART = `<svg class="tag-art" viewBox="0 0 220 240" aria-hidden="true">
-  <path d="M104 18c-30 4-52 26-58 58" fill="none" stroke="var(--hero-accent)" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 7"/>
-  <g transform="rotate(-10 120 140)">
-    <path d="M70 60h82l38 38v118a10 10 0 0 1-10 10H70a10 10 0 0 1-10-10V70a10 10 0 0 1 10-10Z" fill="var(--hero-accent)"/>
-    <circle cx="160" cy="84" r="10" fill="var(--hero-bg)"/>
-    <circle cx="116" cy="148" r="30" fill="none" stroke="var(--hero-bg)" stroke-width="10"/>
-    <path d="m138 170 26 26" stroke="var(--hero-bg)" stroke-width="12" stroke-linecap="round"/>
-    <path d="M82 214h60" stroke="var(--hero-accent-line)" stroke-width="4" stroke-linecap="round"/>
-  </g>
-</svg>`;
+// H38: مقطع «خطوات الخدمة» المتحرك في الواجهة (بدل رسمة البطاقة TAG_ART). يكرّر في 10 ثوانٍ الخطوات الثلاث
+//      بعناصر المنصة وكلماتها نفسها: البحث ← «هذا غرضي — طلب الاستلام» ← رمز الاستلام ← «تم الاستلام».
+//      CSS فقط بلا JavaScript (يناسب CSP)؛ الأنماط والتوقيت في كتلة H38 آخر styles.css.
+//      الجزء المتحرك aria-hidden، وقارئ الشاشة يقرأ الخطوات نفسها من قسم «خطوات الخدمة» تحته.
+//      زر الإيقاف المؤقت = مربع اختيار #md-pause + label (بلا معالج نقر). أرقام القيد تبدأ برمز المكتب (TCA للكلية)
+const howDemo = o => {
+  const pre = esc((o?.code || 'MFQ').toUpperCase());
+  const wallet = `<span class="md-tile">${icon('wallet')}</span>`;
+  const ref = id => `<span class="md-ref">${pre}-${id}</span>`;
+  const row = (cls, name, id, days) => `<div class="md-res ${cls}">${wallet}<span class="md-txt"><b>${name}</b><small>${ref(id)}${tp('time.daysAgo', days)}</small></span>${icon('fwd', 'md-chev')}</div>`;
+  return `<figure class="mfq-demo" aria-label="${t('demo.aria')}">
+      <input type="checkbox" id="md-pause" class="md-pause-in">
+      <div class="md-in" aria-hidden="true">
+        <div class="md-bars"><i><b></b></i><i><b></b></i><i><b></b></i></div>
+        <div class="md-caps">${[1, 2, 3].map(n => `<p class="md-cap md-c${n}"><span class="md-n">${n}</span><span class="md-ct">${t('home.how' + n)}</span></p>`).join('')}</div>
+        <div class="md-screen">
+          <div class="md-sc md-s1">
+            <div class="md-search">${icon('search')}<span class="md-q-box"><span class="md-ph">${t('home.searchAria')}</span><span class="md-type md-q"><span>${t('demo.q')}</span></span></span><span class="md-go">${t('home.search')}</span></div>
+            ${row('md-ra', t('demo.item1'), 'W7KM', 2)}
+            ${row('md-rb', t('demo.item2'), 'N4RX', 5)}
+          </div>
+          <div class="md-sc md-s2">
+            <div class="md-item">${wallet}<span class="md-txt"><b>${t('demo.item1')}</b><small>${ref('W7KM')}<span class="md-pill md-ok">${statusLabel(ITEM_STATUS.available)}</span></small></span></div>
+            <span class="md-claim">${t('it.claim')}</span>
+            <div class="md-proof"><span class="md-lbl">${t('cl.proof')}</span><span class="md-input"><span class="md-type md-q2"><span>${t('demo.proof')}</span></span></span></div>
+            <div class="md-status"><span class="md-pill md-warn md-pend">${icon('clock')}${statusLabel(CLAIM_STATUS.pending)}</span><span class="md-pill md-ok md-acc">${icon('check')}${statusLabel(CLAIM_STATUS.approved)}</span></div>
+          </div>
+          <div class="md-sc md-s3">
+            <span class="md-s3-lbl">${t('mine.code')}</span>
+            <div class="md-tag"><svg viewBox="0 0 270 84"><path class="md-tag-str" d="M245 27C251 13 259 5 273 0"/><path class="md-tag-body" d="M14 1H234L269 36V70A13 13 0 0 1 256 83H14A13 13 0 0 1 1 70V14A13 13 0 0 1 14 1Z"/><circle class="md-tag-hole" cx="245" cy="27" r="7"/></svg><span class="md-code-box"><span class="md-code-w"><span class="md-code">K7MA-4XTR</span></span></span></div>
+            <span class="md-hint">${t('mine.codeHint')}</span>
+            <div class="md-done"><span class="md-done-ic"><svg viewBox="0 0 24 24"><path class="md-ck" pathLength="1" d="m5 12.5 4.5 4.5L19 7.5"/></svg></span><b>${statusLabel(CLAIM_STATUS.done)}</b></div>
+          </div>
+          <div class="md-ptr"><i></i></div>
+        </div>
+      </div>
+      <label for="md-pause" class="md-pause"><svg class="md-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg><svg class="md-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5Z"/></svg><span class="sr-only">${t('demo.pause')}</span></label>
+    </figure>`;
+};
 
 // H4: شريط الأرقام الثلاثة انتقل إلى صفحة التصفح. «تفاصيل الخدمات» و«مؤشرات المكتب» صفّا روابط هادئان
 // بعرض كامل بعد «خصوصيتك أولاً» وقبل التذييل
@@ -41,7 +70,7 @@ export function vHome(){
           <button class="btn" type="submit">${t('home.search')}</button>
         </form>
       </div>
-      ${TAG_ART}
+      ${howDemo(o)}
       <div class="cta3 cta2">
         <button class="cta" data-act="nav" data-r="report"><span class="ci">${icon('bell')}</span><span><b>${t('home.ctaLost')}</b><small>${t('home.ctaLostSub')}</small></span></button>
         <button class="cta" data-act="nav" data-r="found"><span class="ci">${icon('tag')}</span><span><b>${t('home.ctaFound')}</b><small>${t('home.ctaFoundSub')}</small></span></button>

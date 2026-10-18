@@ -357,7 +357,8 @@ form.hero-search{flex-direction:row;align-items:center;gap:8px;background:var(--
 .hero-search svg{color:var(--muted)}
 .hero-search input{flex:1;min-width:0;width:100%;border:0;background:none;font-size:16px;padding:9px 0;outline:none;color:var(--ink)}
 .hero-search .btn{background:var(--hero-accent);color:var(--hero-accent-ink);padding:10px 18px}
-.tag-art{display:none}
+/* H38: مقطع «خطوات الخدمة» (.mfq-demo) مكان رسمة البطاقة؛ على الهاتف بعد الزرّين حتى لا يدفع البحث للأسفل */
+.hero-home>.mfq-demo{order:1}
 .cta3{position:relative;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:10px}
 /* H19: زرّان رئيسيان جنباً إلى جنب حتى على الهاتف */
 .cta2{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -367,8 +368,8 @@ form.hero-search{flex-direction:row;align-items:center;gap:8px;background:var(--
 .cta b{display:block;font-family:var(--f-display);font-size:15.5px}
 .cta small{display:block;color:var(--hero-muted);font-size:12.5px}
 @media (min-width:820px){
-  .hero-home{grid-template-columns:minmax(0,1fr) 210px;padding:36px 36px 24px}
-  .tag-art{display:block;width:210px;align-self:center;justify-self:center;position:relative}
+  .hero-home{grid-template-columns:minmax(0,1fr) 340px;column-gap:40px;padding:36px 36px 24px}
+  .hero-home>.mfq-demo{order:0;grid-column:2;grid-row:1;align-self:center}
   .cta3{grid-column:1 / -1}
 }
 .stats-band{display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
@@ -1500,3 +1501,171 @@ table.t td>.link{min-height:36px;display:inline-flex;align-items:center}
 .xd-lock svg{width:14px;height:14px;flex:none;margin-top:3px}
 .tail-save b{letter-spacing:.04em}
 .subs.pick label{min-height:36px;display:inline-flex;align-items:center}
+
+/* ---------- H38: مقطع «خطوات الخدمة» في واجهة الصفحة الرئيسية (.mfq-demo، يرسمه howDemo في home.js) ----------
+   CSS فقط بلا JavaScript. كل الحركات تشترك في دورة واحدة --md-t (10 ثوانٍ) فتبقى متزامنة مهما تكررت،
+   والنِّسب في @keyframes من هذه الدورة (1% = عُشر ثانية):
+     0–33%   الخطوة 1: كتابة «محفظة» ← «بحث» ← النتائج ← اختيار المحفظة
+     33–66%  الخطوة 2: «هذا غرضي — طلب الاستلام» ← كتابة علامة مميزة ← «قيد المراجعة» ← «جاهز للاستلام»
+     66–100% الخطوة 3: بطاقة رمز الاستلام تتأرجح ← الرمز حرفاً حرفاً ← «تم الاستلام»
+   المقاسات بوحدة em، وحجم الخط 5% من عرض المقطع (cqw)، فيكبر ويصغر كصورة واحدة عرضها 20em.
+   الاتجاه: --md-d = 1 بالعربية و-1 بالإنجليزية، ومنه تُحسب الانتقالات وموضع الإصبع وجهة الكتابة وبطاقة الرمز
+   (القيم الفيزيائية القليلة هنا نقاط بداية ونهاية للحركة محسوبة من --md-d، لا تخطيط).
+   الإيقاف المؤقت: #md-pause (مربع اختيار مخفي) + label ظاهر (WCAG 2.2.2). «تقليل الحركة»: صورة ثابتة بالخطوات الثلاث */
+.mfq-demo{--md-t:10s;--md-d:1;--md-ease:cubic-bezier(.22,.8,.24,1);position:relative;container-type:inline-size;width:100%;max-width:360px;margin:0 auto}
+html[dir=ltr] .mfq-demo{--md-d:-1}
+.md-in,.md-pause{font-size:16px;font-size:min(5cqw,18px)}
+.md-in{width:20em;margin-inline:auto;color:var(--hero-ink);line-height:1.5}
+.mfq-demo svg.i{width:1.1em;height:1.1em;stroke-width:1.9}
+/* شرائط التقدم الثلاث (مثل القصص) واسم الخطوة (نصوص «خطوات الخدمة» نفسها) */
+.md-bars{display:flex;gap:.45em;height:.3em;margin-bottom:.9em}
+.md-bars i{flex:1;border-radius:99px;background:var(--hero-line);overflow:hidden}
+.md-bars b{display:block;height:100%;border-radius:inherit;background:var(--hero-hl);transform-origin:calc(50% + var(--md-d) * 50%) 50%}
+.md-bars i:nth-child(1) b{animation:md-bar1 var(--md-t) linear infinite both}
+.md-bars i:nth-child(2) b{animation:md-bar2 var(--md-t) linear infinite both}
+.md-bars i:nth-child(3) b{animation:md-bar3 var(--md-t) linear infinite both}
+.md-caps{display:grid;height:2em;margin-bottom:.8em;padding-inline-end:2.6em}
+.md-cap{grid-area:1/1;display:flex;align-items:center;gap:.5em;min-width:0;font-size:1.12em;font-weight:700;line-height:1.2;white-space:nowrap}
+.md-n{display:grid;place-items:center;width:1.5em;height:1.5em;border-radius:50%;background:var(--hero-hl);color:var(--hero-bg);font-size:.8em;flex:none}
+.md-ct{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.md-c1{animation:md-c1 var(--md-t) var(--md-ease) infinite both}
+.md-c2{animation:md-c2 var(--md-t) var(--md-ease) infinite both}
+.md-c3{animation:md-c3 var(--md-t) var(--md-ease) infinite both}
+/* الشاشة الصغيرة */
+.md-screen{position:relative;height:14.6em;border-radius:1em;background:var(--surface);color:var(--ink);overflow:hidden;box-shadow:0 1.4em 2.8em -1em rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.07)}
+.md-sc{position:absolute;inset:.9em}
+.md-s1{animation:md-s1 var(--md-t) var(--md-ease) infinite both}
+.md-s2{opacity:0;animation:md-s2 var(--md-t) var(--md-ease) infinite both}
+.md-s3{opacity:0;animation:md-s3 var(--md-t) var(--md-ease) infinite both}
+/* نص يُكتب حرفاً حرفاً من بداية السطر، ومؤشر الكتابة */
+.md-type{position:relative;display:inline-block;white-space:nowrap}
+.md-type>span{display:block}
+.md-type::after{content:"";position:absolute;top:.12em;bottom:.12em;width:2px;border-radius:1px;background:var(--primary);transform:translateX(-50%);opacity:0}
+/* الخطوة 1: البحث */
+.md-search{display:flex;align-items:center;gap:.5em;height:2.6em;padding-inline:.75em .3em;border:1px solid var(--line);border-radius:.7em;background:var(--surface-2)}
+.md-search>svg.i{color:var(--muted)}
+.md-q-box{position:relative;flex:1;min-width:0;display:flex;align-items:center;font-size:.86em}
+.md-ph{position:absolute;inset-inline-start:0;color:var(--muted);white-space:nowrap;opacity:0;animation:md-ph var(--md-t) linear infinite both}
+.md-q>span{animation:md-q var(--md-t) linear infinite both}
+.md-q::after{animation:md-qc var(--md-t) linear infinite both}
+.md-go{display:grid;place-items:center;height:2.5em;padding-inline:1.1em;border-radius:.6em;background:var(--primary);color:var(--primary-ink);font-size:.8em;font-weight:700;animation:md-go var(--md-t) var(--md-ease) infinite both}
+.md-res{position:relative;isolation:isolate;display:flex;align-items:center;gap:.6em;height:3.5em;margin-top:.8em;padding-inline:.55em .5em;border:1px solid var(--line);border-radius:.8em;background:var(--surface)}
+.md-res+.md-res{margin-top:.55em}
+.md-ra{animation:md-ra var(--md-t) var(--md-ease) infinite both}
+.md-ra::before{content:"";position:absolute;z-index:-1;inset:-1px;border-radius:inherit;border:1.5px solid var(--primary);background:var(--primary-soft);animation:md-rah var(--md-t) var(--md-ease) infinite both}
+.md-rb{animation:md-rb var(--md-t) var(--md-ease) infinite both}
+.md-tile{display:grid;place-items:center;width:2.45em;height:2.45em;border-radius:.6em;background:var(--primary-soft);color:var(--primary);flex:none}
+.mfq-demo .md-tile svg.i{width:1.3em;height:1.3em}
+.md-ra .md-tile{background:var(--surface)}
+.md-txt{display:flex;flex-direction:column;gap:.2em;flex:1;min-width:0}
+.md-txt b{font-size:.84em;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.md-txt small{display:flex;align-items:center;gap:.5em;font-size:.68em;color:var(--muted);line-height:1.3;white-space:nowrap}
+.md-ref{display:inline-flex;align-items:center;gap:.35em;padding:.08em .45em;border:1px solid var(--tag-line);border-radius:.35em;background:var(--tag);color:var(--tag-ink);font-family:var(--f-mono);font-weight:600;font-size:.96em;letter-spacing:.02em;direction:ltr}
+.md-ref::before{content:"";width:.45em;height:.45em;border-radius:50%;background:var(--surface);box-shadow:inset 0 0 0 1px var(--tag-line)}
+.mfq-demo svg.md-chev{width:1em;height:1em;color:var(--muted)}
+/* الخطوة 2: إثبات الملكية */
+.md-item{display:flex;align-items:center;gap:.65em;height:2.6em}
+.md-pill{display:inline-flex;align-items:center;gap:.35em;height:1.75em;padding-inline:.6em;border-radius:99px;font-weight:700}
+.mfq-demo .md-pill svg.i{width:1.15em;height:1.15em;stroke-width:2.2}
+.md-ok{background:var(--ok-soft);color:var(--ok)}
+.md-warn{background:var(--warn-soft);color:var(--warn)}
+.md-claim{display:grid;place-items:center;width:100%;height:3em;margin-top:1em;border-radius:.75em;background:var(--primary);color:var(--primary-ink);font-size:.8em;font-weight:700;white-space:nowrap;animation:md-claim var(--md-t) var(--md-ease) infinite both}
+.md-proof{margin-top:.7em;animation:md-proof var(--md-t) var(--md-ease) infinite both}
+.md-lbl{display:block;margin-bottom:.3em;font-size:.7em;font-weight:600;color:var(--muted);line-height:1.3}
+.md-input{display:flex;align-items:center;height:2.3em;padding-inline:.7em;border:1.5px solid var(--primary);border-radius:.6em;background:var(--surface)}
+.md-input .md-type{font-size:.8em}
+.md-q2>span{animation:md-q2 var(--md-t) linear infinite both}
+.md-q2::after{animation:md-q2c var(--md-t) linear infinite both}
+.md-status{display:grid;justify-items:start;margin-top:.7em}
+.md-status .md-pill{grid-area:1/1;height:2.35em;padding-inline:.8em;font-size:.74em}
+.md-pend{opacity:0;animation:md-pend var(--md-t) var(--md-ease) infinite both}
+.md-acc{animation:md-acc var(--md-t) var(--md-ease) infinite both}
+/* الخطوة 3: رمز الاستلام على بطاقة تشبه شعار مفقودك (ثقبها في بداية السطر)، ثم «تم الاستلام» */
+.md-s3{display:flex;flex-direction:column;align-items:center;justify-content:center;padding-bottom:.4em;text-align:center}
+.md-s3-lbl{font-size:.78em;font-weight:700;color:var(--muted);line-height:1.3}
+.md-tag{position:relative;width:13.5em;height:4.2em;margin-top:.6em;transform-origin:calc(50% + var(--md-d) * 41%) 31%;animation:md-tag var(--md-t) var(--md-ease) infinite both}
+.md-tag>svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;transform:scaleX(var(--md-d))}
+.md-tag-body{fill:var(--tag);stroke:var(--tag-line);stroke-width:2}
+.md-tag-hole{fill:var(--surface);stroke:var(--tag-line);stroke-width:2}
+.md-tag-str{fill:none;stroke:var(--tag-line);stroke-width:3;stroke-linecap:round;stroke-dasharray:1 6}
+.md-code-box{position:absolute;inset-block:0;inset-inline-start:17%;inset-inline-end:0;display:grid;place-items:center}
+.md-code-w{direction:ltr;width:calc(9ch + .36em);font-family:var(--f-mono);font-weight:600;font-size:1.32em;letter-spacing:.04em;color:var(--tag-ink);line-height:1}
+.md-code{display:block;width:calc(9ch + .36em);overflow:hidden;white-space:nowrap;animation:md-code var(--md-t) steps(9,end) infinite both}
+.md-hint{margin-top:.65em;font-size:.72em;color:var(--muted);line-height:1.35;animation:md-hint var(--md-t) var(--md-ease) infinite both}
+.md-done{display:flex;align-items:center;gap:.55em;margin-top:.95em}
+.md-done-ic{display:grid;place-items:center;width:2.3em;height:2.3em;border-radius:50%;background:var(--ok);color:var(--surface);animation:md-doneic var(--md-t) var(--md-ease) infinite both}
+.md-done-ic svg{width:1.35em;height:1.35em;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.md-ck{stroke-dasharray:1;animation:md-ck var(--md-t) var(--md-ease) infinite both}
+.md-done b{font-weight:700;animation:md-donet var(--md-t) var(--md-ease) infinite both}
+/* إصبع يضغط: نقطة بدايته طرف الشاشة في بداية السطر، ويتحرك بمسافات em منه (× --md-d) */
+.md-ptr{position:absolute;inset:0;pointer-events:none}
+.md-ptr i{position:absolute;inset-inline-start:0;top:0;width:1.5em;height:1.5em;margin-block-start:-.75em;margin-inline-start:-.75em;border-radius:50%;background:color-mix(in srgb,var(--primary) 32%,transparent);box-shadow:0 0 0 2px rgba(255,255,255,.95),0 .25em .6em rgba(0,0,0,.3);opacity:0;animation:md-ptr var(--md-t) var(--md-ease) infinite both}
+.md-ptr i::after{content:"";position:absolute;inset:-.1em;border-radius:50%;border:2px solid var(--primary);opacity:0;animation:md-rip var(--md-t) ease-out infinite both}
+/* زر الإيقاف المؤقت */
+.md-pause-in{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;opacity:0}
+.md-pause{position:absolute;top:calc(2.2em - max(2.1em, 36px) / 2);inset-inline-end:0;display:grid;place-items:center;width:max(2.1em,36px);height:max(2.1em,36px);border-radius:50%;background:rgba(255,255,255,.1);border:1px solid var(--hero-line);color:var(--hero-ink);cursor:pointer;transition:background .15s ease}
+.md-pause:hover{background:rgba(255,255,255,.2)}
+.md-pause svg{width:.9em;height:.9em;fill:currentColor;display:block}
+.md-pause .md-play{display:none}
+.md-pause-in:checked~.md-pause .md-stop{display:none}
+.md-pause-in:checked~.md-pause .md-play{display:block}
+.md-pause-in:focus-visible~.md-pause{outline:2px solid var(--hero-hl);outline-offset:2px}
+.md-pause-in:checked~.md-in *,.md-pause-in:checked~.md-in *::before,.md-pause-in:checked~.md-in *::after{animation-play-state:paused}
+/* خط الزمن */
+@keyframes md-bar1{0%{transform:scaleX(0);opacity:1}32%{transform:scaleX(1)}96.5%{transform:scaleX(1);opacity:1}100%{transform:scaleX(1);opacity:0}}
+@keyframes md-bar2{0%,33%{transform:scaleX(0);opacity:1}65%{transform:scaleX(1)}96.5%{transform:scaleX(1);opacity:1}100%{transform:scaleX(1);opacity:0}}
+@keyframes md-bar3{0%,66%{transform:scaleX(0);opacity:1}96.5%{transform:scaleX(1);opacity:1}100%{transform:scaleX(1);opacity:0}}
+@keyframes md-c1{0%{opacity:0;transform:translateY(.45em)}3%,30.5%{opacity:1;transform:none}33.5%,100%{opacity:0;transform:translateY(-.45em)}}
+@keyframes md-c2{0%,32.5%{opacity:0;transform:translateY(.45em)}35.5%,63.5%{opacity:1;transform:none}66.5%,100%{opacity:0;transform:translateY(-.45em)}}
+@keyframes md-c3{0%,65.5%{opacity:0;transform:translateY(.45em)}68.5%,96%{opacity:1;transform:none}99%,100%{opacity:0;transform:translateY(-.45em)}}
+@keyframes md-s1{0%{opacity:0;transform:translateX(calc(var(--md-d) * -1.4em))}3.5%,30.5%{opacity:1;transform:none}34%,100%{opacity:0;transform:translateX(calc(var(--md-d) * 1.4em))}}
+@keyframes md-s2{0%,32.2%{opacity:0;transform:translateX(calc(var(--md-d) * -1.4em))}36%,63.5%{opacity:1;transform:none}67%,100%{opacity:0;transform:translateX(calc(var(--md-d) * 1.4em))}}
+@keyframes md-s3{0%,65.7%{opacity:0;transform:translateX(calc(var(--md-d) * -1.4em))}69.5%,96%{opacity:1;transform:none}100%{opacity:0;transform:translateX(calc(var(--md-d) * 1.4em))}}
+@keyframes md-ph{0%,3.9%{opacity:1}4%,100%{opacity:0}}
+@keyframes md-q{0%,4%{clip-path:inset(0 calc((1 - var(--md-d)) * 50%) 0 calc((1 + var(--md-d)) * 50%))}12%,100%{clip-path:inset(0)}}
+@keyframes md-qc{0%{opacity:1;left:calc(50% + var(--md-d) * 50%)}1.6%{opacity:1}1.7%,3.1%{opacity:0}3.2%{opacity:1}4%{left:calc(50% + var(--md-d) * 50%)}12%{opacity:1;left:calc(50% - var(--md-d) * 50%)}13.4%{opacity:1}13.5%,100%{opacity:0;left:calc(50% - var(--md-d) * 50%)}}
+@keyframes md-go{0%,14%{transform:none}14.7%{transform:scale(.9)}16%,100%{transform:none}}
+@keyframes md-ra{0%,16%{opacity:0;transform:translateY(.7em)}19.5%,24.6%{opacity:1;transform:none}25.2%{transform:scale(.975)}26.5%,100%{opacity:1;transform:none}}
+@keyframes md-rah{0%,24.6%{opacity:0}26%,100%{opacity:1}}
+@keyframes md-rb{0%,17.5%{opacity:0;transform:translateY(.7em)}21%,25%{opacity:1;transform:none}27%,100%{opacity:.4;transform:none}}
+@keyframes md-claim{0%,41.5%{transform:none}42.1%{transform:scale(.95)}43.5%,100%{transform:none}}
+@keyframes md-proof{0%,43%{opacity:0;transform:translateY(-.5em)}45%,100%{opacity:1;transform:none}}
+@keyframes md-q2{0%,45.5%{clip-path:inset(0 calc((1 - var(--md-d)) * 50%) 0 calc((1 + var(--md-d)) * 50%))}52%,100%{clip-path:inset(0)}}
+@keyframes md-q2c{0%,44%{opacity:0;left:calc(50% + var(--md-d) * 50%)}44.1%,44.8%{opacity:1}44.9%,45.3%{opacity:0}45.4%{opacity:1}45.5%{left:calc(50% + var(--md-d) * 50%)}52%{opacity:1;left:calc(50% - var(--md-d) * 50%)}53%{opacity:1}53.1%,100%{opacity:0;left:calc(50% - var(--md-d) * 50%)}}
+@keyframes md-pend{0%,52.5%{opacity:0;transform:scale(.85)}54%,56.3%{opacity:1;transform:none}57.3%,100%{opacity:0;transform:scale(.95)}}
+@keyframes md-acc{0%,56.8%{opacity:0;transform:scale(.8)}58.3%{opacity:1;transform:scale(1.07)}59.5%,100%{opacity:1;transform:none}}
+@keyframes md-tag{0%,67%{opacity:0;transform:translateY(-1.2em) rotate(calc(var(--md-d) * 14deg))}70%{opacity:1;transform:translateY(0) rotate(calc(var(--md-d) * -7deg))}72.5%{transform:translateY(0) rotate(calc(var(--md-d) * 3.5deg))}74.5%{transform:translateY(0) rotate(calc(var(--md-d) * -1.4deg))}76%,100%{opacity:1;transform:translateY(0) rotate(0deg)}}
+@keyframes md-code{0%,72.5%{width:0}79%,100%{width:calc(9ch + .36em)}}
+@keyframes md-hint{0%,79%{opacity:0;transform:translateY(.3em)}81.5%,100%{opacity:1;transform:none}}
+@keyframes md-doneic{0%,83%{opacity:0;transform:scale(.4)}85.5%{opacity:1;transform:scale(1.1)}87%,100%{opacity:1;transform:scale(1)}}
+@keyframes md-ck{0%,84.5%{stroke-dashoffset:1}88%,100%{stroke-dashoffset:0}}
+@keyframes md-donet{0%,85%{opacity:0;transform:translateX(calc(var(--md-d) * .6em))}87.5%,100%{opacity:1;transform:none}}
+/* مواضع الضغط (em من طرف الشاشة في بداية السطر، ومن أعلاها): «بحث» 17.1/2.2، المحفظة 14/6.05، «هذا غرضي» 16.6/5.5 */
+@keyframes md-ptr{
+  0%,8.5%{opacity:0;transform:translate(calc(var(--md-d) * -11em),12.5em) scale(1)}
+  10%{opacity:1}
+  13.2%{transform:translate(calc(var(--md-d) * -17.1em),2.2em) scale(1)}
+  14%{transform:translate(calc(var(--md-d) * -17.1em),2.2em) scale(.8)}
+  15.5%,18%{transform:translate(calc(var(--md-d) * -17.1em),2.2em) scale(1)}
+  22.5%,24%{transform:translate(calc(var(--md-d) * -14em),6.05em) scale(1)}
+  24.8%{transform:translate(calc(var(--md-d) * -14em),6.05em) scale(.8)}
+  26.3%{transform:translate(calc(var(--md-d) * -14em),6.05em) scale(1)}
+  27.5%{opacity:1;transform:translate(calc(var(--md-d) * -14em),6.05em) scale(1)}
+  29.5%{opacity:0;transform:translate(calc(var(--md-d) * -14em),6.05em) scale(1)}
+  30%,37.5%{opacity:0;transform:translate(calc(var(--md-d) * -7.5em),12em) scale(1)}
+  38.8%{opacity:1}
+  41%{transform:translate(calc(var(--md-d) * -16.6em),5.5em) scale(1)}
+  41.7%{transform:translate(calc(var(--md-d) * -16.6em),5.5em) scale(.8)}
+  43%{transform:translate(calc(var(--md-d) * -16.6em),5.5em) scale(1)}
+  44%{opacity:1;transform:translate(calc(var(--md-d) * -16.6em),5.5em) scale(1)}
+  46%,100%{opacity:0;transform:translate(calc(var(--md-d) * -16.6em),5.5em) scale(1)}
+}
+@keyframes md-rip{0%,13.9%{opacity:0;transform:scale(.5)}14%{opacity:.8;transform:scale(.5)}17%,24.7%{opacity:0;transform:scale(2.4)}24.8%{opacity:.8;transform:scale(.5)}27.8%,41.6%{opacity:0;transform:scale(2.4)}41.7%{opacity:.8;transform:scale(.5)}44.7%,100%{opacity:0;transform:scale(2.4)}}
+/* «تقليل الحركة»: القاعدة العامة أعلى الملف لا تشمل ::before/::after، فنوقفها هنا أيضاً. الصورة الثابتة:
+   أسماء الخطوات الثلاث في قائمة + خطوة البحث بنتيجتها، والمحفظة المختارة مميّزة */
+@media (prefers-reduced-motion:reduce){
+  .mfq-demo *,.mfq-demo *::before,.mfq-demo *::after{animation:none!important}
+  .md-pause{display:none}
+  .md-caps{display:flex;flex-direction:column;gap:.4em;height:auto;padding-inline-end:0}
+  .md-cap{font-size:1em}
+}
