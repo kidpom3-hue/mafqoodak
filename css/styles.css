@@ -357,8 +357,7 @@ form.hero-search{flex-direction:row;align-items:center;gap:8px;background:var(--
 .hero-search svg{color:var(--muted)}
 .hero-search input{flex:1;min-width:0;width:100%;border:0;background:none;font-size:16px;padding:9px 0;outline:none;color:var(--ink)}
 .hero-search .btn{background:var(--hero-accent);color:var(--hero-accent-ink);padding:10px 18px}
-/* H38: مقطع «خطوات الخدمة» (.mfq-demo) مكان رسمة البطاقة؛ على الهاتف بعد الزرّين حتى لا يدفع البحث للأسفل */
-.hero-home>.mfq-demo{order:1}
+/* H38: مقطع «خطوات الخدمة» (.mfq-demo) آخر عناصر الواجهة في ترتيب الصفحة: على الهاتف بعد الزرّين حتى لا يدفع البحث للأسفل */
 .cta3{position:relative;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:10px}
 /* H19: زرّان رئيسيان جنباً إلى جنب حتى على الهاتف */
 .cta2{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -369,7 +368,7 @@ form.hero-search{flex-direction:row;align-items:center;gap:8px;background:var(--
 .cta small{display:block;color:var(--hero-muted);font-size:12.5px}
 @media (min-width:820px){
   .hero-home{grid-template-columns:minmax(0,1fr) 340px;column-gap:40px;padding:36px 36px 24px}
-  .hero-home>.mfq-demo{order:0;grid-column:2;grid-row:1;align-self:center}
+  .hero-home>.mfq-demo{grid-column:2;grid-row:1;align-self:center}
   .cta3{grid-column:1 / -1}
 }
 .stats-band{display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
@@ -1510,7 +1509,9 @@ table.t td>.link{min-height:36px;display:inline-flex;align-items:center}
      66–100% الخطوة 3: بطاقة رمز الاستلام تتأرجح ← الرمز حرفاً حرفاً ← «تم الاستلام»
    المقاسات بوحدة em، وحجم الخط 5% من عرض المقطع (cqw)، فيكبر ويصغر كصورة واحدة عرضها 20em.
    الاتجاه: --md-d = 1 بالعربية و-1 بالإنجليزية، ومنه تُحسب الانتقالات وموضع الإصبع وجهة الكتابة وبطاقة الرمز
-   (القيم الفيزيائية القليلة هنا نقاط بداية ونهاية للحركة محسوبة من --md-d، لا تخطيط).
+   (نقاط الارتكاز transform-origin محسوبة من --md-d، أو ثابتة للرمز وعلامة الصح لأنهما لا ينعكسان).
+   الأداء: الحركات كلها transform وopacity فقط، فتعمل على بطاقة الرسوم ولا تكلّف المعالج الرئيسي (≈ 1ms من كل ثانية)؛
+   لا تُضف حركة لـ left/width/clip-path/stroke-dashoffset/لون: تكلّف المعالج كل إطار طوال الدورة حتى وهي ثابتة.
    الإيقاف المؤقت: #md-pause (مربع اختيار مخفي) + label ظاهر (WCAG 2.2.2). «تقليل الحركة»: صورة ثابتة بالخطوات الثلاث */
 .mfq-demo{--md-t:10s;--md-d:1;--md-ease:cubic-bezier(.22,.8,.24,1);position:relative;container-type:inline-size;width:100%;max-width:360px;margin:0 auto}
 html[dir=ltr] .mfq-demo{--md-d:-1}
@@ -1537,16 +1538,20 @@ html[dir=ltr] .mfq-demo{--md-d:-1}
 .md-s1{animation:md-s1 var(--md-t) var(--md-ease) infinite both}
 .md-s2{opacity:0;animation:md-s2 var(--md-t) var(--md-ease) infinite both}
 .md-s3{opacity:0;animation:md-s3 var(--md-t) var(--md-ease) infinite both}
-/* نص يُكتب حرفاً حرفاً من بداية السطر، ومؤشر الكتابة */
+/* نص يُكتب من بداية السطر: النص ثابت، ويغطيه ::before بلون الحقل (--md-cover) فينكمش نحو نهاية السطر،
+   ومؤشر الكتابة ::after صندوق بعرض النص حدّه في بداية السطر ويتحرك نحو نهايته (فوق النص الإرشادي .md-ph، والنص الإرشادي فوق الغطاء).
+   transform وopacity فقط: تعمل على بطاقة الرسوم ولا تكلّف المعالج الرئيسي شيئاً (clip-path/left/width كانت تكلّفه كل إطار) */
 .md-type{position:relative;display:inline-block;white-space:nowrap}
 .md-type>span{display:block}
-.md-type::after{content:"";position:absolute;top:.12em;bottom:.12em;width:2px;border-radius:1px;background:var(--primary);transform:translateX(-50%);opacity:0}
+.md-type::before{content:"";position:absolute;inset:-.1em -.15em;background:var(--md-cover);transform-origin:calc(50% - var(--md-d) * 50%) 50%;transform:scaleX(0)}
+.md-type::after{content:"";position:absolute;z-index:2;inset-block:.12em;inset-inline:0;border-inline-start:2px solid var(--primary);opacity:0}
 /* الخطوة 1: البحث */
 .md-search{display:flex;align-items:center;gap:.5em;height:2.6em;padding-inline:.75em .3em;border:1px solid var(--line);border-radius:.7em;background:var(--surface-2)}
 .md-search>svg.i{color:var(--muted)}
 .md-q-box{position:relative;flex:1;min-width:0;display:flex;align-items:center;font-size:.86em}
-.md-ph{position:absolute;inset-inline-start:0;color:var(--muted);white-space:nowrap;opacity:0;animation:md-ph var(--md-t) linear infinite both}
-.md-q>span{animation:md-q var(--md-t) linear infinite both}
+.md-ph{position:absolute;z-index:1;inset-inline-start:0;color:var(--muted);white-space:nowrap;opacity:0;animation:md-ph var(--md-t) linear infinite both}
+.md-q{--md-cover:var(--surface-2)}
+.md-q::before{animation:md-q var(--md-t) linear infinite both}
 .md-q::after{animation:md-qc var(--md-t) linear infinite both}
 .md-go{display:grid;place-items:center;height:2.5em;padding-inline:1.1em;border-radius:.6em;background:var(--primary);color:var(--primary-ink);font-size:.8em;font-weight:700;animation:md-go var(--md-t) var(--md-ease) infinite both}
 .md-res{position:relative;isolation:isolate;display:flex;align-items:center;gap:.6em;height:3.5em;margin-top:.8em;padding-inline:.55em .5em;border:1px solid var(--line);border-radius:.8em;background:var(--surface)}
@@ -1574,7 +1579,8 @@ html[dir=ltr] .mfq-demo{--md-d:-1}
 .md-lbl{display:block;margin-bottom:.3em;font-size:.7em;font-weight:600;color:var(--muted);line-height:1.3}
 .md-input{display:flex;align-items:center;height:2.3em;padding-inline:.7em;border:1.5px solid var(--primary);border-radius:.6em;background:var(--surface)}
 .md-input .md-type{font-size:.8em}
-.md-q2>span{animation:md-q2 var(--md-t) linear infinite both}
+.md-q2{--md-cover:var(--surface)}
+.md-q2::before{animation:md-q2 var(--md-t) linear infinite both}
 .md-q2::after{animation:md-q2c var(--md-t) linear infinite both}
 .md-status{display:grid;justify-items:start;margin-top:.7em}
 .md-status .md-pill{grid-area:1/1;height:2.35em;padding-inline:.8em;font-size:.74em}
@@ -1590,12 +1596,13 @@ html[dir=ltr] .mfq-demo{--md-d:-1}
 .md-tag-str{fill:none;stroke:var(--tag-line);stroke-width:3;stroke-linecap:round;stroke-dasharray:1 6}
 .md-code-box{position:absolute;inset-block:0;inset-inline-start:17%;inset-inline-end:0;display:grid;place-items:center}
 .md-code-w{direction:ltr;width:calc(9ch + .36em);font-family:var(--f-mono);font-weight:600;font-size:1.32em;letter-spacing:.04em;color:var(--tag-ink);line-height:1}
-.md-code{display:block;width:calc(9ch + .36em);overflow:hidden;white-space:nowrap;animation:md-code var(--md-t) steps(9,end) infinite both}
+.md-code{position:relative;display:block;width:calc(9ch + .36em);white-space:nowrap}
+.md-code::after{content:"";position:absolute;inset:-.15em 0;background:var(--tag);transform-origin:100% 50%;transform:scaleX(0);animation:md-code var(--md-t) steps(9,end) infinite both}
 .md-hint{margin-top:.65em;font-size:.72em;color:var(--muted);line-height:1.35;animation:md-hint var(--md-t) var(--md-ease) infinite both}
 .md-done{display:flex;align-items:center;gap:.55em;margin-top:.95em}
-.md-done-ic{display:grid;place-items:center;width:2.3em;height:2.3em;border-radius:50%;background:var(--ok);color:var(--surface);animation:md-doneic var(--md-t) var(--md-ease) infinite both}
+.md-done-ic{display:grid;position:relative;place-items:center;width:2.3em;height:2.3em;border-radius:50%;background:var(--ok);color:var(--surface);animation:md-doneic var(--md-t) var(--md-ease) infinite both}
 .md-done-ic svg{width:1.35em;height:1.35em;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
-.md-ck{stroke-dasharray:1;animation:md-ck var(--md-t) var(--md-ease) infinite both}
+.md-done-ic::after{content:"";position:absolute;inset:.42em;background:var(--ok);transform-origin:100% 50%;transform:scaleX(0);animation:md-ck var(--md-t) var(--md-ease) infinite both}
 .md-done b{font-weight:700;animation:md-donet var(--md-t) var(--md-ease) infinite both}
 /* إصبع يضغط: نقطة بدايته طرف الشاشة في بداية السطر، ويتحرك بمسافات em منه (× --md-d) */
 .md-ptr{position:absolute;inset:0;pointer-events:none}
@@ -1622,23 +1629,23 @@ html[dir=ltr] .mfq-demo{--md-d:-1}
 @keyframes md-s2{0%,32.2%{opacity:0;transform:translateX(calc(var(--md-d) * -1.4em))}36%,63.5%{opacity:1;transform:none}67%,100%{opacity:0;transform:translateX(calc(var(--md-d) * 1.4em))}}
 @keyframes md-s3{0%,65.7%{opacity:0;transform:translateX(calc(var(--md-d) * -1.4em))}69.5%,96%{opacity:1;transform:none}100%{opacity:0;transform:translateX(calc(var(--md-d) * 1.4em))}}
 @keyframes md-ph{0%,3.9%{opacity:1}4%,100%{opacity:0}}
-@keyframes md-q{0%,4%{clip-path:inset(0 calc((1 - var(--md-d)) * 50%) 0 calc((1 + var(--md-d)) * 50%))}12%,100%{clip-path:inset(0)}}
-@keyframes md-qc{0%{opacity:1;left:calc(50% + var(--md-d) * 50%)}1.6%{opacity:1}1.7%,3.1%{opacity:0}3.2%{opacity:1}4%{left:calc(50% + var(--md-d) * 50%)}12%{opacity:1;left:calc(50% - var(--md-d) * 50%)}13.4%{opacity:1}13.5%,100%{opacity:0;left:calc(50% - var(--md-d) * 50%)}}
+@keyframes md-q{0%,4%{transform:scaleX(1)}12%,100%{transform:scaleX(0)}}
+@keyframes md-qc{0%{opacity:1;transform:translateX(0)}1.6%{opacity:1}1.7%,3.1%{opacity:0}3.2%{opacity:1}4%{transform:translateX(0)}12%{opacity:1;transform:translateX(calc(var(--md-d) * -100%))}13.4%{opacity:1}13.5%,100%{opacity:0;transform:translateX(calc(var(--md-d) * -100%))}}
 @keyframes md-go{0%,14%{transform:none}14.7%{transform:scale(.9)}16%,100%{transform:none}}
 @keyframes md-ra{0%,16%{opacity:0;transform:translateY(.7em)}19.5%,24.6%{opacity:1;transform:none}25.2%{transform:scale(.975)}26.5%,100%{opacity:1;transform:none}}
 @keyframes md-rah{0%,24.6%{opacity:0}26%,100%{opacity:1}}
 @keyframes md-rb{0%,17.5%{opacity:0;transform:translateY(.7em)}21%,25%{opacity:1;transform:none}27%,100%{opacity:.4;transform:none}}
 @keyframes md-claim{0%,41.5%{transform:none}42.1%{transform:scale(.95)}43.5%,100%{transform:none}}
 @keyframes md-proof{0%,43%{opacity:0;transform:translateY(-.5em)}45%,100%{opacity:1;transform:none}}
-@keyframes md-q2{0%,45.5%{clip-path:inset(0 calc((1 - var(--md-d)) * 50%) 0 calc((1 + var(--md-d)) * 50%))}52%,100%{clip-path:inset(0)}}
-@keyframes md-q2c{0%,44%{opacity:0;left:calc(50% + var(--md-d) * 50%)}44.1%,44.8%{opacity:1}44.9%,45.3%{opacity:0}45.4%{opacity:1}45.5%{left:calc(50% + var(--md-d) * 50%)}52%{opacity:1;left:calc(50% - var(--md-d) * 50%)}53%{opacity:1}53.1%,100%{opacity:0;left:calc(50% - var(--md-d) * 50%)}}
+@keyframes md-q2{0%,45.5%{transform:scaleX(1)}52%,100%{transform:scaleX(0)}}
+@keyframes md-q2c{0%,44%{opacity:0;transform:translateX(0)}44.1%,44.8%{opacity:1}44.9%,45.3%{opacity:0}45.4%{opacity:1}45.5%{transform:translateX(0)}52%{opacity:1;transform:translateX(calc(var(--md-d) * -100%))}53%{opacity:1}53.1%,100%{opacity:0;transform:translateX(calc(var(--md-d) * -100%))}}
 @keyframes md-pend{0%,52.5%{opacity:0;transform:scale(.85)}54%,56.3%{opacity:1;transform:none}57.3%,100%{opacity:0;transform:scale(.95)}}
 @keyframes md-acc{0%,56.8%{opacity:0;transform:scale(.8)}58.3%{opacity:1;transform:scale(1.07)}59.5%,100%{opacity:1;transform:none}}
 @keyframes md-tag{0%,67%{opacity:0;transform:translateY(-1.2em) rotate(calc(var(--md-d) * 14deg))}70%{opacity:1;transform:translateY(0) rotate(calc(var(--md-d) * -7deg))}72.5%{transform:translateY(0) rotate(calc(var(--md-d) * 3.5deg))}74.5%{transform:translateY(0) rotate(calc(var(--md-d) * -1.4deg))}76%,100%{opacity:1;transform:translateY(0) rotate(0deg)}}
-@keyframes md-code{0%,72.5%{width:0}79%,100%{width:calc(9ch + .36em)}}
+@keyframes md-code{0%,72.5%{transform:scaleX(1)}79%,100%{transform:scaleX(0)}}
 @keyframes md-hint{0%,79%{opacity:0;transform:translateY(.3em)}81.5%,100%{opacity:1;transform:none}}
 @keyframes md-doneic{0%,83%{opacity:0;transform:scale(.4)}85.5%{opacity:1;transform:scale(1.1)}87%,100%{opacity:1;transform:scale(1)}}
-@keyframes md-ck{0%,84.5%{stroke-dashoffset:1}88%,100%{stroke-dashoffset:0}}
+@keyframes md-ck{0%,84.5%{transform:scaleX(1)}88%,100%{transform:scaleX(0)}}
 @keyframes md-donet{0%,85%{opacity:0;transform:translateX(calc(var(--md-d) * .6em))}87.5%,100%{opacity:1;transform:none}}
 /* مواضع الضغط (em من طرف الشاشة في بداية السطر، ومن أعلاها): «بحث» 17.1/2.2، المحفظة 14/6.05، «هذا غرضي» 16.6/5.5 */
 @keyframes md-ptr{
