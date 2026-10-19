@@ -93,15 +93,15 @@ export const dbx = {
   // keepW = بداية النافذة الحالية كما قرأناها (تبقى كما هي) أو null لبدء نافذة جديدة الآن (n = 1)
   createLimited: (path, data, uid, extra, rate) => {
     const b = writeBatch(db); b.set(doc(db, path), data);
-    // 'legacy' = {at} وحده (انتقالي لقواعد v15 قبل نشر v16)
-    b.set(doc(db, 'rate/' + uid), rate === 'legacy' ? {at: serverTimestamp()} : {at: serverTimestamp(), n: rate?.n || 1, w: rate?.keepW || serverTimestamp()});
+    b.set(doc(db, 'rate/' + uid), {at: serverTimestamp(), n: rate?.n || 1, w: rate?.keepW || serverTimestamp()});
     extra?.(b, p => doc(db, p)); return b.commit();
   },
   // قراءة مرة واحدة لقائمة وثائق بشروط مساواة (مثل بلاغات المستخدم في كل المكاتب)
   // عدد المستندات فقط (قراءة واحدة لكل 1000 مستند) بدل تحميلها كلها
   count: async (col, filters) => (await getCountFromServer(query(collection(db, col), ...filters.map(([f, op, v]) => where(f, op, v))))).data().count,
   list: async (col, filters) => (await getDocs(query(collection(db, col), ...filters.map(([f, op, v]) => where(f, op, v))))).docs.map(d => ({id: d.id, ...d.data()})),
-  watchDoc: (path, next, err) => onSnapshot(doc(db, path), s => next(s.exists() ? s.data() : null), err),
+  // H39: الوسيط الثاني = اللقطة من النسخة المحلية وحدها (fromCache)؛ «غير موجود» منها ليس حكماً نهائياً (أول فتح دون اتصال)
+  watchDoc: (path, next, err) => onSnapshot(doc(db, path), s => next(s.exists() ? s.data() : null, !!s.metadata?.fromCache), err),
   watch: (col, filters, next, err) => {
     const q = filters.length ? query(collection(db, col), ...filters.map(([f, op, v]) => where(f, op, v))) : collection(db, col);
     return onSnapshot(q, s => next(s.docs.map(d => ({id: d.id, ...d.data()}))), err);

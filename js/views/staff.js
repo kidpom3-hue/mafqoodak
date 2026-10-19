@@ -172,18 +172,38 @@ const isRes = v => v === OK || v === OK2 || v === NO || v === NEAR;
 // G1: الأعداد (10 فأكثر) في نص حرّ، بعد تحويل ٠-٩ و۰-۹ إلى 0-9 وحذف فاصل الآلاف: «٢٠٠ ريال» ← 200
 export const numsOf = s => (latinDigits(s).replace(/(\d)[,\u066C](?=\d{3}\b)/g, '$1').match(/\d+/g) || []).map(Number).filter(n => n >= 10);
 // نصان حرّان فيهما العدد نفسه (مثل المبلغ 200) = ✓ (ولا ✗ آلياً على النص الحرّ أبداً)
-export const sameNumber = (a, b) => { const B = new Set(numsOf(b)); return numsOf(a).some(n => B.has(n)); };
+// H39: أعداد صاحب الطلب (a) محدودة، ونصفها على الأقل في المسجّل (b): كانت قائمة أعداد كثيرة («10 20 50 100 200 500»)
+// تأخذ ✓ لأن أحدها يوافق المسجّل بالصدفة
+export const sameNumber = (a, b) => {
+  const A = [...new Set(numsOf(a))], B = new Set(numsOf(b));
+  if (!A.length || A.length > 6) return false;
+  const hit = A.filter(n => B.has(n)).length;
+  return hit > 0 && hit * 2 >= A.length;
+};
+// طول النص المطبَّع بلا مسافات (الحروف والأرقام فقط)
+const textLen = s => s.replace(/\s/g, '').length;
+/* H39: مقارنة إجابة نصية حرّة بالمسجّل. ✓ فقط بإجابة محددة: 3 أحرف على الأقل، ويغطي أحد النصين نصف الآخر على الأقل.
+   كانت إجابة بحرف واحد («ا») تأخذ ✓ لأنها جزء من أي نص، وقائمة كلمات طويلة تأخذ ✓ لأن فيها كلمة المسجّل؛ وفي النقش
+   (معرّف فريد للمجوهرات) كان ذلك يجعل الإثبات «قوياً». ≈ لكلمة مشتركة فقط إن كانت ثلث كلمات الإجابة على الأقل */
+export function textCheck(a, b){
+  const na = norm(a), nb = norm(b); if (!na || !nb) return '';
+  const la = textLen(na), lb = textLen(nb);
+  if (na === nb && la >= 2) return OK;
+  if (la >= 3 && lb >= 3 && ((nb.includes(na) && la * 2 >= lb) || (na.includes(nb) && lb * 2 >= la))) return OK;
+  if (sameNumber(a, b)) return OK;
+  // الكلمات فقط (الأعداد حكمها في sameNumber أعلاه، فلا تأخذ قائمة أعداد ≈ بدل ✓)
+  const word = w => w.length >= 3 && !/^\d+$/.test(w);
+  const ta = [...new Set(tokens(a).filter(word))], tb = new Set(tokens(b).filter(word));
+  const shared = ta.filter(w => tb.has(w)).length;
+  return shared && shared * 3 >= ta.length ? NEAR : '';
+}
 export function detailCheck(d, said, truth){
   const a = detailValue(d, said), b = detailValue(d, truth);
   if (!a || !b) return '';
   // H33: 'tail' = آخر 4 خانات من الرقم التسلسلي أو IMEI: تطابق تام فقط
   if (d.type === 'num' || d.type === 'last4' || d.type === 'pick' || d.type === 'tail') return a === b ? OK : NO;
   if (d.type === 'approx'){ const x = Number(a), y = Number(b); return x === y ? OK : Math.abs(x - y) <= Math.max(0.2 * Math.max(x, y), 20) ? NEAR : NO; }
-  const na = norm(a), nb = norm(b);
-  if (na && nb && (na.includes(nb) || nb.includes(na))) return OK;
-  if (sameNumber(a, b)) return OK;
-  const tb = new Set(tokens(b).filter(w => w.length >= 3));
-  return tokens(a).some(w => w.length >= 3 && tb.has(w)) ? NEAR : '';
+  return textCheck(a, b);
 }
 /* H23: الفئات بصيغة مقروءة: «2 200» أو «200×2» ← «2 × 200 ريال». كل جزء (مفصول بفاصلة أو «و») فيه عددان: الفئة المعروفة والعدد */
 const DENOMS = [1, 5, 10, 20, 50, 100, 200, 500];
@@ -350,6 +370,7 @@ function groupBox(c, own){
 // H11: طلبات مجمّعة بلا مطابقة منذ 30 يوماً تُغلق «منتهية» عند فتح لوحة الموظف (مرة واحدة لكل طلب)، ويُبلَّغ صاحبها
 const EXPIRING = new Set();
 function expireOld(){
+  if (!S.linksLoaded) return;   // H39: قبل وصول روابط الطلبات المجمّعة كان المربوط منها يبدو غير مربوط فيُنهى
   for (const c of S.claims){
     if (!c.grouped || c.itemId || c.status !== 'pending' || linkOf(c) || (c.uid === S.uid && !isOwner()) || EXPIRING.has(c.id)) continue;
     if (Date.now() - (c.createdAt || 0) < GROUP_EXPIRE_DAYS * 864e5) continue;

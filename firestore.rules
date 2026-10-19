@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// قواعد حماية بيانات مفقودك — الإصدار v22 (H33: إثبات الملكية بمستوى عالمي: «سجل أغراضي» بوقت تسجيل من الخادم لا يُعدَّل، ونسخته في طلب الاستلام تطابقه حرفياً، وتفويض شخص بالاستلام لطلب مقبول، وأسئلة الرقم التسلسلي وآخر 4 من بطاقة المحفظة؛ v21 (H29: الإعلان العام للغرض بحقوله المعروفة فقط وبأطوال محدودة؛ v20 (H28: حذف تقييم الصفحات pageFeedback؛ v19 (H27: «حذف حسابي» يمسح بيانات الطلب المنتهي ولا يكتب فيه قيماً جديدة)؛ v18 (H25: «هل كانت هذه الصفحة مفيدة؟» عدّادات مجمّعة بلا بيانات شخصية؛ v17 (H23: من سلّم الغرض لا يطلب استلامه ولا يُربط طلبه به؛ v16 (H22: حد يومي للإنشاء لكل حساب، والأدلة الفارغة لا تُملأ بعد 24 ساعة إلا مكان العثور، وحدود config وprivate وpublicStats؛ v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
+// قواعد حماية بيانات مفقودك — الإصدار v23 (H39: فحص ثغرات شامل: الدعوة تُستهلك عند قبولها فلا يعيد بها موظفٌ سُحبت صلاحيته وثيقتَه، ووقت محتوى البلاغ من الخادم (contentAt) فلا يُزوَّر «بلاغ سابق للعثور»، والصورة العامة لا تُقرأ بعد إخفائها، ولا أدلة جديدة لغرض مضى عليه يوم ولو لم يكن له ملف سري، وحدود لحقول البلاغ والملف الشخصي التي كانت بلا حد؛ v22 (H33: إثبات الملكية بمستوى عالمي: «سجل أغراضي» بوقت تسجيل من الخادم لا يُعدَّل، ونسخته في طلب الاستلام تطابقه حرفياً، وتفويض شخص بالاستلام لطلب مقبول، وأسئلة الرقم التسلسلي وآخر 4 من بطاقة المحفظة؛ v21 (H29: الإعلان العام للغرض بحقوله المعروفة فقط وبأطوال محدودة؛ v20 (H28: حذف تقييم الصفحات pageFeedback؛ v19 (H27: «حذف حسابي» يمسح بيانات الطلب المنتهي ولا يكتب فيه قيماً جديدة)؛ v18 (H25: «هل كانت هذه الصفحة مفيدة؟» عدّادات مجمّعة بلا بيانات شخصية؛ v17 (H23: من سلّم الغرض لا يطلب استلامه ولا يُربط طلبه به؛ v16 (H22: حد يومي للإنشاء لكل حساب، والأدلة الفارغة لا تُملأ بعد 24 ساعة إلا مكان العثور، وحدود config وprivate وpublicStats؛ v15 (H20: فحص شامل: حالات الغرض، والحقول الثابتة، والحجز، والتسليم من «مقبول» فقط؛ v14 (H19): إغلاق ثغرات الحيازة؛ v13 (H18): حرية المالك، ومنع التاريخ المستقبلي، وبريد المستخدمين الخاص؛ v12 (H17): القبول المباشر لبلاغ النقود؛ v11 (H16): النقود لا تُعرض للزائر؛ v10 (H14): موافقة واحدة لكل الطلبات؛ v9 (H12): إصلاحات أمنية؛ v8: الطلب بالوصف؛ v7: تقوية إثبات الملكية؛ v6: فحص أمني H7)
 // انسخ هذا الملف كاملاً إلى Firebase Console ← Firestore Database ← Rules ثم اضغط Publish.
 //
 // الأدوار:
@@ -249,6 +249,8 @@ service cloud.firestore {
       // v13 (H18): لا بريد في الوثيقة العامة (صار في private/profile)
       return d.keys().hasOnly(['name', 'photo', 'lastSeen', 'lang'])
         && strMax(d, 'name', 200)
+        // v23 (H39): «آخر دخول» القديم وقت فقط (كان بلا حد: نص ضخم يقرؤه كل موظف يفتح اسم صاحبه)
+        && (!('lastSeen' in d) || d.lastSeen is number || d.lastSeen is timestamp)
         && (!('lang' in d) || d.lang in ['ar', 'en'])
         // صورة الملف الشخصي: فارغة أو من صور حسابات Google فقط (تمنع روابط التتبّع)
         && (!('photo' in d) || d.photo == ''
@@ -256,11 +258,21 @@ service cloud.firestore {
                 && d.photo.matches('https://[a-z0-9.-]+[.]googleusercontent[.]com/.*')));
     }
 
+    // v23 (H39): حقول «محتوى» البلاغ = ما يُقارَن بالغرض حين يكون البلاغ «سابقاً للعثور» (أقوى دليل على الملكية).
+    // contentAt = وقت الخادم الذي كُتب فيه هذا المحتوى (عند الإنشاء أو آخر تعديل له)؛ createdAt وeditedAt من ساعة الجهاز
+    // ويقبلان فرق يوم، فلا يُبنى عليهما دليل «سابق للعثور»
+    function reportContent() { return ['cat', 'sub', 'color', 'title', 'desc', 'spot', 'bldg', 'room', 'lostDate', 'details']; }
+    // نتيجة المطابقة الذكية المحفوظة: 5 نتائج على الأكثر، كل منها رقم غرض وسبب قصير ونسبة (لا نصوص ضخمة)
+    function aiMatchOk(m) {
+      return m is map && m.keys().hasOnly(['id', 'score', 'reason']) && strMax(m, 'id', 100) && strMax(m, 'reason', 200)
+        && (!('score' in m) || m.score is number);
+    }
     function validReport(d) {
       return d.keys().hasOnly(['officeId', 'uid', 'cat', 'sub', 'color', 'title', 'desc', 'spot', 'bldg', 'room',
                                'lostDate', 'photo', 'status', 'createdAt', 'closedAt', 'renewedAt', 'ai', 'staffPick', 'pickedAt',
-                               'details', 'closedReason', 'pickRejected', 'rejected', 'editedAt'])
+                               'details', 'closedReason', 'pickRejected', 'rejected', 'editedAt', 'contentAt'])
         && d.officeId is string && d.status in ['open', 'closed']
+        && (!('contentAt' in d) || d.contentAt is timestamp)
         && validDetails(d)
         // سبب الإغلاق: وجده صاحبه بنفسه، أو استلمه من المكتب
         && (!('closedReason' in d) || d.closedReason in ['self', 'office'])
@@ -268,16 +280,20 @@ service cloud.firestore {
         // v14 (H19): الصورة علامة فقط (true/false)، والصورة نفسها في reportPhotos
         && (!('photo' in d) || d.photo is bool || strMax(d, 'photo', 20))
         // «ليس غرضي»: قائمة أرقام الأغراض التي رفضها صاحب البلاغ (30 على الأكثر)
-        && (!('rejected' in d) || (d.rejected is list && d.rejected.size() <= 30))
+        // v23 (H39): أرقام نصية قصيرة فقط (join يرفض غير النص): كانت عناصرها بلا حد، فيصير البلاغ ميغابايتاً يحمّله كل موظف
+        && (!('rejected' in d) || (d.rejected is list && d.rejected.size() <= 30 && d.rejected.join(',').size() <= 3100))
         // وقت آخر تعديل من صاحب البلاغ
         && (!('editedAt' in d) || d.editedAt is number)
         // H7: تاريخ الفقدان بصيغة يوم، والأوقات أرقام
         && isDay(d, 'lostDate') && ts(d, 'createdAt') && ts(d, 'closedAt') && ts(d, 'renewedAt') && ts(d, 'pickedAt')
         && strMax(d, 'title', 400) && strMax(d, 'desc', 4000) && strMax(d, 'sub', 200) && strMax(d, 'color', 60)
         && strMax(d, 'spot', 400) && strMax(d, 'bldg', 40) && strMax(d, 'room', 60)
-        // v9: نتيجة المطابقة الذكية: الوقت والقائمة فقط (10 على الأكثر)
-        && (!('ai' in d) || (d.ai is map && d.ai.keys().hasOnly(['at', 'matches'])
-            && (!('matches' in d.ai) || (d.ai.matches is list && d.ai.matches.size() <= 10))));
+        // v9: نتيجة المطابقة الذكية: الوقت والقائمة فقط. v23 (H39): 5 على الأكثر (التطبيق يحفظ 5) وكل عنصر بشكله وطوله
+        && (!('ai' in d) || (d.ai is map && d.ai.keys().hasOnly(['at', 'matches']) && (!('at' in d.ai) || d.ai.at is number)
+            && (!('matches' in d.ai) || (d.ai.matches is list && d.ai.matches.size() <= 5
+                && (d.ai.matches.size() < 1 || aiMatchOk(d.ai.matches[0])) && (d.ai.matches.size() < 2 || aiMatchOk(d.ai.matches[1]))
+                && (d.ai.matches.size() < 3 || aiMatchOk(d.ai.matches[2])) && (d.ai.matches.size() < 4 || aiMatchOk(d.ai.matches[3]))
+                && (d.ai.matches.size() < 5 || aiMatchOk(d.ai.matches[4]))))));
     }
 
     // إعداد التطبيق: أول مستخدم يُكمل الإعداد يصبح المالك
@@ -446,10 +462,24 @@ service cloud.firestore {
       // v16 (H22): بعد 24 ساعة لا تتغير الأدلة ولا تُملأ الفارغة منها (كان ملء اللون أو الماركة أو الإجابات بعد وصول طلب
       // يسمح بمطابقتها مع إجابات صديق). الاستثناء: مكان العثور الفارغ (نقل المكان القديم من الإعلان العام إلى هنا)
       function kept(k) { return request.resource.data.get(k, '') == resource.data.get(k, ''); }
+      // الإعلان العام للغرض قبل العملية (فيه الحقول السرية القديمة لغرض لم يُرحَّل بعد)
+      function pubItem() { return get(/databases/$(database)/documents/items/$(itemId)).data; }
       function evidenceKept() {
         return kept('color') && kept('brand') && kept('desc') && kept('bldg') && kept('room')
-          && (resource.data.get('spot', '') == '' || kept('spot'))
+          // v23 (H39): مكان العثور الفارغ يُملأ بعد 24 ساعة بمكان الإعلان العام القديم نفسه فقط (نقله إلى هنا)، لا بمكان جديد
+          // (كان يقبل أي مكان: يكتبه الموظف بعد أن يصل طلب يقول «المكتبة» فيصير ✓ في المقارنة)
+          && (kept('spot') || (resource.data.get('spot', '') == '' && request.resource.data.get('spot', '') == pubItem().get('spot', '')))
           && request.resource.data.get('details', {}) == resource.data.get('details', {});
+      }
+      // v23 (H39): ملف سري جديد لغرض مضى عليه يوم: أدلته = الحقول القديمة في إعلانه العام كما هي (ترحيل الأغراض القديمة)،
+      // وإلا فارغة. كان إنشاؤه يقبل أي أدلة، فغرضٌ ليس له ملف سري (فشل حفظه أو غرض قديم) تُكتب أدلته بعد وصول الطلب
+      function evidenceFromItem() {
+        let it = pubItem();
+        let d = request.resource.data;
+        return d.get('color', '') == it.get('color', '') && d.get('brand', '') == it.get('brand', '')
+          && d.get('desc', '') == it.get('desc', '') && d.get('bldg', '') == it.get('bldg', '')
+          && d.get('room', '') == it.get('room', '') && d.get('spot', '') == it.get('spot', '')
+          && d.get('details', {}) == it.get('details', {});
       }
       function itemFresh(itemId) {
         return get(/databases/$(database)/documents/items/$(itemId)).data.get('createdAt', 0) > request.time.toMillis() - 86400000;
@@ -457,7 +487,8 @@ service cloud.firestore {
       allow read: if isStaffOf(resource.data.officeId);
       allow create: if isStaffOf(request.resource.data.officeId)
         && validSecret(request.resource.data)
-        && get(/databases/$(database)/documents/items/$(itemId)).data.officeId == request.resource.data.officeId;
+        && get(/databases/$(database)/documents/items/$(itemId)).data.officeId == request.resource.data.officeId
+        && (isAdmin() || itemFresh(itemId) || evidenceFromItem());
       allow update: if isStaffOf(resource.data.officeId)
         && request.resource.data.officeId == resource.data.officeId
         && validSecret(request.resource.data)
@@ -487,7 +518,14 @@ service cloud.firestore {
 
     match /itemPhotos/{itemId} {
       function itemOffice() { return get(/databases/$(database)/documents/items/$(itemId)).data.officeId; }
-      allow read: if true;
+      // v23 (H39): الزائر يقرأ الصورة العامة ما دام الغرض عاماً وطريقة ظهورها «واضحة» أو «مموّهة» فقط.
+      // كانت تُقرأ لأي أحد بمعرّف الغرض، فتبقى مكشوفة إن اختار الموظف «مخفية» (فيها بيانات شخصية) ولم تُحذف نسختها العامة،
+      // أو نُقل الغرض إلى تصنيف لا يُعرض للزائر. الموظف يقرؤها كما كان
+      function shownPublicly() {
+        let it = get(/databases/$(database)/documents/items/$(itemId)).data;
+        return isPublicItem(it) && it.get('photo', false) in [true, 'clear', 'blur'];
+      }
+      allow read: if shownPublicly() || isStaffOf(itemOffice());
       // v11: لا صورة عامة لغرض من التصنيفات المخفية
       allow create, update: if photoDoc() && isStaffOf(itemOffice())
         && !(get(/databases/$(database)/documents/items/$(itemId)).data.cat in hiddenCats());
@@ -507,7 +545,10 @@ service cloud.firestore {
         && fresh(request.resource.data, 'createdAt') && rateOk()
         && !('staffPick' in request.resource.data) && !('pickedAt' in request.resource.data)
         && !('pickRejected' in request.resource.data) && !('closedReason' in request.resource.data)
-        && !('rejected' in request.resource.data);
+        && !('rejected' in request.resource.data)
+        // v23 (H39): وقت المحتوى = وقت الخادم الآن (لا وقت قديم يجعله «سابقاً للعثور»). اختياري: بلاغ بلا وقت خادم
+        // لا يُعدّ سابقاً للعثور إلا بفارق يوم كامل (state.js: priorReport)
+        && (!('contentAt' in request.resource.data) || request.resource.data.contentAt == request.time);
       allow update: if signedIn() && (
         // صاحب البلاغ: لا يغيّر صاحبه ولا مكتبه ولا ترشيح الموظف
         (resource.data.uid == me()
@@ -523,6 +564,11 @@ service cloud.firestore {
           && request.resource.data.get('rejected', []).hasAll(resource.data.get('rejected', []))
           // H7: أوقات التعديل والتجديد والإغلاق تُكتب بوقت «الآن» فقط
           && freshIfChanged('editedAt') && freshIfChanged('renewedAt') && freshIfChanged('closedAt')
+          // v23 (H39): تعديل المحتوى (الوصف، اللون، المكان، الإجابات…) يكتب contentAt بوقت الخادم الآن؛ ووقت المحتوى لا يتغير وحده.
+          // كان صاحب بلاغ قديم يعدّل وصفه بعد أن يرى الغرض في المفقودات، ويبقى البلاغ «سابقاً للعثور» بوزن مضاعف
+          && (request.resource.data.get('contentAt', null) == resource.data.get('contentAt', null)
+              ? !request.resource.data.diff(resource.data).affectedKeys().hasAny(reportContent())
+              : request.resource.data.get('contentAt', null) == request.time)
           && validReport(request.resource.data) && dayOk('lostDate'))
         || (isStaffOf(resource.data.officeId) && onlyChanges(['staffPick', 'pickedAt'])
             // v14 (H19): رقم الغرض المرشّح نص قصير
@@ -900,7 +946,10 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['offices', 'approvedAt', 'approvedBy'])
         && request.resource.data.offices == get(inviteDoc()).data.offices
         && request.resource.data.approvedBy == get(inviteDoc()).data.createdBy
-        && request.resource.data.approvedAt is number);
+        && request.resource.data.approvedAt is number
+        // v23 (H39): الدعوة تُستهلك في العملية نفسها (تُحذف مع إنشاء الوثيقة). كان المدعو يستطيع إبقاءها، فإن سحبت الإدارة
+        // صلاحيته لاحقاً أعاد إنشاء وثيقته بالدعوة نفسها وعاد موظفاً دون علمها
+        && !existsAfter(inviteDoc()));
       // أي تعديل آخر أو سحب للصلاحية: للإدارة فقط
       allow update, delete: if isAdmin();
     }

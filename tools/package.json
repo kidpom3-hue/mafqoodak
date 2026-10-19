@@ -12,7 +12,9 @@
     "device": "node device.mjs",
     "proof": "node proof.mjs",
     "form": "node form.mjs",
-    "demo": "node demo.mjs"
+    "demo": "node demo.mjs",
+    "audit": "node audit.mjs",
+    "lint:rules": "node rules-lint.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",
