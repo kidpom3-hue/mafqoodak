@@ -189,7 +189,16 @@ export const normPickup = s => latinDigits(s).toUpperCase().replace(/[^A-Z0-9]/g
 export const fmtPickup = c => { const s = String(c || ''); return s.length === 8 ? s.slice(0, 4) + '-' + s.slice(4) : s; };
 // حروف رقم القيد والأكواد القصيرة: بلا أحرف متشابهة (O/0، I/1، B/8...)
 const REF_CHARS = 'ACDEFHJKMNPRTUVWXY34679';
-export const refCode = (n = 4) => [...crypto.getRandomValues(new Uint8Array(n))].map(x => REF_CHARS[x % REF_CHARS.length]).join('');
+/* H39: توزيع متساوٍ: يُرفض البايت ≥ 230 (أكبر مضاعف لـ 23 تحت 256)؛ كان x % 23 يجعل الأحرف الثلاثة الأولى أرجح قليلاً
+   (رمز الاستلام 8 أحرف منها، فكل رمز يجب أن يكون متساوي الاحتمال) */
+const REF_LIM = 256 - 256 % REF_CHARS.length;
+export function refCode(n = 4){
+  let out = '';
+  while (out.length < n){
+    for (const x of crypto.getRandomValues(new Uint8Array(n * 2))){ if (x < REF_LIM && out.length < n) out += REF_CHARS[x % REF_CHARS.length]; }
+  }
+  return out;
+}
 export function makeRef(office){
   return `${(office?.code || 'MFQ').toUpperCase()}-${refCode(4)}`;
 }

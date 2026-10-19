@@ -4,7 +4,7 @@ import { installMode, promptInstall, snoozeInstall, markInstalled } from './inst
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when, fmtDateFull, SS, icsEvent, downloadText } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe, verifyPrompt } from './views/common.js';
-import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn, STAFF_TABS, ensureRegs, regAt } from './state.js';
+import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn, STAFF_TABS, ensureRegs, regAt, SHARED_WIPE } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
@@ -89,6 +89,14 @@ function stepNext(form){
   showStep(form, (Number(form.dataset.step) || 1) + 1);
 }
 function busy(form, on){ const b = form.querySelector('button[type=submit]'); if (b) b.disabled = on; }
+/* H39 (قواعد v23): وقت كتابة محتوى البلاغ من الخادم (contentAt)، به يُعرف «البلاغ السابق للعثور» دون ساعة الجهاز.
+   انتقالي: القواعد v22 لا تعرف الحقل فترفض الكتابة، فنعيدها مرة واحدة بدونه (يبقى البلاغ «قديماً»: لا يُعدّ سابقاً للعثور
+   إلا بفارق يوم كامل). بعد نشر v23 لا يمر تعديل محتوى بدونه أصلاً. احذف الاحتياط بعد نشر v23 بأسابيع */
+const deniedErr = e => String(e?.code || '').includes('permission-denied');
+async function withContentAt(fn){
+  try { return await fn({contentAt: serverTimestamp()}); }
+  catch (e){ if (!deniedErr(e)) throw e; return fn({}); }
+}
 
 /* H26: بلاغ وإشعار تسليم بلا حاجز دخول مسبق. الزائر يعبّئ النموذج كاملاً، وعند «إرسال» وهو غير مسجّل تُحفظ المسودة
    في sessionStorage (SS: الحقول والصورة والخطوة) ثم يذهب إلى الدخول، وبعده تعود المسودة إلى النموذج مع تنبيه «أكمل إرسال بلاغك».
@@ -359,7 +367,8 @@ async function saveReportEdit(form, val, catId, sens, bldg, room){
     details: Object.keys(details).length ? details : deleteField(), editedAt: Date.now(), ...(r.ai ? {ai: deleteField()} : {})};
   // الصورة: حذفها يسبق تحديث البلاغ، والجديدة تُحفظ بعده (قواعد reportPhotos تقرأ البلاغ)
   if (removing){ await write(() => dbx.del('reportPhotos/' + r.id)); cachePhoto('r_' + r.id, null); patch.photo = false; }
-  const ok = await write(() => dbx.update('reports/' + r.id, patch), t('a.reportEdited'));
+  // H39: تعديل المحتوى يكتب وقته من الخادم (contentAt)، فلا يبقى البلاغ «سابقاً للعثور» بعد تعديله (قواعد v23 تفرضه)
+  const ok = await write(() => withContentAt(x => dbx.update('reports/' + r.id, {...patch, ...x})), t('a.reportEdited'));
   if (ok && newPhoto){
     cachePhoto('r_' + r.id, FORM.photo);
     if (await write(() => dbx.set('reportPhotos/' + r.id, {data: FORM.photo})) && !had) await write(() => dbx.update('reports/' + r.id, {photo: true}));
@@ -589,9 +598,10 @@ async function submitForm(form){
       const {details} = readDetails(form, catId, 'report');
       const at = Date.now();
       // H31: بلا رسالة نجاح عابرة: صفحة التأكيد (done) هي التأكيد
-      const ok = await write(() => createLimited('reports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), color: claimOf(catId).fields.includes('color') ? val('color') : '',
+      // H39: ومعه وقت المحتوى من الخادم (contentAt، قواعد v23)
+      const ok = await write(() => withContentAt(x => createLimited('reports/' + id, {officeId: S.officeId, uid: S.uid, cat: catId, sub: val('sub'), color: claimOf(catId).fields.includes('color') ? val('color') : '',
         ...(Object.keys(details).length ? {details} : {}),
-        title: val('title'), desc: val('desc'), spot: val('spot'), bldg, room, lostDate: val('lostDate') || today(), photo: false, status: 'open', createdAt: at}));
+        title: val('title'), desc: val('desc'), spot: val('spot'), bldg, room, lostDate: val('lostDate') || today(), photo: false, status: 'open', createdAt: at, ...x})));
       if (ok && withPhoto){
         cachePhoto('r_' + id, FORM.photo);
         if (await write(() => dbx.set('reportPhotos/' + id, {data: FORM.photo}))) await write(() => dbx.update('reports/' + id, {photo: true}));
@@ -662,11 +672,12 @@ async function submitForm(form){
         cachePhoto('p_' + id, src);
         await write(() => dbx.set('itemPhotosPrivate/' + id, {officeId, data: src}));
       }
-      if (src){
+      // H39: «مخفية» تحذف النسخة العامة دائماً، ولو تعذّر جلب الأصل (كانت تبقى مقروءة بمعرّف الغرض إن فشل الجلب)
+      if (src || mode === 'none'){
         let pub = null;
-        try { pub = mode === 'clear' ? src : mode === 'blur' ? await makeBlur(src) : null; } catch (e){ console.warn(e); }
-        const saved = pub ? await write(() => dbx.set('itemPhotos/' + id, {data: pub}))
-          : mode === 'none' ? await write(() => dbx.del('itemPhotos/' + id)) : false;
+        try { pub = !src ? null : mode === 'clear' ? src : mode === 'blur' ? await makeBlur(src) : null; } catch (e){ console.warn(e); }
+        const saved = mode === 'none' ? await write(() => dbx.del('itemPhotos/' + id))
+          : pub ? await write(() => dbx.set('itemPhotos/' + id, {data: pub})) : false;
         cachePhoto(id, pub);
         if (saved) await write(() => dbx.update('items/' + id, {photo: mode, ...(pubColor && pub ? {pubColor} : {})}));
       }
@@ -973,7 +984,9 @@ async function doApprove(c, reason = ''){
 }
 // تسجيل الخروج على جهاز مشترك: نمسح رموز الاستلام والتنبيهات المقروءة وتفعيل الإشعارات من المتصفح،
 // ونسخة Firestore المحفوظة (IndexedDB)، ثم نعيد تحميل الصفحة حتى لا يبقى شيء من بيانات الحساب في الذاكرة
-function wipeDevice(){ ['codes', 'seen', 'staffSeen', 'notify', 'prof'].forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} }); SS.del('codes'); }
+// H39: كل ما يخص الحساب (SHARED_WIPE: ومنه الاقتراحات المعلّقة و«لاحقاً» ووقت آخر إرسال)، ومسودتا البلاغ والتسليم في الجلسة
+// (تبقى الجلسة بعد إعادة التحميل، فكان من يدخل بعدك في التبويب نفسه يجد ما كتبتَه)
+function wipeDevice(){ SHARED_WIPE.forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} }); ['codes', 'draft:report', 'draft:handin'].forEach(k => SS.del(k)); }
 
 const ACT = {
   nav(el){
@@ -1067,6 +1080,8 @@ const ACT = {
     location.reload();
   },
   pickOffice(){ go('pick'); },
+  // H39: «إعادة المحاولة» في رسالة انقطاع الاتصال بالمنصة (ui.js)
+  reload(){ location.reload(); },
   // المظهر: يُطبَّق فوراً ويُحدَّث الزر المختار دون إعادة رسم
   theme(el){
     setTheme(el.dataset.v);
@@ -1148,7 +1163,8 @@ const ACT = {
   fstatus(el){ S.filter.status = el.dataset.v; updateBrowse(); },
   sTab(el){ staffTabGo(el.dataset.v); },
   closeSheet(){ closeSheet(); },
-  copy(el){ const v = el.dataset.v; navigator.clipboard?.writeText(v).then(() => toast(t('a.copied')), () => toast(v)); },
+  // H39: بلا واجهة الحافظة (متصفح قديم أو صفحة غير آمنة) كان الزر يرمي خطأً ولا يحدث شيء؛ الآن يُعرض النص نفسه
+  copy(el){ const v = el.dataset.v; (navigator.clipboard?.writeText(v) || Promise.reject(new Error('clipboard'))).then(() => toast(t('a.copied')), () => toast(v)); },
   // H27: إظهار كلمة المرور أو إخفاؤها (الزر بجانب الحقل؛ التركيز يبقى على الزر فيُقرأ تغيّر حالته)
   togglePass(el){
     const inp = document.getElementById(el.getAttribute('aria-controls')); if (!inp) return;
@@ -1230,7 +1246,18 @@ const ACT = {
       if (ok && S.route.name === 'report'){ S.hist = []; go('mine', {}, false); }
     });
   },
-  editItem(el){ go('add', {id: el.dataset.id}); },
+  /* H39: نموذج التعديل يُرسم مرة واحدة (لا يُعاد عند وصول البيانات)، فإن فُتح قبل وصول التفاصيل السرية للغرض ظهرت أدلته فارغة،
+     وحفظه (للمدير، أو للموظف خلال يومه الأول) يمسحها مع ملاحظة التسليم والتصرّف. نقرؤها أولاً إن لم تصل بعد */
+  async editItem(el){
+    const id = el.dataset.id;
+    if (id && !S.secrets[id]){
+      el.disabled = true;
+      try { const d = await dbx.get('itemSecrets/' + id); if (d) S.secrets[id] = {id, ...d}; }
+      catch (e){ console.warn(e); el.disabled = false; return toast(t('err.load')); }
+      el.disabled = false;
+    }
+    go('add', {id});
+  },
   // H2: «المزيد» في لوحة الموظف على الجوال: الملصقات وملصق المكتب والإحصاءات في النافذة السفلية
   staffMore(){
     openSheet(`<h2>${t('st.moreTitle')}</h2><div class="sheet-list">

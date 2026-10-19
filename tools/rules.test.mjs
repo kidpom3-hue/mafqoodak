@@ -352,7 +352,7 @@ await t('G: إنشاء بلاغ', mk(alice, 'reports/rG', rep()));
 await t('G: إضافة إلى rejected', updateDoc(doc(alice, 'reports/rG'), {rejected: ['i1', 'i2']}));
 await t('G: الحذف من rejected مرفوض', updateDoc(doc(alice, 'reports/rG'), {rejected: ['i1']}), false);
 await t('G: أكثر من 30 في rejected مرفوض', updateDoc(doc(alice, 'reports/rG'), {rejected: ['i1', 'i2', ...Array.from({length: 29}, (_, k) => 'x' + k)]}), false);
-await t('G: تعديل البلاغ مع editedAt', updateDoc(doc(alice, 'reports/rG'), {title: 'محفظة نقود', desc: 'بنية', editedAt: now}));
+await t('G: تعديل البلاغ مع editedAt', updateDoc(doc(alice, 'reports/rG'), {title: 'محفظة نقود', desc: 'بنية', editedAt: now, contentAt: serverTimestamp()}));   // v23: وقت المحتوى من الخادم مع كل تعديل للمحتوى
 await t('G: editedAt نصي مرفوض', updateDoc(doc(alice, 'reports/rG'), {editedAt: 'now'}), false);
 await t('G: غير صاحب البلاغ لا يضيف إلى rejected', updateDoc(doc(bob, 'reports/rG'), {rejected: ['i1', 'i2', 'i3']}), false);
 await t('G: طلب استلام g1', mk(alice, 'claims/g1_alice', claim('g1', 'alice', {claimantName: 'أليس', idLast4: '1234'})));
@@ -690,10 +690,10 @@ await t('v10: طلب فيه موافقة أولى قديمة بلا سؤال ي�
 await t('v9-6: قيد سجل بوقت قديم مرفوض', setDoc(doc(A, 'logs/' + lid()), {...logDoc('staffA', 'edit', {itemId: 'k2'}), at: now - 5 * DAY}), false);
 await t('v9-6: قيد سجل بوقت «الآن»', setDoc(doc(A, 'logs/' + lid()), {...logDoc('staffA', 'edit', {itemId: 'k2'}), at: Date.now()}));
 await t('v9-6: ai بمفتاح غريب مرفوض', updateDoc(doc(alice, 'reports/rv9'), {ai: {at: now, matches: [], x: 1}}), false);
-await t('v9-6: ai بأكثر من 10 نتائج مرفوض', updateDoc(doc(alice, 'reports/rv9'), {ai: {at: now, matches: Array.from({length: 11}, (_, k) => ({id: 'i' + k}))}}), false);
+await t('v9-6 → v23: ai بأكثر من 10 نتائج مرفوض', updateDoc(doc(alice, 'reports/rv9'), {ai: {at: now, matches: Array.from({length: 11}, (_, k) => ({id: 'i' + k}))}}), false);
 await t('v9-6: ai صحيح', updateDoc(doc(alice, 'reports/rv9'), {ai: {at: now, matches: [{id: 'i1', reason: 'x'}]}}));
 await t('v9-6: تغيير createdAt عند تعديل البلاغ مرفوض', updateDoc(doc(alice, 'reports/rv9'), {createdAt: Date.now(), title: 'حقيبة', editedAt: Date.now()}), false);
-await t('v9-6: تعديل البلاغ دون تغيير createdAt', updateDoc(doc(alice, 'reports/rv9'), {title: 'حقيبة', editedAt: Date.now()}));
+await t('v9-6: تعديل البلاغ دون تغيير createdAt', updateDoc(doc(alice, 'reports/rv9'), {title: 'حقيبة', editedAt: Date.now(), contentAt: serverTimestamp()}));
 await t('v9-6: receivedBy باسم موظف آخر مرفوض', updateDoc(doc(A, 'foundReports/fv9'), {status: 'received', receivedAt: now, receivedBy: 'staffB', itemId: 'k2'}), false);
 await t('v9-6: receivedBy = الموظف نفسه', updateDoc(doc(A, 'foundReports/fv9'), {status: 'received', receivedAt: now, receivedBy: 'staffA', itemId: 'k2'}));
 // 7) تسليم مع 3 طلبات منافسة (لكل منها صورتا إثبات وحصة): هل تكفي حدود القراءات في batch واحد؟
@@ -834,7 +834,7 @@ await t('v13: تغيير تاريخ العثور إلى غد+2 مرفوض', upda
 await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
   await setDoc(doc(d, 'reports/fold'), {officeId: O, uid: 'alice', cat: 'bags', title: 'حقيبة قديمة', status: 'open', lostDate: dayStr(10), createdAt: now});
   await setDoc(doc(d, 'items/fold'), {...pub('fold'), foundDate: dayStr(10)}); });
-await t('v13: وثيقة قديمة بتاريخ مستقبلي: تعديل حقل آخر في البلاغ مقبول', updateDoc(doc(alice, 'reports/fold'), {title: 'حقيبة زرقاء', editedAt: Date.now()}));
+await t('v13: وثيقة قديمة بتاريخ مستقبلي: تعديل حقل آخر في البلاغ مقبول', updateDoc(doc(alice, 'reports/fold'), {title: 'حقيبة زرقاء', editedAt: Date.now(), contentAt: serverTimestamp()}));
 await t('v13: وثيقة قديمة بتاريخ مستقبلي: تعديل حقل آخر في الغرض مقبول', updateDoc(doc(A, 'items/fold'), {sub: 'حقيبة ظهر', updatedAt: now}));
 // 4) البريد الخاص: users/{uid}/private/profile لصاحبه والإدارة فقط
 await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
@@ -1027,7 +1027,8 @@ await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
   await setDoc(doc(d, 'itemSecrets/ev1'), {officeId: O, title: 'حقيبة', color: '', brand: '', desc: '', spot: '', bldg: '', room: '', storage: ''}); });
 await t('v16-2: الموظف لا يملأ الماركة الفارغة بعد 24 ساعة', updateDoc(doc(A, 'itemSecrets/ev1'), {brand: 'نايكي'}), false);
 await t('v16-2: ولا الإجابات الفارغة', updateDoc(doc(A, 'itemSecrets/ev1'), {details: {mark: 'ملصق'}}), false);
-await t('v16-2: مكان العثور الفارغ يُملأ (نقل المكان القديم)', updateDoc(doc(A, 'itemSecrets/ev1'), {spot: 'المكتبة'}));
+// v23 (H39): المكان الفارغ يُملأ بعد 24 ساعة بمكان الإعلان العام القديم نفسه فقط (ev1 بلا مكان في إعلانه؛ النقل في v23-8)
+await t('v16-2 → v23: مكان العثور الفارغ لا يُملأ بمكان جديد بعد 24 ساعة', updateDoc(doc(A, 'itemSecrets/ev1'), {spot: 'المكتبة'}), false);
 await t('v16-2: ولا يتغير بعد ملئه', updateDoc(doc(A, 'itemSecrets/ev1'), {spot: 'المواقف'}), false);
 await t('v16-2: موضع الحفظ يتغير', updateDoc(doc(A, 'itemSecrets/ev1'), {storage: 'الخزانة 3'}));
 await t('v16-2: المدير يملأ الماركة', updateDoc(doc(owner, 'itemSecrets/ev1'), {brand: 'نايكي'}));
@@ -1156,6 +1157,75 @@ await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
 await t('v22-7: لا مسح يُبقي نسخة السجل', updateDoc(doc(carol, 'claims/an2_carol'), {...wipe(), delegate: deleteField()}), false);
 await t('v22-7: ولا يُبقي المفوَّض', updateDoc(doc(carol, 'claims/an2_carol'), {...wipe(), reg: deleteField()}), false);
 await t('v22-7: المسح الكامل مع السجل والمفوَّض مسموح', updateDoc(doc(carol, 'claims/an2_carol'), {...wipe(), reg: deleteField(), delegate: deleteField()}));
+
+// ── v23 (H39): فحص الثغرات الشامل ──
+// 1) الدعوة تُستهلك عند قبولها: كان المدعو يستطيع إنشاء وثيقته وإبقاء الدعوة، فيعيد بها وثيقته بعد أن تسحب الإدارة صلاحيته
+const newbie2 = withEmail('newbie2', 'new2@x.com');
+await t('v23-1: المالك يدعو موظفاً', setDoc(doc(owner, 'staffInvites/new2@x.com'), inv()));
+await t('v23-1: المدعو لا ينشئ وثيقته ويُبقي الدعوة', batch(newbie2, (b, r) => {
+  b.set(r('staff/newbie2'), {offices: [O], approvedAt: now, approvedBy: 'owner'});
+  b.set(r('logs/' + lid()), logDoc('newbie2', 'perm:grant', {note: 'newbie2'}));
+}), false);
+await t('v23-1: ويقبلها بحذفها في العملية نفسها', acceptBatch(newbie2, 'newbie2', 'new2@x.com', [O]));
+await t('v23-1: المالك يسحب صلاحيته', deleteDoc(doc(owner, 'staff/newbie2')));
+await t('v23-1: ولا يعيد إنشاء وثيقته بعدها', setDoc(doc(newbie2, 'staff/newbie2'), {offices: [O], approvedAt: now, approvedBy: 'owner'}), false);
+// 2-3) وقت محتوى البلاغ من الخادم (contentAt): به يُعرف «البلاغ السابق للعثور»، فلا يُكتب بوقت قديم ولا يبقى بعد تعديل المحتوى
+const rep23 = (x = {}) => rep({cat: 'bags', title: 'حقيبة', ...x});
+await t('v23-2: بلاغ بوقت محتوى من الخادم', mk(alice, 'reports/c23a', rep23({contentAt: serverTimestamp()})));
+await t('v23-2: لا وقت محتوى قديم عند الإنشاء', mk(alice, 'reports/c23b', rep23({contentAt: Timestamp.fromMillis(now - 3 * DAY)})), false);
+await t('v23-2: ولا وقت محتوى رقمي', mk(alice, 'reports/c23b', rep23({contentAt: Date.now()})), false);
+await t('v23-2: بلاغ بلا وقت محتوى مقبول (يُعامل قديماً)', mk(alice, 'reports/c23c', rep23()));
+await t('v23-3: تعديل المحتوى دون وقته الجديد مرفوض', updateDoc(doc(alice, 'reports/c23a'), {desc: 'عليها ملصق', editedAt: Date.now()}), false);
+await t('v23-3: ولا في بلاغ بلا وقت محتوى', updateDoc(doc(alice, 'reports/c23c'), {spot: 'المكتبة', editedAt: Date.now()}), false);
+await t('v23-3: تعديل المحتوى مع وقته من الخادم', updateDoc(doc(alice, 'reports/c23a'), {desc: 'عليها ملصق', editedAt: Date.now(), contentAt: serverTimestamp()}));
+await t('v23-3: والبلاغ بلا وقت محتوى يأخذه عند تعديله', updateDoc(doc(alice, 'reports/c23c'), {spot: 'المكتبة', editedAt: Date.now(), contentAt: serverTimestamp()}));
+await t('v23-3: لا وقت محتوى قديم عند التعديل', updateDoc(doc(alice, 'reports/c23a'), {title: 'حقيبة سوداء', contentAt: Timestamp.fromMillis(now - 3 * DAY)}), false);
+await t('v23-3: ولا إرجاعه وحده إلى الماضي', updateDoc(doc(alice, 'reports/c23a'), {contentAt: Timestamp.fromMillis(now - 3 * DAY)}), false);
+await t('v23-3: ولا حذفه', updateDoc(doc(alice, 'reports/c23a'), {contentAt: deleteField()}), false);
+await t('v23-3: التجديد دون وقت محتوى (ليس تعديلاً للمحتوى)', updateDoc(doc(alice, 'reports/c23a'), {renewedAt: Date.now()}));
+await t('v23-3: و«ليس غرضي» دون وقت محتوى', updateDoc(doc(alice, 'reports/c23a'), {rejected: arrayUnion('i1')}));
+await t('v23-3: الموظف يرشّح غرضاً', updateDoc(doc(A, 'reports/c23a'), {staffPick: 'i2', pickedAt: now}));
+await t('v23-3: والموظف لا يكتب وقت المحتوى', updateDoc(doc(A, 'reports/c23a'), {staffPick: 'i3', pickedAt: now, contentAt: serverTimestamp()}), false);
+await t('v23-3: الإغلاق دون وقت محتوى', updateDoc(doc(alice, 'reports/c23c'), {status: 'closed', closedAt: Date.now(), closedReason: 'self'}));
+// 4) حقول البلاغ التي كانت بلا حد (يحمّلها كل موظف مع البلاغات المفتوحة)
+await t('v23-4: «ليس غرضي» بعنصر ضخم مرفوض', updateDoc(doc(alice, 'reports/c23a'), {rejected: ['i1', 'x'.repeat(4000)]}), false);
+await t('v23-4: ai بأكثر من 5 نتائج مرفوض', updateDoc(doc(alice, 'reports/c23a'), {ai: {at: Date.now(), matches: Array.from({length: 6}, (_, k) => ({id: 'i' + k, score: 50, reason: 'x'}))}}), false);
+await t('v23-4: ولا بسبب ضخم', updateDoc(doc(alice, 'reports/c23a'), {ai: {at: Date.now(), matches: [{id: 'i1', score: 80, reason: 'x'.repeat(5000)}]}}), false);
+await t('v23-4: ولا بحقل غريب في النتيجة', updateDoc(doc(alice, 'reports/c23a'), {ai: {at: Date.now(), matches: [{id: 'i1', score: 80, blob: 'x'}]}}), false);
+await t('v23-4: ولا بنسبة نصية', updateDoc(doc(alice, 'reports/c23a'), {ai: {at: Date.now(), matches: [{id: 'i1', score: 'x'.repeat(5000)}]}}), false);
+await t('v23-4: نتيجة مطابقة صحيحة مقبولة', updateDoc(doc(alice, 'reports/c23a'), {ai: {at: Date.now(), matches: [{id: 'i1', score: 80, reason: 'نفس اللون'}, {id: 'i2', score: 60, reason: 'نفس النوع'}]}}));
+await t('v23-5: «آخر دخول» نص ضخم مرفوض', setDoc(doc(alice, 'users/alice'), {name: 'A', lastSeen: 'x'.repeat(5000)}), false);
+await t('v23-5: «آخر دخول» رقم مقبول', setDoc(doc(alice, 'users/alice'), {name: 'A', lastSeen: Date.now()}));
+// 6) الصورة العامة: للزائر ما دام الغرض عاماً وصورته «واضحة» أو «مموّهة» فقط
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  for (const [k, photo, cat] of [['p23c', 'clear', 'bags'], ['p23b', 'blur', 'bags'], ['p23n', 'none', 'bags'], ['p23f', false, 'bags'], ['p23cash', 'clear', 'cash']]){
+    await setDoc(doc(d, 'items/' + k), {...pub(k, cat), photo}); await setDoc(doc(d, 'itemPhotos/' + k), {data: IMG}); }
+  await setDoc(doc(d, 'itemPhotos/p23x'), {data: IMG}); });   // صورة بقيت بلا غرض
+await t('v23-6: الزائر يقرأ الصورة الواضحة', getDoc(doc(anon, 'itemPhotos/p23c')));
+await t('v23-6: والمموّهة', getDoc(doc(bob, 'itemPhotos/p23b')));
+await t('v23-6: لا يقرأ صورة اختار لها الموظف «مخفية»', getDoc(doc(anon, 'itemPhotos/p23n')), false);
+await t('v23-6: ولا صورة غرض بلا صورة عامة', getDoc(doc(bob, 'itemPhotos/p23f')), false);
+await t('v23-6: ولا صورة غرض نقود', getDoc(doc(bob, 'itemPhotos/p23cash')), false);
+await t('v23-6: ولا صورة بلا غرض', getDoc(doc(anon, 'itemPhotos/p23x')), false);
+await t('v23-6: موظف المكتب يقرأ المخفية', getDoc(doc(A, 'itemPhotos/p23n')));
+// 7-8) لا أدلة جديدة لغرض مضى عليه يوم، ولو لم يكن له ملف سري؛ والمكان الفارغ يُملأ بمكان الإعلان القديم فقط
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore(), old = Date.now() - 3 * DAY;
+  await setDoc(doc(d, 'items/s23o'), {...pub('s23o'), createdAt: old});
+  await setDoc(doc(d, 'items/s23a'), {...pub('s23a'), createdAt: old});
+  await setDoc(doc(d, 'items/s23l'), {...pub('s23l'), createdAt: old, color: 'black', spot: 'المكتبة'});   // قبل الترحيل: أدلة في الإعلان العام
+  await setDoc(doc(d, 'items/s23s'), {...pub('s23s'), createdAt: old, spot: 'المواقف'});
+  await setDoc(doc(d, 'itemSecrets/s23s'), {officeId: O, title: 'حقيبة', color: '', brand: '', desc: '', spot: '', bldg: '', room: '', storage: ''}); });
+await t('v23-7: الموظف لا ينشئ أدلة لغرض قديم بلا ملف سري', setDoc(doc(A, 'itemSecrets/s23o'), {officeId: O, title: 'حقيبة', color: 'red', desc: 'عليها ملصق', spot: 'المكتبة'}), false);
+await t('v23-7: ولا مكاناً وحده', setDoc(doc(A, 'itemSecrets/s23o'), {officeId: O, spot: 'المكتبة'}, {merge: true}), false);
+await t('v23-7: ملف سري بلا أدلة (ملاحظة تسليم) مقبول', setDoc(doc(A, 'itemSecrets/s23o'), {officeId: O, handoverNote: 'علي — آخر 4 أرقام: 1234'}, {merge: true}));
+await t('v23-7: ترحيل غرض قديم بأدلة غير أدلة إعلانه مرفوض', setDoc(doc(A, 'itemSecrets/s23l'), {officeId: O, title: 'حقيبة', color: 'red', spot: 'المكتبة'}), false);
+await t('v23-7: وبأدلة إعلانه نفسها مقبول', setDoc(doc(A, 'itemSecrets/s23l'), {officeId: O, title: 'حقيبة', color: 'black', brand: '', desc: '', spot: 'المكتبة', bldg: '', room: '', storage: ''}));
+await t('v23-7: المدير ينشئ الأدلة لغرض قديم', setDoc(doc(owner, 'itemSecrets/s23a'), {officeId: O, title: 'حقيبة', color: 'red', spot: 'المكتبة'}));
+await t('v23-8: المكان الفارغ لا يُملأ بمكان جديد بعد 24 ساعة', updateDoc(doc(A, 'itemSecrets/s23s'), {spot: 'المكتبة'}), false);
+await t('v23-8: ويُملأ بمكان الإعلان القديم نفسه مع حذفه منه', batch(A, (b, r) => {
+  b.set(r('itemSecrets/s23s'), {officeId: O, spot: 'المواقف'}, {merge: true});
+  b.update(r('items/s23s'), {spot: deleteField()});
+}));
 
 console.log(R.join('\n')); const N = R.filter(x => !x.startsWith('ℹ')).length; console.log(fails ? `فشل ${fails} من ${N}` : `نجحت كل الاختبارات (${N})`);
 await env.cleanup(); process.exit(fails ? 1 : 0);

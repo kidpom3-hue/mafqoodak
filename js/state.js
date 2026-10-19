@@ -365,8 +365,20 @@ export function staffEvents(){
   return out;
 }
 /* v7: البلاغ المرتبط بطلب الاستلام إن كان سابقاً للعثور (أُنشئ قبل تسجيل الغرض): أقوى دليل على الملكية.
-   يُقرأ مرة واحدة إن لم يكن في بلاغات المكتب المحمّلة، ويجب أن يكون لصاحب الطلب نفسه */
+   يُقرأ مرة واحدة إن لم يكن في بلاغات المكتب المحمّلة، ويجب أن يكون لصاحب الطلب نفسه.
+   H39 (قواعد v23): «سابق» بوقت كتابة محتواه من الخادم (contentAt: الإنشاء أو آخر تعديل للوصف واللون والمكان والإجابات)،
+   لا بـ createdAt الذي تكتبه ساعة الجهاز وتقبله القواعد بفارق يوم؛ وكان تعديل بلاغ قديم بعد ظهور الغرض يبقيه «سابقاً».
+   البلاغ القديم بلا contentAt: سابق فقط إن كان إنشاؤه وآخر تعديل له قبل تسجيل الغرض بيوم كامل على الأقل */
 const REP = {};
+const DAY_MS = 864e5;
+export const contentMs = r => { const v = r?.contentAt; return typeof v?.toMillis === 'function' ? v.toMillis() : Number(v) || 0; };
+export function reportBefore(r, itemAt){
+  if (!r || typeof itemAt !== 'number') return false;
+  const srv = contentMs(r);
+  if (srv) return srv < itemAt;
+  const created = typeof r.createdAt === 'number' ? r.createdAt : Infinity, edited = typeof r.editedAt === 'number' ? r.editedAt : 0;
+  return Math.max(created, edited) < itemAt - DAY_MS;
+}
 export function priorReport(c, i){
   if (!c?.reportId || !i) return null;
   let r = S.reports.find(x => x.id === c.reportId) || (S.closedReps || []).find(x => x.id === c.reportId) || REP[c.reportId];
@@ -376,7 +388,7 @@ export function priorReport(c, i){
     return null;
   }
   if (!r || r === 'loading') return null;
-  return r.uid === c.uid && typeof r.createdAt === 'number' && typeof i.createdAt === 'number' && r.createdAt < i.createdAt ? r : null;
+  return r.uid === c.uid && reportBefore(r, i.createdAt) ? r : null;
 }
 /* v7: سجل صاحب الطلب في هذا المكتب (للموظف): عدد طلباته السابقة والمرفوض منها. قراءة واحدة عند فتح البطاقة، بلا اشتراك */
 const HIST = {};
@@ -419,9 +431,16 @@ const errH = where => e => console.warn('[firestore]', where, e?.code || e);
 
 export function start(){
   if (!configured){ S.authReady = true; reset(); return; }
-  dbx.watchDoc('config/app', d => { const had = !!S.config; S.config = d; S.configLoaded = true; if (had !== !!d) reset(); else changed(); },
-    e => { errH('config')(e); S.configLoaded = true; reset(); });
+  /* H39: إعداد المنصة (config/app) غير موجود يعني «منصة جديدة» فتُعرض صفحة الإعداد الأول. كان ذلك يحدث أيضاً للزائر عند أول فتح
+     دون اتصال (النسخة المحلية فارغة) أو عند تعذّر القراءة (اتصال ضعيف، أو حظر App Check)، فيرى صفحة «إعداد المنصة» بدل المفقودات.
+     الآن: «غير موجود» من النسخة المحلية وحدها ننتظر فيه الخادم، والخطأ يُعرض رسالة انقطاع مع «إعادة المحاولة» (S.cfgErr/S.offErr في ui.js) */
+  dbx.watchDoc('config/app', (d, fromCache) => {
+    if (!d && fromCache && !S.configLoaded) return;
+    S.cfgErr = false;
+    const had = !!S.config; S.config = d; S.configLoaded = true; if (had !== !!d) reset(); else changed();
+  }, e => { errH('config')(e); S.cfgErr = true; S.configLoaded = true; reset(); });
   dbx.watch('offices', [], list => {
+    S.offErr = false;
     S.offices = list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     const first = !S.officesLoaded; S.officesLoaded = true;
     const active = S.offices.filter(o => o.active !== false);
@@ -430,14 +449,15 @@ export function start(){
     if (!curOffice() && singleOffice()){ setOffice(singleOffice(), true); return; }
     fixMode(); ensureOfficeSubs();
     if (first || !curOffice()) reset(); else changed();
-  }, e => { errH('offices')(e); S.officesLoaded = true; reset(); });
+  }, e => { errH('offices')(e); S.offErr = true; S.officesLoaded = true; reset(); });   // H39: رسالة انقطاع لا «لا مواقع»
   onAuthStateChanged(auth, onUser);
   getRedirectResult(auth).catch(e => { const m = authErr(e); if (m) toast(m); });
 }
 
 /* H29: الجهاز المشترك بلا مستخدم داخل (انتهت جلسة السابق بإغلاق المتصفح دون «تسجيل الخروج»): ما بقي منه على الجهاز يُمسح —
    التنبيهات المقروءة والاقتراحات المعلّقة وبصمة الملف الشخصي (وفيها أرقام بلاغاته وطلباته). المكان والمظهر واللغة تبقى للجهاز */
-const SHARED_WIPE = ['codes', 'seen', 'staffSeen', 'prof', 'notify', 'snoozed', 'suggHold', 'suggAlert', 'mineTab', 'rateAt'];
+// H39: القائمة نفسها يمسحها «تسجيل الخروج» في كل جهاز (actions.js wipeDevice)؛ كان الخروج يمسح خمسة منها فقط
+export const SHARED_WIPE = ['codes', 'seen', 'staffSeen', 'prof', 'notify', 'snoozed', 'suggHold', 'suggAlert', 'mineTab', 'rateAt'];
 function onUser(user){
   if (!user && sharedDevice()) SHARED_WIPE.forEach(k => { try { localStorage.removeItem('mfq:' + k); } catch {} });
   clear('user'); clear('admin');
@@ -539,7 +559,7 @@ export function ensureOfficeSubs(){
   const staffView = isStaffHere();
   const k = `${S.officeId}|${S.uid}|${staffView}`;
   if (rcKey !== k){
-    rcKey = k; clear('rc'); S.reports = []; S.claims = []; S.found = []; S.links = {}; S.secrets = {}; S.claimHist = null; S.closedReps = null;
+    rcKey = k; clear('rc'); S.reports = []; S.claims = []; S.found = []; S.links = {}; S.linksLoaded = false; S.secrets = {}; S.claimHist = null; S.closedReps = null;
     secSubs.forEach(u => { try { u(); } catch {} }); secSubs.clear();
     // للموظف فقط: البلاغات المفتوحة، والطلبات المفتوحة (قيد المراجعة والمقبولة)، والتفاصيل السرية لمكتبه.
     // الزائر يرى بلاغاته وطلباته من اشتراك «طلباتي» بالأعلى.
@@ -550,7 +570,8 @@ export function ensureOfficeSubs(){
       // إشعارات التسليم المعلّقة: من وجد غرضاً وسيسلّمه للمكتب
       subs.rc.push(dbx.watch('foundReports', [o, ['status', '==', 'pending']], l => { S.found = l; changed(); }, errH('found')));
       // H11: روابط الطلبات المجمّعة بأغراض المكتب (الموظف وحده يراها)
-      subs.rc.push(dbx.watch('claimLinks', [o], l => { S.links = Object.fromEntries(l.map(x => [x.id, x])); changed(); }, errH('links')));
+      // H39: linksLoaded: الإنهاء الآلي للطلب المجمّع بعد 30 يوماً (expireOld) ينتظر وصولها، فلا يُنهى طلبٌ رُبط بغرض قبل أن تصل روابطه
+      subs.rc.push(dbx.watch('claimLinks', [o], l => { S.links = Object.fromEntries(l.map(x => [x.id, x])); S.linksLoaded = true; changed(); }, errH('links')));
       watchSecrets();
     }
   }
@@ -742,12 +763,10 @@ export async function createLimited(path, data, extra){
     if (at && Date.now() - at < RATE_MS + 10000) throw rateErr();
     if (w2 && Date.now() - w2 < RATE_WIN && (+r2.n || 0) >= RATE_DAY_MAX) throw capErr(w2);
     // ساعة الجهاز قرب نهاية النافذة: الخادم رأى غير ما رأيناه، فنجرب الفرع الآخر مرة واحدة (يبقى الرفض الحقيقي رفضاً)
-    const tries = w && Math.abs(Date.now() - w - RATE_WIN) <= 36e5 ? [nextRate(r, !inWin)] : [];
-    // انتقالي: قبل نشر قواعد v16 (قواعد v15 لا تقبل n وw) نجرب {at} وحده؛ قواعد v16 ترفضه. يُحذف بعد نشر v16 بأسابيع
-    tries.push('legacy');
-    let ok = false;
-    for (const x of tries){ try { await dbx.createLimited(path, data, S.uid, extra, x); ok = true; break; } catch {} }
-    if (!ok) throw e;
+    // H39: حُذفت المحاولة الانتقالية (legacy: {at} وحده لقواعد v15): القواعد v16 وما بعدها ترفضها دائماً، فكانت كتابة مرفوضة زائدة
+    if (!(w && Math.abs(Date.now() - w - RATE_WIN) <= 36e5)) throw e;
+    try { await dbx.createLimited(path, data, S.uid, extra, nextRate(r, !inWin)); }
+    catch { throw e; }
   }
   LS.set('rateAt', Date.now());
 }

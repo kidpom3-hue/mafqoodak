@@ -96,7 +96,8 @@ function itemUpdate(b, i, patch, secret = null){
   const sp = publicSpot(i);
   if (sp !== null){
     patch = {...patch, spot: deleteField()};
-    const keep = S.secrets[i.id]?.spot ?? sp;
+    // H39: مكان سري فارغ ('') لا يحجب نقل المكان القديم (كان ?? يبقي '' فيضيع المكان المحذوف من الإعلان)
+    const keep = S.secrets[i.id]?.spot || sp;
     if (secret){ if (secret.spot === undefined) secret.spot = keep; }
     else b.set(dbx.ref('itemSecrets/' + i.id), {officeId: i.officeId, spot: keep}, {merge: true});
   }
@@ -230,6 +231,8 @@ export async function approveCashDirect(c, {amount, foundDate = ''} = {}){
 /* H11: طلب مجمّع بلا مطابقة بعد 30 يوماً: يُغلق «منتهياً» (عند فتح لوحة الموظف)، ويُبلَّغ صاحبه */
 export async function expireGroupClaim(c){
   if (!c?.grouped || c.itemId || c.status !== 'pending' || S.links[c.id] || c.uid === S.uid) return false;
+  // H39: تأكيد من الخادم أن الطلب غير مربوط (قراءة واحدة نادرة): الاشتراك المحلي قد لا يكون وصل
+  if (await dbx.get('claimLinks/' + c.id).catch(() => true)) return false;
   const b = dbx.batch();
   closeClaim(b, c, {status: 'expired', note: tAr('sys.noMatch'), decidedAt: Date.now(), decidedBy: S.uid});
   log(b, c.officeId, 'expire', {claimId: c.id, note: tAr('sys.noMatch')});
@@ -408,8 +411,9 @@ export async function editItem(i, patch, secret){
   if (patch.cat && !canChangeCat(i.cat, patch.cat)) fail(t('wf.hvDowngrade'));
   // v14: بعد 24 ساعة تبقى الأدلة كما سُجّلت (للموظف)، ويُكتب الباقي
   // H22 (v16): كما هي تماماً، والفارغ منها يبقى فارغاً (القواعد لا تسمح بملئه بعد 24 ساعة)
+  // H39 (قواعد v23): والمكان الفارغ يبقى فارغاً أيضاً؛ لا يُملأ إلا بمكان الإعلان العام القديم (itemUpdate ينقله بنفسه)
   if (evidenceLocked(i)){ const old = S.secrets[i.id] || {}; for (const k of EVIDENCE){
-    if (k === 'spot' && !old.spot) continue;   // المكان الفارغ وحده يُملأ (نقل المكان القديم من الإعلان العام)
+    if (k === 'spot' && !old.spot){ delete secret.spot; continue; }
     if (old[k] === undefined) delete secret[k]; else secret[k] = old[k]; } }
   const b = dbx.batch();
   itemUpdate(b, i, {...patch, updatedAt: Date.now()}, {...secret, officeId: i.officeId});

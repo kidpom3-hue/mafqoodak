@@ -78,7 +78,8 @@ export async function migrateSpots(){
     for (const i of todo){
       spotDone.add(i.id);
       const b = dbx.batch();
-      b.set(dbx.ref('itemSecrets/' + i.id), {officeId: i.officeId, spot: S.secrets[i.id]?.spot ?? String(i.spot ?? '')}, {merge: true});
+      // H39: مكان سري فارغ لا يحجب نقل المكان العام (القواعد v23 تقبل ملء الفارغ بالمكان العام نفسه فقط)
+      b.set(dbx.ref('itemSecrets/' + i.id), {officeId: i.officeId, spot: S.secrets[i.id]?.spot || String(i.spot ?? '')}, {merge: true});
       b.update(dbx.ref('items/' + i.id), {spot: deleteField(), public: pubFlag(i.cat)});   // H16: public مع النقل
       try { await b.commit(); n++; }
       catch (e){

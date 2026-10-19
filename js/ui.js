@@ -235,6 +235,9 @@ function renderMain(){
   const main = $('#main');
   if (!S.configured){ main.innerHTML = vNotConfigured(); return; }
   if (!S.authReady || !S.configLoaded || !S.officesLoaded){ main.innerHTML = `<div class="loading"><span class="spin"></span></div>`; return; }
+  // H39: تعذّرت قراءة إعداد المنصة أو المواقع: رسالة انقطاع مع «إعادة المحاولة» (كانت تظهر صفحة الإعداد الأول أو «لا مواقع»)
+  if (S.cfgErr || S.offErr){ main.innerHTML = `<div class="wrap narrow" data-view="loadErr"><h1 class="sr-only">${t('err.loadTitle')}</h1><div class="empty">${icon('wifiOff')}<b>${t('err.loadTitle')}</b><span>${t('err.loadBody')}</span>
+    <button class="btn" data-act="reload">${icon('undo')}${t('err.retry')}</button></div></div>`; return; }
   if (S.route.name === 'login' && S.uid) S.route = S.route.params.next || {name: homeRoute(), params: {}};
   if (S.uid && S.route.name === homeRoute() && pendingDraft()) S.route = {name: pendingDraft(), params: {}};
   if (!S.config){ main.innerHTML = S.route.name === 'login' ? vLogin() : S.route.name === 'privacy' ? vPrivacy() : vSetup(); return; }
