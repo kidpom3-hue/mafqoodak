@@ -73,13 +73,41 @@ const db = {
   'items/iar': item('iar', {status: 'archived'}), 'itemSecrets/iar': secret(), 'claims/iar_amy': claim('iar', 'amy'),
   'reports/rb': {officeId: O, uid: 'zed', cat: 'nope', title: P('repb.title'), lostDate: 'x', status: 'open', createdAt: 'x', renewedAt: 'x', editedAt: 'x'},
   'foundReports/fb': {officeId: O, uid: 'zed', cat: 'nope', foundDate: 'x', status: 'pending', createdAt: 'x'},
+  // H40: حقول المراحل الأحدث لم تكن في هذا الفحص: «سجل أغراضي» ونسخته في الطلب، والمفوَّض بالاستلام، ونتائج المطابقة الذكية
+  // في البلاغ، وبريد الحساب الخاص، ودعوة موظف ومعرّفها حمولة، وقيد سجل بإجراء وفحوص غريبة، وصورة إثبات وصورة غرض ليستا صورتين،
+  // وغرض تُصرِّف فيه وآخر بلون عام وأصل غريبين، وتسليمٌ بمفوَّض ورمز غريب
+  'belongings/b1': {uid: 'zed', cat: 'phones', sub: P('regdoc.sub'), title: P('regdoc.title'), brand: P('regdoc.brand'), model: P('regdoc.model'), serial: P('regdoc.serial'), color: P('regdoc.color'), mark: P('regdoc.mark'), at: now - 10 * day},
+  'belongings/b2': {uid: 'zed', cat: 'nope', title: 5, serial: {x: 1}, at: 'x'},
+  'users/zed/private/profile': {email: P('profile.email')},
+  [`staffInvites/${P('invite')}`]: {offices: [O, P('invite.office')], createdBy: 'owner', createdAt: 'x'},
+  'logs/l2': {officeId: O, itemId: 'i1', claimId: 'i1_zed', reportId: 'r1', action: P('log.action'), by: 'staffA', at: now - 3600e3, note: P('log.note2'), checks: [P('log.check'), 'ho.id', 5]},
+  'claimProofs/i1_zed_0': {claimId: 'i1_zed', officeId: O, uid: 'zed', data: P('proof.data'), createdAt: now - 7200e3},
+  'items/ip': item('ip', {photo: 'clear', pubColor: P('pubColor'), createdFrom: P('createdFrom'), fromReport: P('fromReport'), keepUntil: 'x'}), 'itemSecrets/ip': secret(),
+  'itemPhotos/ip': {data: P('photo.data')}, 'itemPhotosPrivate/ip': {officeId: O, data: P('photoPriv.data')},
+  'items/id': item('id', {status: 'disposed', disposal: P('disposal'), disposedAt: now - day, fromFound: 'f0'}), 'itemSecrets/id': secret(),
 };
+// H40: نسخة «سجل أغراضي» في الطلب قيد المراجعة، والمفوَّض في الطلب المقبول والمكتمل، ونتائج المطابقة الذكية في البلاغ
+Object.assign(db['claims/i1_zed'], {reg: {id: 'b1', at: now - 10 * day, cat: 'phones', title: P('reg.title'), brand: P('reg.brand'), model: P('reg.model'), serial: P('reg.serial'), color: P('reg.color'), mark: P('reg.mark')}});
+Object.assign(db['claims/i2_zed'], {delegate: {name: P('delegate.name'), last4: '5678', at: now - 600e3}});
+Object.assign(db['claims/i3_zed'], {delegate: {name: P('delegate2.name'), last4: '5678', at: now - 2 * day}, handoverCode: P('handoverCode'), doneBy: P('doneBy'), decidedBy: P('decidedBy')});
+Object.assign(db['claims/ib_zed'], {reg: 'x', delegate: {name: 5, last4: 'abcd'}});
+Object.assign(db['reports/r1'], {ai: {at: now - 3600e3, matches: [{id: 'i1', score: 80, reason: P('ai.reason')}, {id: P('ai.id'), score: 'x', reason: P('ai.reason2')}]}});
+Object.assign(db['reports/rb'], {ai: {at: 'x', matches: 'x'}});
+Object.assign(db['config/app'], {appName: P('cfg.appName')});
+// نطاق بريد الكلية: نطاق بحمولة يظهر في صفحة الدخول ونموذج المكتب، ومعه نطاق صاحب الطلب (example.com) فيبقى نموذج الطلب ظاهراً
+Object.assign(db['offices/tc-ahsa'], {claimDomains: [P('dom'), 'example.com'], claimDomainRe: ''});
 const users = {
   visitor: [null, 'visitor'], claimant: [{uid: 'zed', displayName: P('auth.name'), email: 'zed@example.com'}, 'visitor'],
   staff: [{uid: 'staffA', displayName: 'Staff', email: 's@example.com'}, 'staff'], admin: [{uid: 'owner', displayName: 'Owner', email: 'o@example.com'}, 'admin'],
 };
-const PARAMS = {item: [{id: 'i1'}, {id: 'i2'}, {id: 'ib'}], claim: [{id: 'i1'}, {id: 'i1', edit: 'i1_zed'}, {id: 'i1', report: 'r1'}], report: [{}, {id: 'r1'}], stats: [{office: O}], audit: [{office: O}],
-  labels: [{ids: ['i1', 'ib']}], poster: [{office: O}], thanks: [{id: 'f0'}], service: [{}, {id: 'claim'}, {id: 'handin'}], officeForm: [{id: O}, {}], add: [{}, {id: 'i1'}, {id: 'ib'}]};
+const PARAMS = {item: [{id: 'i1'}, {id: 'i2'}, {id: 'ib'}, {id: 'ip'}, {id: 'id'}], claim: [{id: 'i1'}, {id: 'i1', edit: 'i1_zed'}, {id: 'i1', report: 'r1'}], report: [{}, {id: 'r1'}], stats: [{office: O}], audit: [{office: O}],
+  labels: [{ids: ['i1', 'ib']}], poster: [{office: O}], thanks: [{id: 'f0'}], service: [{}, {id: 'claim'}, {id: 'handin'}], officeForm: [{id: O}, {}], add: [{}, {id: 'i1'}, {id: 'ib'}, {id: 'ip'}],
+  // H40: المسارات التي كانت تُفحص بلا معاملات (فتعرض «غير موجود» فقط)
+  gclaim: [{cat: 'cash'}, {cat: 'ids'}, {cat: P('gclaim.cat')}], receipt: [{id: 'i3_zed'}, {id: 'i3_zed', s: 1}, {id: 'ib_zed'}],
+  // رقم الطلب (16 خانة على الأكثر في القواعد) ورقم التسليم قصيران: حمولة img[src=x] بطولهما الحقيقي
+  done: [{kind: 'claim', id: 'i1_zed', no: '"><img src=x>', title: P('done.title'), cat: 'phones', officeId: O, at: now},
+         {kind: 'handin', id: 'f1', code: '<img src=x>', title: P('done.title2'), cat: 'bags', officeId: O, at: now},
+         {kind: P('done.kind'), id: P('done.id'), officeId: P('done.office'), at: 'x'}]};
 
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? {executablePath: process.env.CHROMIUM_PATH} : {});
 const fails = []; let visits = 0;

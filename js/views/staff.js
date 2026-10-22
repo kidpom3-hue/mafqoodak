@@ -140,6 +140,11 @@ export function staffItems(){
 export const logLabel = a => hasKey('log.' + a) ? t('log.' + a) : esc(a);
 // صاحب الطلب: من الطلب المحمّل، وإلا من رقمه ({itemId}_{uid}، أو g_{uid}_{cat}_{وقت} للطلب بالوصف)
 const claimUid = id => [...S.claims, ...(S.claimHist || [])].find(c => c.id === id)?.uid || (id.startsWith('g_') ? id.split('_')[1] : id.slice(id.indexOf('_') + 1));
+/* H40: ملاحظة القيد في السجل. قيد التسليم بالرمز لم يعد يحفظ اسم المستلم وآخر 4 من هويته (السجل لا يُمحى، وسياسة الخصوصية
+   تَعِد بمسحها مع «حذف حسابي»)، فيُعرض من استلم من checks: المفوَّض أو تجاوز الإدارة، والاسم في بطاقة الطلب نفسها */
+const HO_ROLE = ['ho.byDelegate', 'ho.override'];
+const logNote = e => typeof e.note === 'string' && e.note && !MS_NOTE.test(e.note) ? noteText(e.note)
+  : Array.isArray(e.checks) ? e.checks.filter(k => HO_ROLE.includes(k)).map(k => t(k)).join(t('c.listSep')) : '';
 export function timeline(i){
   ensureLogs(i);
   const L = S.logs[i.id];
@@ -155,7 +160,7 @@ export function timeline(i){
         <b>${logLabel(e.action)}</b>
         <span class="meta">${fmtDateTime(e.at)}${e.by ? ` · ${t('tl.by')} ${person(e.by)}` : ''}</span>
         ${claimant ? `<span class="meta">${t('tl.claimant')} ${person(claimant)}</span>` : ''}
-        ${e.note && !MS_NOTE.test(e.note) ? `<span class="tl-note">${esc(noteText(e.note))}</span>` : ''}
+        ${logNote(e) ? `<span class="tl-note">${esc(logNote(e))}</span>` : ''}
       </div></li>`; }).join('')}</ol>
     ${events.length < 2 ? `<p class="hint">${t('tl.hint')}</p>` : ''}
   </div>`;
@@ -479,7 +484,7 @@ function claimHistory(c, open){
   if (!Array.isArray(L) || !L.length) return claimTimeline(c, true);
   const fields = timelineEvents(c, true).filter(([k, ms]) => !STAFF_EV(k) || !L.some(e => Math.abs((e.at || 0) - ms) < NEAR_MS));
   const ev = [...fields.map(([k, ms]) => ({label: t(k), at: ms})),
-    ...L.filter(e => typeof e.at === 'number').map(e => ({label: logLabel(e.action), at: e.at, by: e.by, note: e.note && !MS_NOTE.test(e.note) ? noteText(e.note) : ''}))]
+    ...L.filter(e => typeof e.at === 'number').map(e => ({label: logLabel(e.action), at: e.at, by: e.by, note: logNote(e)}))]
     .sort((a, b) => a.at - b.at);
   return `<div class="ctl-box"><span class="ctl-h">${icon('clock')}${t('ctl.title')}</span>
     <ol class="ctl" aria-label="${t('ctl.title')}">${ev.map(e => ctlRow(e.label, e.at,

@@ -611,7 +611,12 @@ export function reportCardMine(r, focus){
   // «قد يكون لك» (H10): اقتراح آلي واحد في كل مرة بدليل عام، ولا شيء منه مع ترشيح موظف نشط
   const auto = r.status === 'open' ? suggestFor(r) : null;
   const no = rejectedOf(r);
-  const ai = r.ai?.matches || [];
+  /* H40: نتيجة المطابقة الذكية المحفوظة بأنواع آمنة: قائمة كائنات فقط، ثم الأغراض المتاحة منها التي لم يرفضها صاحب البلاغ.
+     بلاغ قديم (قبل قواعد v9) بقيمة غير قائمة كان يوقف «طلباتي» كلها (ai.map is not a function)، وقائمة كل أغراضها غير متاحة
+     كانت تعرض عنوان «اقترحها الذكاء الاصطناعي» فوق قائمة فارغة؛ الآن «لم يجد…» كأن لا نتائج */
+  const ai = (Array.isArray(r.ai?.matches) ? r.ai.matches : []).filter(m => m && typeof m === 'object')
+    .map(m => ({it: item(String(m.id ?? '')), reason: typeof m.reason === 'string' ? m.reason : ''}))
+    .filter(x => x.it && ACTIVE.includes(x.it.status) && !no.has(x.it.id));
   // طلب استلام نشط مرتبط بالبلاغ: لا زر إغلاق، بل متابعة الطلب (إن رُفض يعود البلاغ كما كان)
   const active = linkedClaim(r);
   const closeBtn = active ? '' : `<button class="btn sm ghost" data-act="closeReport" data-id="${esc(r.id)}">${icon('check')}${t('rc.foundIt')}</button>`;
@@ -638,7 +643,7 @@ export function reportCardMine(r, focus){
       ${pickBox}
       ${auto ? `<div class="pick-box maybe-box"><span class="t">${icon('search')}${t('rc.maybe')}</span>${sugg(auto)}<p class="hint">${t('rc.maybeHint')}</p></div>`
         : !pick && !active ? `<div class="note">${icon('clock')}<span>${t('rc.none')}</span></div>` : ''}
-      ${ai.length ? `<span class="label">${icon('spark')} ${t('rc.ai')}</span><div class="list">${ai.map(m => { const it = item(m.id); return it && ACTIVE.includes(it.status) && !no.has(it.id) ? `<div>${miniItem(it)}<div class="reason">${esc(m.reason || '')}</div></div>` : ''; }).join('')}</div>`
+      ${ai.length ? `<span class="label">${icon('spark')} ${t('rc.ai')}</span><div class="list">${ai.map(({it, reason}) => `<div>${miniItem(it)}<div class="reason">${esc(reason)}</div></div>`).join('')}</div>`
         : r.ai ? `<div class="note">${icon('spark')}<span>${t('rc.aiNone', {when: relT(r.ai.at)})}</span></div>` : ''}
       <div class="btn-row">
         ${aiReady() ? `<button class="btn sm soft" data-act="aiMatch" data-id="${esc(r.id)}">${icon('spark')}${t('rc.aiMatch')}</button>` : ''}

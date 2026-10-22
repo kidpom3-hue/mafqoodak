@@ -1,7 +1,7 @@
 // Service Worker: يحفظ ملفات التطبيق ليفتح بسرعة ويعمل عند ضعف الاتصال.
 // الاستراتيجية: الشبكة أولاً (لتظهر تعديلاتك فوراً)، ثم النسخة المحفوظة إذا انقطع الاتصال.
 // عند تغيير أسماء الملفات غيّر رقم الإصدار هنا.
-const CACHE = 'mafqoodak-v60';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
+const CACHE = 'mafqoodak-v61';   // = APP_VERSION في js/config.js (ارفعهما معاً في كل PR)
 // H27: الخطوط (مجلد fonts) في مخزن مستقل لا يُمسح مع كل إصدار (الملفات لا تتغير؛ اسم جديد للخط = ملف جديد).
 // تُحفظ عند أول استخدام فقط، فلا يُعاد تنزيل 350 KB مع كل تحديث. غيّر الرقم هنا فقط إن استبدلت ملف خط بالاسم نفسه
 const FONTS = 'mafqoodak-fonts-v1';
@@ -24,7 +24,9 @@ self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, {cache: 'reload'})))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== FONTS).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  // H40: يحذف نسخ مفقودك القديمة فقط (mafqoodak-…). النطاق kidpom3-hue.github.io مشترك بين كل مواقع GitHub Pages في الحساب،
+  // و caches.keys() يرجع مخازنها كلها، فكان التحديث يمسح مخازن أي موقع آخر على النطاق نفسه
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('mafqoodak-') && k !== CACHE && k !== FONTS).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', e => {
   const req = e.request;

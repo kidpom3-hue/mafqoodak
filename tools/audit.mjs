@@ -11,6 +11,11 @@
 //  9) «تسجيل الخروج» يمسح كل ما يخص الحساب والمسودتين
 // 10) رمز الاستلام ورقم القيد بتوزيع متساوٍ للأحرف
 // 11) القواعد v23: بنيتها سليمة، وفيها حراسات H39 (فحص ثابت؛ سلوكها في tools/rules.test.mjs على المحاكي)
+// H40 (فحص شامل للموقع المنشور والكود؛ يفشل على الإصدار 60):
+// 12) قيد التسليم بالرمز في السجل (لا يُعدَّل ولا يُحذف) بلا اسم المستلم وآخر 4 من هويته؛ من استلم من checks
+// 13) نتيجة مطابقة ذكية تالفة في بلاغ قديم لا توقف «طلباتي»، والقائمة التي لا غرض متاحاً فيها = «لم يجد…»
+// 14) تحديث عامل الخدمة يحذف نسخ مفقودك القديمة فقط، لا مخازن المواقع الأخرى على النطاق المشترك
+// 15) رسالة واضحة لرفض سياسة كلمة المرور في Firebase وللبريد المسجّل بطريقة دخول أخرى
 // التشغيل: cd tools && npm run audit   (لمتصفح مثبّت مسبقاً: CHROMIUM_PATH=/path/to/chromium npm run audit)
 import http from 'http';
 import fs from 'fs';
@@ -289,6 +294,80 @@ for (const linked of [true, false]){
     expect(!/'legacy'/.test(fs.readFileSync(path.join(root, f), 'utf8')), `11: محاولة 'legacy' الانتقالية ما زالت في ${f}`);
 }
 
+// ---------- 12) H40: قيد التسليم بالرمز بلا اسم المستلم وآخر 4 من هويته (السجل لا يُعدَّل ولا يُحذف أبداً) ----------
+{
+  const d = {...base(), 'items/h1': item('h1', {status: 'reserved', reservedFor: 'h1_zed'}), 'itemSecrets/h1': secret(),
+    'claims/h1_zed': {itemId: 'h1', officeId: O, uid: 'zed', no: 'REQ-H4AA', proof: 'غلاف أحمر', claimantName: 'زيد علي', idLast4: '1234', status: 'approved',
+      decidedAt: now - 3600e3, decidedBy: 'staffA', pickupBy: now + 6 * day, createdAt: now - day, delegate: {name: 'سالم خالد', last4: '5678', at: now - 600e3}}};
+  const {p, ctx} = await open({user: staff, mode: 'staff', db: d});
+  const r = await p.evaluate(async () => {
+    const wf = await import('./js/workflow.js'), st = await import('./js/state.js');
+    const c = st.S.claims.find(x => x.id === 'h1_zed');
+    try { await wf.verifyHandover(c, {name: 'سالم خالد', last4: '5678'}, ['ho.generic'], 'K7M3TX9P'); } catch (e){ return {err: e.msg || e.message}; }
+    const lg = Object.values(window.__FAKE.db).find(x => x?.action === 'handover' && x.claimId === 'h1_zed');
+    return {lg, note: window.__FAKE.db['claims/h1_zed']?.handoverNote};
+  });
+  expect(!r.err, '12: التسليم بالرمز فشل: ' + r.err);
+  const leak = JSON.stringify(r.lg || {});
+  expect(r.lg && !leak.includes('سالم') && !leak.includes('5678') && !leak.includes('1234'), '12: قيد التسليم في السجل فيه اسم المستلم أو آخر 4 من هويته ' + leak);
+  expect(r.lg?.checks?.includes('ho.byDelegate'), '12: القيد لا يذكر أن المستلم مفوَّض');
+  expect(String(r.note || '').includes('سالم') && String(r.note || '').includes('5678'), '12: اسم المستلم وآخر 4 لم يُحفظا في الطلب نفسه (handoverNote)');
+  // سجل الحيازة في صفحة الغرض: من استلم (المفوَّض) نصاً من القاموس، بلا الاسم
+  await go(p, 'item', {id: 'h1'}); await p.waitForTimeout(500);
+  const tl = await p.evaluate(async () => ({text: document.querySelector('.timeline')?.innerText || '', role: (await import('./js/i18n.js')).t('ho.byDelegate')}));
+  expect(tl.text.includes(tl.role), '12: سجل الحيازة لا يذكر أن المستلم مفوَّض ' + JSON.stringify(tl.text.slice(0, 300)));
+  expect(!p.errs.length, '12: أخطاء: ' + p.errs.join(' | '));
+  await ctx.close();
+}
+
+// ---------- 13) H40: نتيجة مطابقة ذكية تالفة في بلاغ قديم لا توقف «طلباتي» ----------
+{
+  const d = {...base(), 'items/a1': item('a1', {status: 'returned'}),
+    'reports/rx': {officeId: O, uid: 'zed', cat: 'bags', title: 'حقيبتي', status: 'open', lostDate: ds(2), createdAt: now - day, ai: {at: now - 3600e3, matches: 'x'}},
+    'reports/ry': {officeId: O, uid: 'zed', cat: 'bags', title: 'حقيبة أخرى', status: 'open', lostDate: ds(2), createdAt: now - day, ai: {at: now - 3600e3, matches: [null, 'x', {id: 'a1', reason: 'تشبهها'}, {id: 'gone'}]}}};
+  const {p, ctx} = await open({user: zed, db: d});
+  // خطأ أثناء الرسم يصل هنا (go يرميه) لا إلى pageerror، فنسجّله مثله
+  await go(p, 'mine').catch(e => p.errs.push(String(e?.message || e).split('\n')[0])); await p.evaluate(() => document.querySelectorAll('#main details').forEach(x => { x.open = true; })); await p.waitForTimeout(400);
+  const r = await p.evaluate(async () => {
+    const t = (await import('./js/i18n.js')).t;
+    const card = id => document.querySelector(`details[data-card="r:${id}"]`)?.innerText || '';
+    return {x: card('rx'), y: card('ry'), aiLabel: t('rc.ai'), none: t('rc.aiNone', {when: ''}).trim().slice(0, 12)};
+  });
+  expect(!p.errs.length, '13: «طلباتي» توقفت ببلاغ فيه نتيجة مطابقة تالفة: ' + p.errs.join(' | '));
+  expect(r.x.includes('حقيبتي') && r.y.includes('حقيبة أخرى'), '13: بطاقتا البلاغين لم تُرسما');
+  expect(!r.y.includes(r.aiLabel) && r.y.includes(r.none), '13: قائمة مطابقة كل أغراضها غير متاحة تعرض العنوان فوق قائمة فارغة بدل «لم يجد…»');
+  await ctx.close();
+}
+
+// ---------- 14) H40: تحديث عامل الخدمة يحذف نسخ مفقودك القديمة فقط (النطاق مشترك مع مواقع GitHub Pages الأخرى) ----------
+{
+  const {p, ctx} = await open();
+  const r = await p.evaluate(async () => {
+    for (const k of ['other-site-v1', 'mafqoodak-v1', 'mafqoodak-fonts-v1']) await (await caches.open(k)).put('/x-' + k, new Response('x'));
+    const reg = await navigator.serviceWorker.register('./sw.js');
+    await navigator.serviceWorker.ready;
+    for (let k = 0; k < 40 && !reg.active; k++) await new Promise(res => setTimeout(res, 100));
+    await new Promise(res => setTimeout(res, 600));
+    const keys = await caches.keys(); await reg.unregister();
+    return keys;
+  });
+  const cur = 'mafqoodak-v' + (fs.readFileSync(path.join(root, 'js/config.js'), 'utf8').match(/APP_VERSION\s*=\s*'([^']+)'/) || [])[1];
+  expect(r.includes('other-site-v1'), '14: تحديث عامل الخدمة حذف مخزن موقع آخر على النطاق نفسه ' + JSON.stringify(r));
+  expect(!r.includes('mafqoodak-v1') && r.includes(cur) && r.includes('mafqoodak-fonts-v1'), '14: نسخ مفقودك: القديمة لم تُحذف أو الحالية والخطوط غير موجودة ' + JSON.stringify(r));
+  await ctx.close();
+}
+
+// ---------- 15) H40: رسائل الدخول لسياسة كلمة المرور في Firebase وللبريد المسجّل بطريقة أخرى ----------
+{
+  const {p, ctx} = await open();
+  const r = await p.evaluate(async () => { const st = await import('./js/state.js'), t = (await import('./js/i18n.js')).t;
+    return {pol: st.authErr({code: 'auth/password-does-not-meet-requirements'}) === t('auth.weakPass'),
+      other: st.authErr({code: 'auth/account-exists-with-different-credential'}) === t('auth.otherMethod')}; });
+  expect(r.pol, '15: رفض سياسة كلمة المرور يظهر «تعذّر تسجيل الدخول» بلا سبب');
+  expect(r.other, '15: البريد المسجّل بطريقة دخول أخرى يظهر «تعذّر تسجيل الدخول» بلا سبب');
+  await ctx.close();
+}
+
 await browser.close(); server.close();
 if (fails.length){ console.error(`✘ ${fails.length} من ${checks}:\n- ` + fails.join('\n- ')); process.exit(1); }
-console.log(`✔ فحص الثغرات H39 سليم: ${checks} فحصاً (المقارنة النصية، والبلاغ السابق للعثور بوقت الخادم، والصورة المخفية، وتعديل الغرض، ورسالة الانقطاع، والطلب المجمّع، والنسخ، والخروج، وتوزيع الرموز، والقواعد v23).`);
+console.log(`✔ فحص الثغرات H39 وH40 سليم: ${checks} فحصاً (المقارنة النصية، والبلاغ السابق للعثور بوقت الخادم، والصورة المخفية، وتعديل الغرض، ورسالة الانقطاع، والطلب المجمّع، والنسخ، والخروج، وتوزيع الرموز، والقواعد v23؛ H40: سجل التسليم بلا بيانات شخصية، ونتيجة المطابقة التالفة، ومخازن عامل الخدمة، ورسائل الدخول).`);

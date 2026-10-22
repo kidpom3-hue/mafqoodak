@@ -88,6 +88,7 @@ export const EN = {
   "auth.domain": "This domain isn't authorised in Firebase. Add it under Authentication → Settings → Authorized domains.",
   "auth.mismatch": "You picked a different Google account from the one you're signed in with.",
   "auth.method": "This sign-in method isn't enabled in Firebase Authentication.",
+  "auth.otherMethod": "This email is registered with another sign-in method. Sign in with email and password, or tap “Forgot your password?”.",
   "auth.fail": "Sign-in failed. Please try again.",
   // انتقالات الحالة، وملاحظات النظام المخزّنة (sys.*)، والتصرّف، والنقل، والذكاء الاصطناعي
   "wf.gone": "This item no longer exists.",

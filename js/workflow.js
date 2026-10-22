@@ -353,7 +353,10 @@ export async function verifyHandover(c, receiver = {}, checks = [], code = '', o
   itemUpdate(b, i, {status: 'returned', returnedAt: Date.now(), updatedAt: Date.now()});
   // اختُبر في المحاكي: التسليم + إغلاق 3 منافسين (بصورهم وحصصهم) يبقى ضمن حد القراءات في batch واحد
   const skippedOwn = await closeOthers(b, i, c.id, 'rejected', tAr('sys.handedVerified'));
-  log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id, note, checks: keys.slice(0, 10)});
+  /* H40: قيد السجل بلا اسم المستلم وآخر 4 أرقام من هويته: السجل لا يُعدَّل ولا يُحذف أبداً (القواعد)، فكان الاسم يبقى فيه بعد
+     «حذف حسابي»، خلافاً لسياسة الخصوصية («يبقى لدى المكتب سجل التسليم فقط… دون أي بيانات شخصية عنك»). الاسم في handoverNote
+     بالطلب نفسه (يُمسح مع حذف الحساب)، ومن استلم (صاحب الطلب أو مفوَّضه أو بتجاوز الإدارة) في checks */
+  log(b, i.officeId, 'handover', {itemId: i.id, claimId: c.id, checks: keys.slice(0, 10)});
   // رفض القواعد: نقرأ الطلب والغرض من جديد لنعرف السبب؛ إن لم يتغيرا فالرمز لا يطابق البصمة
   await commit(b, true).catch(async e => {
     if (!(e instanceof FlowError)) throw e;

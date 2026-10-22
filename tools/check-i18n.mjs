@@ -100,7 +100,18 @@ console.log(`✔ رقم الإصدار ${ver} متطابق في js/config.js وs
   const srcs = [html, ...['js/firebase.js', 'js/ai.js'].map(f => fs.readFileSync(path.join(root, f), 'utf8'))].join('\n');
   const vers = [...new Set([...srcs.replace(csp, '').matchAll(/gstatic\.com\/firebasejs\/([\d.]+)\//g)].map(m => m[1]))];
   if (!cspVer || vers.length !== 1 || vers[0] !== cspVer){ console.log(`✘ إصدار Firebase غير متطابق: CSP = ${cspVer || 'غير موجود'}، والروابط = ${vers.join(', ') || 'لا شيء'}. غيّرها كلها إلى الإصدار نفسه (index.html وjs/firebase.js وjs/ai.js).`); process.exit(1); }
-  console.log(`✔ سياسة CSP تحوي بصمة ${inline.length} سكربت مضمّن، ولا معالجات مضمّنة في index.html، وإصدار Firebase ${cspVer} متطابق فيها وفي الكود.`);
+  // H40: مع App Check (مفتاح reCAPTCHA في js/config.js) تحوي CSP ما توصي به Google لـ reCAPTCHA Enterprise في كل توجيه.
+  // كان connect-src ينقصه www.google.com/recaptcha/ فتمنع السياسة طلبات reCAPTCHA في كل فتح للموقع الحي (أخطاء في وحدة التحكم)
+  const siteKey = (fs.readFileSync(path.join(root, 'js/config.js'), 'utf8').match(/siteKey:\s*'([^']*)'/) || [])[1] || '';
+  if (siteKey){
+    const dir = n => ((csp.match(new RegExp(`(?:^|;)\\s*${n}\\s+([^;]*)`)) || [])[1] || '').split(/\s+/);
+    const need = {'script-src': ['https://www.google.com/recaptcha/', 'https://www.gstatic.com/recaptcha/'],
+      'frame-src': ['https://www.google.com/recaptcha/', 'https://recaptcha.google.com'], 'connect-src': ['https://www.google.com/recaptcha/']};
+    // https://recaptcha.google.com (الموقع كله) يشمل https://recaptcha.google.com/recaptcha/ الذي في توصية Google
+    const lack = Object.entries(need).flatMap(([n, us]) => us.filter(u => !dir(n).some(v => v === u || (u.endsWith('.com') && v.startsWith(u + '/')))).map(u => `${n} ${u}`));
+    if (lack.length){ console.log(`✘ سياسة CSP ينقصها ما يحتاجه reCAPTCHA (App Check): ${lack.join('، ')}.`); process.exit(1); }
+  }
+  console.log(`✔ سياسة CSP تحوي بصمة ${inline.length} سكربت مضمّن، ولا معالجات مضمّنة في index.html، وإصدار Firebase ${cspVer} متطابق فيها وفي الكود${siteKey ? '، وكل مصادر reCAPTCHA (App Check)' : ''}.`);
 }
 
 // H31: قواعد الصياغة (H24) في القاموسين، حتى لا يعود نص مخالف مع أي إضافة:
