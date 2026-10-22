@@ -8,8 +8,10 @@
        frame-ancestors لا تعمل داخل meta، لذلك يمنع main.js عرض التطبيق داخل إطار (clickjacking).
        H27: السكربتات من gstatic مقصورة على مجلد Firebase بالإصدار نفسه (12.19.0) ومجلد reCAPTCHA، لا الموقع كله؛
        عند رفع إصدار Firebase غيّره هنا أيضاً (tools/check-i18n.mjs يتحقق من التطابق).
-       والخطوط من الموقع نفسه (font-src 'self')، فلا يُسمح بموقعَي Google Fonts -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com/firebasejs/12.19.0/ https://www.gstatic.com/recaptcha/ https://apis.google.com https://www.google.com/recaptcha/ 'sha256-V4SyzImrP7dTHXCHWWZSv/seVG+y3wVG0HI/CbJdjgQ='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https://*.googleusercontent.com; connect-src 'self' https://*.googleapis.com https://api.emailjs.com; frame-src https://mafqoodak-50269.firebaseapp.com https://www.google.com/recaptcha/ https://recaptcha.google.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+       والخطوط من الموقع نفسه (font-src 'self')، فلا يُسمح بموقعَي Google Fonts.
+       H40: connect-src يسمح بـ www.google.com/recaptcha/ كما توصي Google لـ reCAPTCHA Enterprise (App Check):
+       كان سكربتها يطلب منه أربع مرات في كل فتح فتمنعه السياسة وتظهر أخطاء في وحدة التحكم (tools/check-i18n.mjs يتحقق منه) -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com/firebasejs/12.19.0/ https://www.gstatic.com/recaptcha/ https://apis.google.com https://www.google.com/recaptcha/ 'sha256-V4SyzImrP7dTHXCHWWZSv/seVG+y3wVG0HI/CbJdjgQ='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https://*.googleusercontent.com; connect-src 'self' https://*.googleapis.com https://api.emailjs.com https://www.google.com/recaptcha/; frame-src https://mafqoodak-50269.firebaseapp.com https://www.google.com/recaptcha/ https://recaptcha.google.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <title>مكتب المفقودات - الكلية التقنية بالأحساء | مفقودك</title>
   <meta name="description" content="مكتب المفقودات الإلكتروني في الكلية التقنية بالأحساء: ابحث عن غرضك المفقود، وقدّم بلاغ فقد، واستلم غرضك من المكتب برمز تحقق.">
   <link rel="canonical" href="https://kidpom3-hue.github.io/mafqoodak/">

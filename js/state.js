@@ -785,8 +785,11 @@ export async function write(fn, okMsg){
 export function authErr(e){
   const c = e?.code || '';
   if (c.includes('popup-closed') || c.includes('cancelled-popup')) return '';
+  // H40: سياسة كلمة المرور في Firebase (password-does-not-meet-requirements) ورسالة البريد المسجّل بطريقة دخول أخرى
+  // (حساب بكلمة مرور ثم «الدخول بحساب Google» بالبريد نفسه) كانتا «تعذّر تسجيل الدخول» بلا سبب
   const k = [['invalid-credential', 'badCred'], ['wrong-password', 'badCred'], ['user-not-found', 'badCred'], ['email-already-in-use', 'emailUsed'],
-    ['weak-password', 'weakPass'], ['invalid-email', 'badEmail'], ['too-many-requests', 'tooMany'], ['network-request-failed', 'offline'],
+    ['weak-password', 'weakPass'], ['password-does-not-meet-requirements', 'weakPass'], ['account-exists-with-different-credential', 'otherMethod'],
+    ['invalid-email', 'badEmail'], ['too-many-requests', 'tooMany'], ['network-request-failed', 'offline'],
     ['unauthorized-domain', 'domain'], ['user-mismatch', 'mismatch'], ['operation-not-allowed', 'method']].find(([x]) => c.includes(x));
   return t('auth.' + (k ? k[1] : 'fail'));
 }
