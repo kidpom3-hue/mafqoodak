@@ -1,5 +1,5 @@
 // الصفحة الرئيسية للمكان المختار + صفحة «وجدت غرضاً»
-import { icon, LOGO, otype, otypeName, oName, oPlace, oHours, oCity, brandOf, cat, statusLabel, ITEM_STATUS, CLAIM_STATUS } from '../constants.js';
+import { icon, LOGO, oName, oPlace, oHours, brandOf, cat, statusLabel, ITEM_STATUS, CLAIM_STATUS } from '../constants.js';
 import { $, esc, today, isoDay, showTitle } from '../utils.js';
 import { t, tp } from '../i18n.js';
 import { S, curOffice } from '../state.js';

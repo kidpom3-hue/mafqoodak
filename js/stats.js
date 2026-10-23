@@ -7,11 +7,17 @@ import { normCat, catName, subLabel, statusLabel, ITEM_STATUS, oName, keepDaysOf
 import { t, locale } from './i18n.js';
 import { dayNum, daysAgo, isoDay, spotName, today, toast, disposalLabel, TZ, LS } from './utils.js';
 
-const loading = new Set();
+// H41: التحميل الجاري لكل مكتب (وعد): من يطلبه أثناءه ينتظره. كان يرجع فوراً بلا بيانات، فـ«تصدير CSV» أثناء تحميل
+// الإحصاءات (مثل تحديثها الآلي عند فتح اللوحة) يقول «لا توجد أغراض للتصدير»
+const loading = new Map();
 // كل أغراض المكتب بكل حالاتها (مرة واحدة، و«تحديث» يعيد الجلب)
-export async function loadStats(officeId, force = false){
-  if (!officeId || loading.has(officeId) || (S.stats[officeId] && !force)) return;
-  loading.add(officeId);
+export function loadStats(officeId, force = false){
+  if (!officeId) return Promise.resolve();
+  if (loading.has(officeId)) return loading.get(officeId);
+  if (S.stats[officeId] && !force) return Promise.resolve();
+  const p = fetchStats(officeId); loading.set(officeId, p); return p;
+}
+async function fetchStats(officeId){
   try {
     const [items, reports, secrets, done, pub, adds] = await Promise.all([dbx.list('items', [['officeId', '==', officeId]]), dbx.list('reports', [['officeId', '==', officeId]]).catch(() => []),
       dbx.list('itemSecrets', [['officeId', '==', officeId]]).catch(() => []),
@@ -115,7 +121,10 @@ export const monthName = d => { try { return new Intl.DateTimeFormat(locale(), {
 // خلية آمنة: علامات الاقتباس، ومنع تنفيذ الصيغ في Excel (قيمة تبدأ بـ = أو + أو - أو @)
 const cell = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
 export async function exportCsv(officeId){
-  await loadStats(officeId);
+  // H41: تحميل سابق فشل (انقطاع): نعيد المحاولة، وفشلها رسالة خطأ لا «لا توجد أغراض للتصدير» (كانت تظهر رغم وجود أغراض،
+  // ويبقى الفشل محفوظاً فلا يعيد زر التصدير المحاولة حتى تُعاد الصفحة)
+  await loadStats(officeId, !!S.stats[officeId]?.error);
+  if (S.stats[officeId]?.error){ toast(t('err.load')); return; }
   const items = S.stats[officeId]?.items || [];
   if (!items.length){ toast(t('sx.csvEmpty')); return; }
   // الحقول العامة فقط: لا تفاصيل سرية في ملف قد يُرسل خارج المكتب، باستثناء مكان العثور (من itemSecrets، للإحصاء)

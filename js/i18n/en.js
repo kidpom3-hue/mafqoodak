@@ -1301,6 +1301,7 @@ export const EN = {
   "rp.editSub": "Change anything you like; the search runs again as soon as you save.",
   "rp.gone": "This report doesn't exist or is closed.",
   "rp.delete": "Delete report",
+  "a.noChange": "No changes to the report.",
   "a.reportEdited": "Changes saved; the search for your item ran again.",
   "a.titleShort": "Enter a clear item name (at least 3 characters).",
   "cl.edit": "Edit claim",

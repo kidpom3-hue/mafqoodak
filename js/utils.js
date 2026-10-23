@@ -1,5 +1,5 @@
 // أدوات مساعدة عامة: التواريخ، البحث العربي، المطابقة، الصور
-import { color, colorName, cat, normCat, catName, subName, subLabel, searchWords, statusLabel, isBuilding, roomKind, norm, tokens, STOP, latinDigits } from './constants.js';
+import { color, cat, normCat, catName, subName, subLabel, searchWords, statusLabel, isBuilding, roomKind, norm, tokens, STOP, latinDigits } from './constants.js';
 import { t, tp, locale, isEn } from './i18n.js';
 // كانت هنا سابقاً؛ نعيد تصديرها حتى لا تتغيّر أماكن الاستيراد
 export { isBuilding, norm, tokens, STOP };

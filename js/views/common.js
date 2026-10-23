@@ -210,7 +210,9 @@ export function catFields(catId, src = {}, mode = 'item', part = ''){
     const ph = dfPh(catId, d.k), phA = ph ? ` placeholder="${esc(ph)}"` : '';
     if (d.type === 'pick'){
       // H37: الاختيار أزرار سريعة (لا قائمة منسدلة)، وأولها «لا أعرف» (قيمة فارغة = لا شيء يُحفظ)
-      const opts = ['', ...d.opts], cur = d.opts.includes(v) ? v : '';
+      // H41: القيمة القديمة بنص حر (قبل H37، مثل «STC» في بلاغ قديم) تُفهم عبر detailValue (SIM_ALIAS)، وإلا ظهرت «لا أعرف»
+      // وضاعت الإجابة عند حفظ التعديل
+      const opts = ['', ...d.opts], cur = detailValue(d, String(v));
       secret.push(`<div class="field${req ? ' req' : ''}"><span class="label" id="${id}-l">${dfLabel(catId, d.k)}${opt(req)}</span>
         <div class="subs pick" role="radiogroup" aria-labelledby="${id}-l">${opts.map(o => `<label><input type="radio" name="d_${d.k}" value="${o}" ${cur === o ? 'checked' : ''}>${o ? dfOpt(d.k, o) : t('df.pickUnknown')}</label>`).join('')}</div></div>`);
       continue;

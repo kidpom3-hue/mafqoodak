@@ -1,9 +1,9 @@
 // صفحات موظف المكتب: لوحة المكتب، المستودع، طلبات الاستلام، البلاغات، إضافة/تعديل غرض
 import { icon, CATS, cat, normCat, catName, colorName, subLabel, subName, oName, ITEM_STATUS, CLAIM_STATUS, FOUND_STATUS, REPORT_STATUS, claimOf, keepDaysOf, detailValue, GROUP_EXPIRE_DAYS, isHiddenCat, isHighValue } from '../constants.js';
-import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, relDay, relTime, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, isoDay, when, latinDigits } from '../utils.js';
+import { $, $$, esc, today, dayNum, daysAgo, daysWord, fmtDate, pill, colorDot, tokens, textScore, norm, spotText, showTitle, fmtDateTime, when, latinDigits } from '../utils.js';
 import { t, tp, noteText, hasKey } from '../i18n.js';
 import { S, curOffice, item, full, ACTIVE, itemLoading, staffCands, strongFor, secretHit, linkOf, claimItemId, groupCands, groupStrong, groupQuestion, groupKeyLabel, answered, ensureLogs, conflictOf, isStale, claimNo, rejectedOf, byLast, ensureItem, staffKeys, staffNew, priorReport, claimerHist, isOwner, regAt, ensureClaimLogs } from '../state.js';
-import { backBtn, relT, relDayT, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, nameField, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, timelineEvents, ctlRow, mcard, updOf, tabNum, ENDED_OPEN, CARD_OPEN, qaBox, dateOf, delegateOf } from './common.js';
+import { backBtn, relDayT, emptyBox, orphanText, thumbHtml, miniItem, person, catPicker, nameField, subsPicker, photoField, photoModePicker, spotOptions, spotExtra, resetForm, addPrefs, AGAIN, catFields, dfLabel, dfOpt, whenLine, claimTimeline, timelineEvents, ctlRow, mcard, updOf, tabNum, CARD_OPEN, qaBox, dateOf, delegateOf } from './common.js';
 export { qaBox, dateOf };   // H8: نُقلتا إلى common.js (يحتاجهما الزائر دون تحميل لوحة الموظف)
 import { hydrate } from '../ui.js';
 import { migrateItems, allowMigrationRetry, migrateSpots, allowSpotRetry, migratePublic, migrateCats } from '../migrate.js';

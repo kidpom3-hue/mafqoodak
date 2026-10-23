@@ -10,7 +10,7 @@ import { vHome, updateHome, vFound, vHandin, footer, fillFootQr } from './views/
 import { vPrivacy } from './views/privacy.js';
 import { tabNum, brandLogo } from './views/common.js';   // H6: كل شارة رقمية تمرّ بها (رقم واحد: أحمر للجديد أو رمادي للعدد)
 // H8: صفحات الموظف والإدارة والإحصاءات والسجل والطباعة والخدمات تُحمَّل عند أول فتح لها فقط (lazy.js)
-import { need, load, loadingHtml, setLazyHooks } from './lazy.js';
+import { need, loadingHtml, setLazyHooks } from './lazy.js';
 import { SETTINGS } from './config.js';
 import { cat } from './constants.js';
 
@@ -60,8 +60,10 @@ function routeFns(r){
 }
 // بعد وصول الوحدة: نرسم الصفحة إن كانت ما زالت مفتوحة. وعند الفشل (دون اتصال ولم تُحفظ بعد): رسالة ونعود للصفحة الرئيسية للمسار
 // H31: وكان التركيز على #main (لا عنوان أثناء التحميل): ينتقل إلى عنوان الصفحة بعد وصولها
-setLazyHooks(name => { if (ROUTES[S.route.name]?.lazy === name){ const onMain = document.activeElement === $('#main'); renderAll(); if (onMain) focusPage(); } else renderNav(); },
-  () => { toast(t('err.offline')); if (ROUTES[S.route.name]?.lazy) $('#main').innerHTML = `<div class="empty">${icon('info')}<b>${t('err.offline')}</b></div>`; });
+// H41: أو كانت الصفحة الحالية كلها مؤشر تحميل ينتظر الوحدة دون أن يكون مسارها كسولاً: صفحة الغرض للموظف والإدارة تطلب staff
+// (كانت تبقى على مؤشر التحميل إلى أن يتغيّر شيء في البيانات، مثل فتح غرض من الرئيسية في وضع الإدارة)
+setLazyHooks(name => { if (ROUTES[S.route.name]?.lazy === name || $('#main')?.firstElementChild?.classList.contains('loading')){ const onMain = document.activeElement === $('#main'); renderAll(); if (onMain) focusPage(); } else renderNav(); },
+  () => { toast(t('err.offline')); if (ROUTES[S.route.name]?.lazy || $('#main')?.firstElementChild?.classList.contains('loading')) $('#main').innerHTML = `<div class="empty">${icon('info')}<b>${t('err.offline')}</b></div>`; });
 
 export function initForm(){
   const f = $('form[data-form=item],form[data-form=report],form[data-form=handin]'); if (!f) return;

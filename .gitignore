@@ -1,2 +1,3 @@
 tools/node_modules
 *-debug.log
+tools/.crawl-writes.json

@@ -16,6 +16,8 @@ export function EmailAuthProvider(){}
 EmailAuthProvider.credential = () => ({});
 const noop = () => Promise.resolve({});
 export const signInWithPopup = async (a, p) => { window.__FAKE.popupParams = p?.params || null; return {}; };
-export const signInWithRedirect = noop, createUserWithEmailAndPassword = noop, signInWithEmailAndPassword = noop,
+// H41: إنشاء حساب يرجع المستخدم الجديد (cred.user) كما في Firebase؛ كان {} فيفشل التسجيل في الزاحف (cred.user.uid)
+export const createUserWithEmailAndPassword = async (a, email) => ({user: {uid: 'newu', email, displayName: '', emailVerified: false, providerData: [{providerId: 'password'}], getIdToken: async () => 'tok', reload: async () => {}}});
+export const signInWithRedirect = noop, signInWithEmailAndPassword = noop,
   sendPasswordResetEmail = noop, updateProfile = noop, signOut = noop, deleteUser = noop, reauthenticateWithPopup = noop, reauthenticateWithCredential = noop,
   sendEmailVerification = async () => { window.__FAKE.verifySent = (window.__FAKE.verifySent || 0) + 1; };
