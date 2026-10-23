@@ -10,6 +10,7 @@
 //    والتنقل ينقل التركيز إلى عنوان الصفحة الجديدة، والنافذة لها اسم والتركيز داخلها، وتبويبات «طلباتي» تشير إلى لوحة موجودة.
 // 5) H32: «مؤشرات الأداء» لا تقول «هذا الشهر» عن شهر سابق، وتتجدد في الخلفية حين يفتح الموظف لوحته؛ وعنوان التبويب لا يكرر
 //    اسم المكتب؛ وقبول طلب لا شيء فيه للمقارنة يقول ذلك بوضوح بدل «تطابق 0 من 0».
+// 6) H42: الترويسة بلا خط علوي (حُذف بطلب المالك: في الآيفون كان يظهر تحت الساعة كأنه خلل)، بالوضعين الفاتح والداكن، في الجوال والحاسب.
 // التشغيل: cd tools && npm run device   (لمتصفح مثبّت مسبقاً: CHROMIUM_PATH=/path/to/chromium npm run device)
 import http from 'http';
 import fs from 'fs';
@@ -44,8 +45,8 @@ const browser = await chromium.launch(process.env.CHROMIUM_PATH ? {executablePat
 const fails = []; let checks = 0;
 const expect = (ok, msg) => { checks++; if (!ok) fails.push(msg); };
 
-async function open({user = null, lang = 'ar', width = 390, text = '', mode = 'visitor', extra = {}} = {}){
-  const ctx = await browser.newContext({viewport: {width, height: 844}});
+async function open({user = null, lang = 'ar', width = 390, text = '', mode = 'visitor', extra = {}, scheme = 'light'} = {}){
+  const ctx = await browser.newContext({viewport: {width, height: 844}, colorScheme: scheme});
   await ctx.route(/firebase-app\.js/, r => r.fulfill({contentType: 'text/javascript', body: 'export const initializeApp = () => ({});'}));
   await ctx.route(/firebase-auth\.js/, r => r.fulfill({contentType: 'text/javascript', body: stub('auth.js')}));
   await ctx.route(/firebase-firestore\.js/, r => r.fulfill({contentType: 'text/javascript', body: stub('firestore.js')}));
@@ -291,10 +292,28 @@ for (const lang of ['ar', 'en']){
   }
 }
 
+// ---------- 6) H42: الترويسة بلا خط علوي ----------
+// كان أول 3px من خلفية الترويسة بلون --hero-bg؛ في الآيفون تأخذ منطقة الساعة لون الترويسة فيظهر الخط تحتها كأنه خلل
+for (const width of [390, 1280]) for (const scheme of ['light', 'dark']){
+  const tag = `${width} ${scheme}`;
+  const {p, ctx} = await open({width, scheme});
+  const r = await p.evaluate(() => {
+    const h = document.querySelector('header.top'); if (!h) return null;
+    // لون المتغيّر كما يحسبه المتصفح (rgb) لمقارنته بتدرّج الخلفية
+    const col = v => { const i = document.createElement('i'); i.style.color = `var(${v})`; document.body.append(i); const c = getComputedStyle(i).color; i.remove(); return c; };
+    const cs = getComputedStyle(h);
+    return {src: cs.borderImageSource, shadow: cs.boxShadow, hero: col('--hero-bg'), surface: col('--surface')};
+  });
+  expect(r && !r.src.includes(r.hero) && r.shadow === 'none', `6 (${tag}): خط علوي بلون الواجهة في الترويسة (${r?.src} | ${r?.shadow})`);
+  expect(r && r.src.startsWith(`linear-gradient(${r.surface}`), `6 (${tag}): أعلى الترويسة ليس بلون خلفيتها (${r?.src})`);
+  expect(!p.errs.length, `6 (${tag}): أخطاء في الصفحة: ${p.errs.join(' | ')}`);
+  await ctx.close();
+}
+
 await browser.close(); server.close();
 if (fails.length){
   console.log(`✘ فشل ${fails.length} من ${checks} فحصاً:`);
   for (const f of fails) console.log('- ' + f);
   process.exit(1);
 }
-console.log(`✔ الجهاز المشترك وثبات النصوص وصفحة التأكيد: ${checks} فحصاً («تذكّرني»، والدخول في الجلسة، والنسخة في الذاكرة، وزر الدخول، و«اختر صورة»، والأوقات، والواجهة بلا سطر المكتب، وصفحة التأكيد ورقمها، والتركيز وعنوان التبويب، والنوافذ، والمؤشرات القديمة، و«لا تفاصيل للمقارنة»).`);
+console.log(`✔ الجهاز المشترك وثبات النصوص وصفحة التأكيد: ${checks} فحصاً («تذكّرني»، والدخول في الجلسة، والنسخة في الذاكرة، وزر الدخول، و«اختر صورة»، والأوقات، والواجهة بلا سطر المكتب، وصفحة التأكيد ورقمها، والتركيز وعنوان التبويب، والنوافذ، والمؤشرات القديمة، و«لا تفاصيل للمقارنة»، والترويسة بلا خط علوي).`);
