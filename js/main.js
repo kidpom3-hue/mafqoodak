@@ -41,6 +41,8 @@ addEventListener('offline', () => renderHeader());
 addEventListener('online', () => { renderHeader(); toast(t('net.back')); });
 // بعد تسجيل الخروج وإعادة تحميل الصفحة (actions.js ← signOut)
 try { if (sessionStorage.getItem('mfq:signedOut')){ sessionStorage.removeItem('mfq:signedOut'); setTimeout(() => toast(t('a.signedOut')), 400); } } catch {}
+// H41: بعد «حذف حسابي» (يُعاد التحميل بعد مسح الجهاز): رسالة التأكيد
+try { if (sessionStorage.getItem('mfq:deleted')){ sessionStorage.removeItem('mfq:deleted'); setTimeout(() => toast(t('a.deleted')), 400); } } catch {}
 // v7: بعد «سجّل الدخول ببريد الكلية» (خروج ثم إعادة تحميل): صفحة الدخول مباشرة
 try { if (sessionStorage.getItem('mfq:thenLogin')){ sessionStorage.removeItem('mfq:thenLogin'); setTimeout(() => go('login'), 300); } } catch {}
 

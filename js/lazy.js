@@ -15,7 +15,7 @@ const LOADERS = {
   ai: () => import('./ai.js'),
   sample: () => import('./sample-data.js'),
 };
-const MOD = {}, PENDING = {};
+const MOD = {}, PENDING = {}, WANT = new Set();
 let onLoaded = () => {}, onFail = () => {};
 // ui.js يضبطهما: إعادة الرسم بعد التحميل، ورسالة عند الفشل (مثل انقطاع الاتصال قبل حفظ الملف)
 export const setLazyHooks = (loaded, fail) => { onLoaded = loaded; onFail = fail; };
@@ -28,7 +28,12 @@ export function load(name){
 }
 export function need(name){
   if (MOD[name]) return MOD[name];
-  if (!PENDING[name]) load(name).then(() => onLoaded(name), e => { console.warn('[lazy]', name, e); onFail(name); });
+  // H41: نعلّق إعادة الرسم مرة واحدة لكل وحدة تنتظرها الصفحة، حتى لو بدأ تحميلها قبل ذلك من زر (load):
+  // كان need() لا يعلّق شيئاً إن كان التحميل جارياً، فتبقى الصفحة على مؤشر التحميل حتى يتغيّر شيء في البيانات
+  if (!WANT.has(name)){
+    WANT.add(name);
+    load(name).then(() => { WANT.delete(name); onLoaded(name); }, e => { WANT.delete(name); console.warn('[lazy]', name, e); onFail(name); });
+  }
   return null;
 }
 // مؤشر التحميل الصغير أثناء الانتظار

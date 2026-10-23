@@ -1,13 +1,13 @@
 // الأحداث: الضغط على الأزرار وإرسال النماذج
-import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf, oName, oPlace, oHours, isHighValue, regCatOk, REG_MAX, canDelegate } from './constants.js';
+import { icon, cat, catName, colorName, statusLabel, ITEM_STATUS, CATS, COLORS, isGrouped, claimOf, claimHasRequired, detailValue, handoverChecks, CLAIM_MAX_OPEN, CLAIM_CAT_MS, pubFlag, isHiddenCat, keepUntilOf, oName, oPlace, oHours, isHighValue, regCatOk, REG_MAX } from './constants.js';
 import { installMode, promptInstall, snoozeInstall, markInstalled } from './install.js';
 import { t, tp, tAr, tpAr, LANG, setLang } from './i18n.js';
 import { $, esc, today, relDay, pill, sha, genCode, normPickup, makeRef, compress, dataUrlToBlob, matchScore, toast, LS, isBuilding, roomWord, makeBlur, publicTitle, showTitle, isoDay, refCode, normCode, latinDigits, when, fmtDateFull, SS, icsEvent, downloadText } from './utils.js';
 import { claimEmailOk, cleanDomain, domainRe, verifyPrompt } from './views/common.js';
-import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, keyCard, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn, STAFF_TABS, ensureRegs, regAt, SHARED_WIPE } from './state.js';
+import { S, curOffice, item, full, modes, saveProfile, homeRoute, setOffice, write, authErr, getPhoto, cachePhoto, MATCH_MIN, ACTIVE, refreshCounts, loadExtraItems, loadClaimHistory, loadClosedReports, loadAdminCounts, conflictOf, isStale, loadAudit, suggestFor, claimNo, claimEditable, pickOf, touch, checkInvite, createLimited, unseenKeys, markSeenKeys, keyTab, unseenFor, staffKeys, markStaffSeen, openClaimCard, claimItemId, iHandedIn, STAFF_TABS, ensureRegs, regAt, SHARED_WIPE, errMsg } from './state.js';
 import * as wf from './workflow.js';
 import { auth, dbx, wipeLocalDb, GoogleAuthProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword,
-  signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, arrayRemove, serverTimestamp,
+  signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, deleteField, arrayUnion, serverTimestamp,
   deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, sendEmailVerification,
   sharedDevice, rememberDevice, rememberReady } from './firebase.js';
 import { go, back, renderAll, refresh, openSheet, closeSheet, hydrate, renderNav, tabEntry, safeAvatar, lockEvidence, FORM_HOOKS } from './ui.js';
@@ -16,7 +16,7 @@ import { updateBrowse, RATE_DRAFT, CARD_OPEN, ENDED_OPEN } from './views/visitor
 // (أزرار لوحة الموظف لا تظهر إلا بعد تحميلها، فهي موجودة عند النقر)
 import { mod, load } from './lazy.js';
 const SM = () => mod('staff');
-import { FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, pubPhoto, person, themePicker, textPicker, catFields, dfLabel, dfOpt, detailReq, delegateOf, namePh } from './views/common.js';
+import { FORM, AGAIN, saveAddPrefs, orphanText, subsPicker, person, themePicker, textPicker, catFields, dfLabel, dfOpt, detailReq, delegateOf, namePh } from './views/common.js';
 import { setTheme, setTextSize } from './theme.js';
 import { notifySupported, notifyOn, notifyDenied, toggleNotify, emailUser, emailFinder } from './notify.js';
 import { aiReady } from './firebase.js';
@@ -362,13 +362,19 @@ async function saveReportEdit(form, val, catId, sens, bldg, room){
   if (!r || r.status !== 'open'){ busy(form, false); return formErr(form, t('rp.gone')); }
   const {details} = readDetails(form, catId, 'report');
   const had = !!r.photo, newPhoto = !!FORM.photo && !sens, removing = had && (sens || (FORM.removed && !FORM.photo));
-  const patch = {cat: catId, sub: val('sub'), color: claimOf(catId).fields.includes('color') ? val('color') : '',
-    title: val('title'), desc: val('desc'), spot: val('spot'), bldg, room, lostDate: val('lostDate') || today(),
-    details: Object.keys(details).length ? details : deleteField(), editedAt: Date.now(), ...(r.ai ? {ai: deleteField()} : {})};
-  // الصورة: حذفها يسبق تحديث البلاغ، والجديدة تُحفظ بعده (قواعد reportPhotos تقرأ البلاغ)
-  if (removing){ await write(() => dbx.del('reportPhotos/' + r.id)); cachePhoto('r_' + r.id, null); patch.photo = false; }
+  const content = {cat: catId, sub: val('sub'), color: claimOf(catId).fields.includes('color') ? val('color') : '',
+    title: val('title'), desc: val('desc'), spot: val('spot'), bldg, room, lostDate: val('lostDate') || today()};
+  /* H41: هل تغيّر المحتوى فعلاً؟ «حفظ» بلا تغيير، أو تغيير الصورة وحدها، كان يكتب وقت المحتوى (contentAt) ووقت التعديل
+     من جديد، فيفقد بلاغٌ سابقٌ للعثور هذه الصفة (أقوى دليل على الملكية) دون أي تغيير في وصفه، ويظهر للموظف «عُدّل» */
+  const dk = o => JSON.stringify(Object.entries(o || {}).filter(([, v]) => v !== '' && v != null).map(([k, v]) => [k, String(v)]).sort());
+  const changed = Object.keys(content).some(k => String(content[k] ?? '') !== String(r[k] ?? '')) || dk(details) !== dk(r.details);
+  if (!changed && !newPhoto && !removing){ busy(form, false); toast(t('a.noChange')); S.hist = []; go('mine', {focus: r.id}, false); return; }
+  const patch = changed ? {...content, details: Object.keys(details).length ? details : deleteField(), editedAt: Date.now(), ...(r.ai ? {ai: deleteField()} : {})} : {};
+  // الصورة: حذفها يسبق تحديث البلاغ، والجديدة تُحفظ بعده (قواعد reportPhotos تقرأ البلاغ). H41: فشل حذفها يوقف الحفظ
+  if (removing){ if (!await write(() => dbx.del('reportPhotos/' + r.id))){ busy(form, false); return; } cachePhoto('r_' + r.id, null); patch.photo = false; }
   // H39: تعديل المحتوى يكتب وقته من الخادم (contentAt)، فلا يبقى البلاغ «سابقاً للعثور» بعد تعديله (قواعد v23 تفرضه)
-  const ok = await write(() => withContentAt(x => dbx.update('reports/' + r.id, {...patch, ...x})), t('a.reportEdited'));
+  const ok = !Object.keys(patch).length || await write(() => changed ? withContentAt(x => dbx.update('reports/' + r.id, {...patch, ...x})) : dbx.update('reports/' + r.id, patch), t('a.reportEdited'));
+  if (!changed && !removing && newPhoto) toast(t('a.reportEdited'));
   if (ok && newPhoto){
     cachePhoto('r_' + r.id, FORM.photo);
     if (await write(() => dbx.set('reportPhotos/' + r.id, {data: FORM.photo})) && !had) await write(() => dbx.update('reports/' + r.id, {photo: true}));
@@ -739,7 +745,10 @@ async function submitForm(form){
     data.claimDomains = doms; data.claimDomainRe = domainRe(doms);
     // الأسماء بالإنجليزية (اختيارية): الفارغ يعني «اعرض العربي». أماكن spotsEn بنفس ترتيب spots
     for (const k of ['nameEn', 'shortEn', 'cityEn', 'placeEn', 'hoursEn']) data[k] = val(k);
-    const en = val('spotsEn').split('\n').map(s => s.trim()).slice(0, data.spots.length);
+    // H41: إن كان عدد الأسطر في القائمتين متساوياً (ومنها الفارغة) فالترتيب سطراً بسطر، فلا يزيح سطر فارغ بالعربية
+    // الأسماء الإنجليزية بعده عن أماكنها؛ وإلا فبترتيب الأماكن العربية غير الفارغة كما كان
+    const arL = val('spots').split('\n').map(s => s.trim()), enL = val('spotsEn').split('\n').map(s => s.trim());
+    const en = (enL.length === arL.length ? enL.filter((_, i) => arL[i]) : enL).slice(0, data.spots.length);
     data.spotsEn = en.some(Boolean) ? en : [];
     busy(form, true);
     const ok = await write(() => dbx.set('offices/' + id, data), t('a.officeSaved'));
@@ -830,9 +839,15 @@ async function submitForm(form){
       console.warn(e); busy(form, false);
       return formErr(form, String(e?.code || '').includes('permission-denied') ? t('a.delDenied') : t('a.delFail'));
     }
-    LS.set('codes', {}); LS.set('seen', []); LS.set('staffSeen', null); LS.set('notify', false); LS.set('mode', 'visitor');
-    S.mode = 'visitor'; S.hist = []; S.route = {name: 'home', params: {}};
-    closeSheet(); renderAll(); toast(t('a.deleted'));
+    // H41: كالخروج من الحساب: مسح ما على الجهاز كله (SHARED_WIPE: الرموز، والتنبيهات، والملف المختصر…، ومسودات الجلسة)
+    // والنسخة المحلية من القاعدة (فيها طلبات الحساب المحذوف وبلاغاته)، ثم إعادة التحميل. كان يمسح 4 مفاتيح فقط
+    // ويبقى الباقي ونسخة القاعدة على الجهاز بعد «حذف حسابي»
+    S.mode = 'visitor'; LS.set('mode', 'visitor'); S.hist = []; S.route = {name: 'home', params: {}};
+    wipeDevice();
+    await wipeLocalDb();
+    wipeDevice();
+    try { sessionStorage.setItem('mfq:deleted', '1'); } catch {}
+    location.reload();
     return;
   }
 
@@ -966,14 +981,6 @@ async function closeOrphanClaim(c){
 }
 // طلب الموظف نفسه على الغرض لا يعدّله هو (فصل المهام)، فننبّهه
 function ownNotice(res){ if (res?.skippedOwn) setTimeout(() => toast(t('a.ownOpen')), 2900); }
-// حذف صور الغرض وتفاصيله السرية (قبل حذف الغرض نفسه). القواعد ترفض حذف مستند غير موجود، لذلك نحذف الموجود فقط.
-async function delItemParts(i){
-  const quiet = e => console.warn(e);
-  if (pubPhoto(i)) await dbx.del('itemPhotos/' + i.id).catch(quiet);
-  if (['clear', 'blur', 'none'].includes(i.photo)) await dbx.del('itemPhotosPrivate/' + i.id).catch(quiet);
-  await dbx.del('itemSecrets/' + i.id).catch(quiet);
-  cachePhoto(i.id, null); cachePhoto('p_' + i.id, null);
-}
 const needLogin = () => { if (S.uid) return false; go('login', {next: S.route}); return true; };
 // القبول ثم بريد اختياري لصاحب الطلب. reason: سبب القبول (تضارب المصالح)
 async function doApprove(c, reason = ''){
@@ -1240,7 +1247,9 @@ const ACT = {
   delReport(el){
     confirmSheet(t('a.delReportQ'), t('a.delReportBody'), t('a.delReportBtn'), async () => {
       const r = S.myReports.find(x => x.id === el.dataset.id) || S.reports.find(x => x.id === el.dataset.id);
-      if (r?.photo) await write(() => dbx.del('reportPhotos/' + r.id));
+      // H41: إن فشل حذف الصورة لا نحذف البلاغ: كانت الصورة تبقى وحدها في القاعدة (قواعدها تقرأ البلاغ، فلا يقرؤها
+      // ولا يحذفها بعده إلا المدير) وتظهر رسالتا خطأ
+      if (r?.photo && !await write(() => dbx.del('reportPhotos/' + r.id))) return;
       const ok = await write(() => dbx.del('reports/' + el.dataset.id), t('a.reportDeleted'));
       // الحذف من صفحة التعديل: نعود إلى «طلباتي»
       if (ok && S.route.name === 'report'){ S.hist = []; go('mine', {}, false); }
@@ -1379,8 +1388,14 @@ const ACT = {
     if (r.room) f.querySelector('[name=room]').value = r.room;
     if (r.lostDate){ const d = f.querySelector('[name=lostDate]'); d.value = r.lostDate; const h = d.parentElement.querySelector('.date-hint'); if (h) h.hidden = true; }
     if (r.desc) f.querySelector('[name=proof]').value = r.desc;
-    // إجابات أسئلة التصنيف من البلاغ
-    for (const [k, v] of Object.entries(r.details || {})){ const x = f.querySelector(`[name="d_${k}"]`); if (x) x.value = v; }
+    // إجابات أسئلة التصنيف من البلاغ. H41: سؤال الاختيار (pick) أزرار راديو: نختار الزر المطابق للقيمة
+    // (كانت القيمة تُكتب في أول زر، «لا أعرف»، فيبقى ظاهراً مختاراً ويُرسل قيمة غير ما يراه المستخدم)
+    for (const [k, v] of Object.entries(r.details || {})){
+      const xs = [...f.querySelectorAll(`[name="d_${k}"]`)]; if (!xs.length) continue;
+      if (xs[0].type !== 'radio'){ xs[0].value = v; continue; }
+      const q = CATS.flatMap(c => claimOf(c.id).details).find(d => d.k === k && d.type === 'pick');
+      const m = xs.find(x => x.value === (q ? detailValue(q, String(v)) : v)); if (m) m.checked = true;
+    }
     f.querySelector('[name=reportId]').value = r.id;
     toast(t('a.filledFromReport'));
   },
@@ -1406,7 +1421,9 @@ const ACT = {
   // سؤال تحقق: اقتراحات جاهزة حسب تصنيف الغرض، ويكتب الموظف سؤاله
   ask(el){
     const c = S.claims.find(x => x.id === el.dataset.id); if (!c) return; const i = item(claimItemId(c)), catId = i?.cat || c.cat || '';
-    const sugs = [...(catId ? t('qa.sug.' + catId).split('|') : []), t('qa.sugAny')].filter(Boolean);
+    // H41: التصنيف القديم (bottles) يُقرأ بالتصنيف الحالي (cat().id = «أخرى»)؛ كان المفتاح qa.sug.bottles غير موجود
+    // فيظهر اسم المفتاح نفسه اقتراحاً في النافذة
+    const sugs = [...(catId ? t('qa.sug.' + cat(catId).id).split('|') : []), t('qa.sugAny')].filter(Boolean);
     openSheet(`<h2>${icon('question')} ${t('qa.askTitle')}</h2>
       <p class="muted">${t('qa.askHint')}</p>
       <form data-form="ask" data-id="${esc(c.id)}" novalidate>
@@ -1639,7 +1656,10 @@ export function bindEvents(){
     const el = e.target.closest('[data-act]'); if (!el || !app.contains(el)) return;
     const fn = ACT[el.dataset.act]; if (!fn) return;
     if (el.tagName === 'A') e.preventDefault();
-    fn(el, e);
+    // H41: إجراء غير متزامن فشل دون أن يعالج خطأه (مثل تصدير CSV دون اتصال): رسالة للمستخدم بدل وعد مرفوض بلا معالجة
+    // (كان الزر لا يفعل شيئاً ولا يظهر سبب). الخطأ البرمجي يبقى في وحدة التحكم (console.warn) للفحص
+    const r = fn(el, e);
+    if (r && typeof r.catch === 'function') r.catch(err => { console.warn(err); toast(errMsg(err, 'err.load')); });
   });
   app.addEventListener('keydown', e => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role=button][data-act]')){ e.preventDefault(); e.target.click(); }
@@ -1660,7 +1680,8 @@ export function bindEvents(){
     e.preventDefault();
     // H19: Enter في خطوة غير الأخيرة = «التالي» لا الإرسال
     if (f.dataset.steps && Number(f.dataset.step || 1) < Number(f.dataset.steps)) return stepNext(f);
-    submitForm(f);
+    // H41: استثناء غير متوقع داخل الإرسال: يعود الزر للعمل وتظهر رسالة في النموذج (كان قد يبقى معطّلاً، ولا رسالة)
+    submitForm(f).catch(err => { console.warn(err); busy(f, false); formErr(f, errMsg(err)); });
   });
   let qTimer;
   app.addEventListener('input', e => {

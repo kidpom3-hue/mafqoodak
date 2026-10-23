@@ -15,7 +15,11 @@
     "demo": "node demo.mjs",
     "audit": "node audit.mjs",
     "lint:rules": "node rules-lint.mjs",
-    "shots": "node shots.mjs"
+    "shots": "node shots.mjs",
+    "xref": "node xref.mjs",
+    "props": "node props.mjs",
+    "crawl": "node crawl.mjs",
+    "writes": "node writes.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",

@@ -202,7 +202,9 @@ export function detailValue(d, v){
   // H33: آخر 4 خانات من الرقم التسلسلي أو IMEI (حروف لاتينية كبيرة وأرقام فقط؛ O وI تبقيان كما كُتبتا)
   if (d.type === 'tail') return v.replace(/[^0-9A-Za-z]/g, '').toUpperCase().slice(-4);
   if (d.type === 'pick') return (d.opts || []).includes(v) ? v : d.alias?.[v.toLowerCase().replace(/[\s\-_.]/g, '')] || '';
-  return v.slice(0, 80);
+  // H41: القص ثم trim (كان trim ثم القص فيبقى فراغ في آخر النص المقصوص)، ولا يُقطع رمز من حرفين (إيموجي) من منتصفه
+  const s = v.slice(0, 80);
+  return (/[\uD800-\uDBFF]$/.test(s) ? s.slice(0, -1) : s).trim();
 }
 // مدة الحفظ الفعلية للغرض: مدة التصنيف إن كانت أقصر من مدة المكتب
 export const keepDaysOf = (catId, office) => { const o = Number(office?.retentionDays) || 90, c = cat(catId).retentionDays; return c && c < o ? c : o; };

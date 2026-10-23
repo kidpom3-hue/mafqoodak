@@ -1,4 +1,4 @@
-// فحص الثغرات H39 (للمطوّر فقط؛ لا يحمّله التطبيق): Playwright مع بديل Firebase التجريبي (tools/a11y-stubs).
+// فحص الثغرات H39 وما بعدها (للمطوّر فقط؛ لا يحمّله التطبيق): Playwright مع بديل Firebase التجريبي (tools/a11y-stubs).
 // كل حالة هنا كانت ثغرة أو عيباً قبل H39 (يفشل الفحص على الإصدار 58):
 //  1) مقارنة الإجابات النصية: حرف واحد أو قائمة كلمات/أعداد طويلة لا تأخذ ✓ (والنقش لا يصير «إثباتاً قوياً» بحرف)
 //  2) «البلاغ السابق للعثور» بوقت محتواه من الخادم (contentAt)، والبلاغ القديم بفارق يوم كامل، والمعدَّل بعد الغرض ليس سابقاً
@@ -16,6 +16,18 @@
 // 13) نتيجة مطابقة ذكية تالفة في بلاغ قديم لا توقف «طلباتي»، والقائمة التي لا غرض متاحاً فيها = «لم يجد…»
 // 14) تحديث عامل الخدمة يحذف نسخ مفقودك القديمة فقط، لا مخازن المواقع الأخرى على النطاق المشترك
 // 15) رسالة واضحة لرفض سياسة كلمة المرور في Firebase وللبريد المسجّل بطريقة دخول أخرى
+// H41 (فحص أعمق للأخطاء البرمجية بالزاحف tools/crawl.mjs؛ يفشل على الإصدار 61):
+// 16) صفحة الغرض للموظف والإدارة لا تبقى على مؤشر التحميل حين تصل وحدة staff (ولو بدأ تحميلها قبلها)
+// 17) «استخدم بلاغي» في طلب الاستلام يختار زر الإجابة الصحيح في أسئلة الاختيار (الشريحة)، والقيمة القديمة بنص حر تُفهم
+// 18) تعديل بلاغ قديم إجابته بنص حر («STC») يُظهرها مختارة، فلا تضيع عند الحفظ
+// 19) أسماء الأماكن بالإنجليزية تبقى بترتيب العربية مع سطر فارغ في القائمتين
+// 20) الأسئلة المقترحة لغرض من تصنيف قديم (قوارير) بلا مفتاح ناقص يظهر نصاً
+// 21) «حذف حسابي» يمسح الجهاز كالخروج (المفاتيح والمسودات والنسخة المحلية من القاعدة) ثم يعيد التحميل برسالة التأكيد
+// 22) حذف البلاغ لا يكمل إن فشل حذف صورته (لا صورة يتيمة لا يقرؤها إلا المدير)
+// 23) إجراء غير متزامن يفشل (تصدير CSV دون اتصال) يُظهر رسالة، واستثناء داخل الإرسال يعيد الزر للعمل برسالة
+// 24) تبديل المكتب أثناء تحميل المُسلَّم أو سجل الطلبات أو البلاغات المغلقة لا يعرض بيانات المكتب السابق في الجديد
+// 25) لا تسرّب في الاشتراكات: التنقل بين الصفحات وتبديل المكتب مراراً لا يزيد المستمعين المفتوحة (حصة القراءة والذاكرة)
+// 26) «حفظ» تعديل البلاغ بلا تغيير لا يكتب وقت المحتوى ولا وقت التعديل (لا يفقد البلاغ صفة «سابق للعثور»)، وتعديل الوصف يكتبهما
 // التشغيل: cd tools && npm run audit   (لمتصفح مثبّت مسبقاً: CHROMIUM_PATH=/path/to/chromium npm run audit)
 import http from 'http';
 import fs from 'fs';
@@ -51,7 +63,8 @@ const fails = []; let checks = 0;
 const expect = (ok, msg) => { checks++; if (!ok) fails.push(msg); };
 
 // fake: خيارات البديل التجريبي (snapErr, cacheOnly, denyField, getErr). بعد «تسجيل الخروج» (test:out في الجلسة) يبقى المستخدم خارجاً
-async function open({user = null, mode = 'visitor', db = base(), fake = {}} = {}){
+// ls (H41): مفاتيح localStorage تُكتب قبل تحميل الصفحة، مثل catMig:<office> (لا يُرحَّل التصنيف القديم أثناء الفحص)
+async function open({user = null, mode = 'visitor', db = base(), fake = {}, ls = {}} = {}){
   const ctx = await browser.newContext({viewport: {width: 390, height: 844}});
   await ctx.route(/firebase-app\.js/, r => r.fulfill({contentType: 'text/javascript', body: 'export const initializeApp = () => ({});'}));
   await ctx.route(/firebase-auth\.js/, r => r.fulfill({contentType: 'text/javascript', body: stub('auth.js')}));
@@ -59,7 +72,8 @@ async function open({user = null, mode = 'visitor', db = base(), fake = {}} = {}
   await ctx.route(/firebase-app-check\.js/, r => r.fulfill({contentType: 'text/javascript', body: 'export const initializeAppCheck = () => ({}); export class ReCaptchaEnterpriseProvider {}'}));
   await ctx.addInitScript(`window.__FAKE = ${JSON.stringify({db, reads: [], writes: [], user, ...fake})};
     if (sessionStorage.getItem('test:out')) window.__FAKE.user = null;
-    localStorage.setItem('mfq:office', '"${O}"'); localStorage.setItem('mfq:lang', '"ar"'); localStorage.setItem('mfq:mode', '"${mode}"');`);
+    localStorage.setItem('mfq:office', '"${O}"'); localStorage.setItem('mfq:lang', '"ar"'); localStorage.setItem('mfq:mode', '"${mode}"');
+    for (const [k, v] of Object.entries(${JSON.stringify(ls)})) localStorage.setItem('mfq:' + k, JSON.stringify(v));`);
   const p = await ctx.newPage(); p.errs = [];
   p.on('pageerror', e => p.errs.push(String(e)));
   await p.goto(`http://localhost:${PORT}/`); await p.waitForTimeout(800);
@@ -368,6 +382,253 @@ for (const linked of [true, false]){
   await ctx.close();
 }
 
+// ---------- 16) H41: صفحة الغرض للموظف والإدارة لا تبقى على مؤشر التحميل ----------
+{
+  const d = {...base(), 'items/h1': item('h1'), 'itemSecrets/h1': secret()};
+  for (const pre of [false, true]){
+    const {p, ctx} = await open({user: {uid: 'owner', displayName: 'Owner', email: 'o@example.com'}, mode: 'admin', db: d});
+    // pre: تحميل staff بدأ من زر (load) قبل أن تطلبه الصفحة؛ كان need() لا يعلّق إعادة الرسم حينها
+    await p.evaluate(async ([pre]) => { if (pre) (await import('./js/lazy.js')).load('staff'); (await import('./js/ui.js')).go('item', {id: 'h1'}); }, [pre]);
+    await p.waitForTimeout(1500);
+    const r = await p.evaluate(() => ({loading: !!document.querySelector('#main > .loading'), edit: !!document.querySelector('#main [data-act=editItem]')}));
+    expect(!r.loading && r.edit, `16: صفحة الغرض للإدارة بقيت على مؤشر التحميل${pre ? ' (والتحميل بدأ قبلها)' : ''} ` + JSON.stringify(r));
+    expect(!p.errs.length, '16: ' + p.errs.join(' | '));
+    await ctx.close();
+  }
+}
+
+// ---------- 17) H41: «استخدم بلاغي» يختار زر الإجابة الصحيح في أسئلة الاختيار ----------
+{
+  for (const [sim, want] of [['stc', 'stc'], ['اس تي سي', 'stc'], ['Mobily', 'mobily']]){
+    const d = {...base(), 'items/p1': item('p1', {cat: 'phones', sub: 'جوال', title: 'جوال'}), 'itemSecrets/p1': secret(),
+      'reports/rp': {officeId: O, uid: 'zed', cat: 'phones', sub: 'جوال', title: 'جوالي', status: 'open', lostDate: ds(2), createdAt: now - day, details: {sim, model: 'iPhone 13'}}};
+    const {p, ctx} = await open({user: zed, db: d});
+    await go(p, 'claim', {id: 'p1'});
+    await click(p, '[data-act=useReport]', 400);
+    const r = await p.evaluate(() => { const f = document.querySelector('form[data-form=claim]'); const rs = [...f.querySelectorAll('input[name=d_sim]')];
+      return {checked: rs.find(x => x.checked)?.value ?? null, unknown: rs[0]?.value, sent: new FormData(f).get('d_sim'), model: f.querySelector('[name=d_model]')?.value}; });
+    expect(r.checked === want && r.sent === want, `17: الشريحة «${sim}» من البلاغ: المختار ${r.checked} والمُرسل ${r.sent} (المتوقع ${want})`);
+    expect(r.unknown === '', `17: زر «لا أعرف» تغيّرت قيمته إلى «${r.unknown}»`);
+    expect(r.model === 'iPhone 13', '17: إجابة نصية من البلاغ لم تُعبّأ');
+    expect(!p.errs.length, '17: ' + p.errs.join(' | '));
+    await ctx.close();
+  }
+}
+
+// ---------- 18) H41: تعديل بلاغ قديم إجابته بنص حر ----------
+{
+  const d = {...base(), 'reports/rq': {officeId: O, uid: 'zed', cat: 'phones', sub: 'جوال', title: 'جوالي', status: 'open', lostDate: ds(2), createdAt: now - day, details: {sim: 'STC'}}};
+  const {p, ctx} = await open({user: zed, db: d});
+  await go(p, 'report', {id: 'rq'});
+  const r = await p.evaluate(() => { const f = document.querySelector('form[data-form=report]'); return f && new FormData(f).get('d_sim'); });
+  expect(r === 'stc', `18: تعديل بلاغ إجابته «STC»: المختار «${r}» (تضيع الإجابة عند الحفظ)`);
+  expect(!p.errs.length, '18: ' + p.errs.join(' | '));
+  await ctx.close();
+}
+
+// ---------- 19) H41: أماكن المكتب بالإنجليزية بترتيب العربية مع سطر فارغ ----------
+{
+  const {p, ctx} = await open({user: {uid: 'owner', displayName: 'Owner', email: 'o@example.com'}, mode: 'admin'});
+  await go(p, 'officeForm', {id: O});
+  await fill(p, '#o-spots', 'المكتبة\n\nالكافتيريا\nالمعامل');
+  await fill(p, '#o-spotsEn', 'Library\n\nCafeteria\nLabs');
+  await p.evaluate(() => document.querySelector('form[data-form=office] button[type=submit]')?.click()); await p.waitForTimeout(900);
+  const o = (await db(p))['offices/tc-ahsa'];
+  expect(JSON.stringify(o?.spots) === JSON.stringify(['المكتبة', 'الكافتيريا', 'المعامل']) && JSON.stringify(o?.spotsEn) === JSON.stringify(['Library', 'Cafeteria', 'Labs']),
+    '19: الأماكن بالإنجليزية لا تطابق ترتيب العربية: ' + JSON.stringify([o?.spots, o?.spotsEn]));
+  expect(!p.errs.length, '19: ' + p.errs.join(' | '));
+  await ctx.close();
+}
+
+// ---------- 20) H41: الأسئلة المقترحة لغرض من تصنيف قديم (قوارير) ----------
+{
+  const d = {...base(), 'items/b1': item('b1', {cat: 'bottles', sub: 'قارورة ماء', title: 'قارورة ماء'}), 'itemSecrets/b1': secret(),
+    'claims/b1_zed': {itemId: 'b1', officeId: O, uid: 'zed', no: 'REQ-B1AA', proof: 'قارورة زرقاء عليها ملصق', claimantName: 'زيد علي', idLast4: '1234', status: 'pending', createdAt: now - 3600e3}};
+  // الترحيل إلى «أخرى» لم يتم بعد على هذا الجهاز (أو فشل): الغرض ما زال بالتصنيف القديم
+  const {p, ctx} = await open({user: staff, mode: 'staff', db: d, ls: {'catMig:tc-ahsa': true}});
+  const warns = []; p.on('console', m => { if (m.text().includes('[i18n] missing')) warns.push(m.text()); });
+  await p.evaluate(() => { const b = document.createElement('button'); b.dataset.act = 'ask'; b.dataset.id = 'b1_zed'; document.querySelector('#main').append(b); b.click(); });
+  await p.waitForTimeout(400);
+  const chips = await p.evaluate(() => [...document.querySelectorAll('#sheet [data-act=qaSuggest]')].map(b => b.dataset.v));
+  expect(chips.length && !chips.some(c => c.startsWith('qa.sug')), '20: اقتراح سؤال يظهر اسم مفتاح ناقص: ' + JSON.stringify(chips));
+  expect(!warns.length, '20: ' + warns.join(' | '));
+  await ctx.close();
+}
+
+// ---------- 21) H41: «حذف حسابي» يمسح الجهاز كالخروج ----------
+{
+  const g = {...zed, providerData: [{providerId: 'google.com'}]};
+  const d = {...base(), 'users/zed/private/codes': {codes: {}}};
+  const {p, ctx} = await open({user: g, db: d});
+  const KEYS = ['snoozed', 'suggHold', 'suggAlert', 'rateAt', 'mineTab', 'codes', 'seen', 'prof', 'notify', 'staffSeen'];
+  await p.evaluate(keys => { for (const k of keys) localStorage.setItem('mfq:' + k, JSON.stringify(k === 'rateAt' ? Date.now() : ['x']));
+    localStorage.setItem('mfq:theme', '"dark"'); sessionStorage.setItem('mfq:codes', '{"x":"K7M3TX9P"}'); sessionStorage.setItem('mfq:draft:report', '{}');
+    localStorage.removeItem('test:cleared'); }, KEYS);
+  await click(p, '[data-act=account]', 400);
+  await click(p, '#sheet [data-act=deleteAccount]', 400);
+  // بعد إعادة التحميل يبقى المستخدم خارجاً (حذف الحساب)، فلا يُكتب ملفه المختصر (prof) من جديد
+  await p.evaluate(() => { sessionStorage.setItem('test:out', '1'); document.querySelector('#sheet form[data-form=delAccount] button[type=submit]')?.click(); });
+  await p.waitForTimeout(2600);
+  const r = await p.evaluate(keys => ({left: keys.filter(k => localStorage.getItem('mfq:' + k) !== null), theme: localStorage.getItem('mfq:theme'),
+    ss: ['mfq:codes', 'mfq:draft:report'].filter(k => sessionStorage.getItem(k) !== null), cleared: localStorage.getItem('test:cleared'),
+    toast: document.querySelector('#toast')?.textContent || '', users: !!window.__FAKE.db['users/zed']}), KEYS);
+  const want = await p.evaluate(async () => (await import('./js/i18n.js')).t('a.deleted'));
+  expect(!r.left.length, '21: بقي على الجهاز بعد «حذف حسابي»: ' + r.left.join(', '));
+  expect(!r.ss.length, '21: بقي في الجلسة بعد «حذف حسابي»: ' + r.ss.join(', '));
+  expect(r.cleared === '1', '21: النسخة المحلية من القاعدة لم تُمسح بعد «حذف حسابي»');
+  expect(r.theme === '"dark"', '21: «حذف حسابي» مسح المظهر (يخص الجهاز لا الحساب)');
+  expect(r.toast.includes(want), '21: لا رسالة «تم حذف الحساب» بعد إعادة التحميل: ' + JSON.stringify(r.toast));
+  expect(!p.errs.length, '21: ' + p.errs.join(' | '));
+  await ctx.close();
+}
+
+// ---------- 22) H41: حذف البلاغ لا يكمل إن فشل حذف صورته ----------
+{
+  const d = {...base(), 'reports/rz': {officeId: O, uid: 'zed', cat: 'bags', title: 'حقيبتي', status: 'open', lostDate: ds(2), createdAt: now - day, photo: true}, 'reportPhotos/rz': {data: IMG}};
+  const {p, ctx} = await open({user: zed, db: d, fake: {deny: '^reportPhotos/'}});
+  await go(p, 'mine');
+  await p.evaluate(() => { const b = document.createElement('button'); b.dataset.act = 'delReport'; b.dataset.id = 'rz'; document.querySelector('#main').append(b); b.click(); });
+  await p.waitForTimeout(400);
+  await click(p, '#sheet [data-act=confirmYes]', 900);
+  const left = await db(p);
+  expect(!!left['reports/rz'] && !!left['reportPhotos/rz'], '22: حُذف البلاغ وبقيت صورته وحدها (أو حُذفت الصورة رغم الرفض) ' + JSON.stringify([!!left['reports/rz'], !!left['reportPhotos/rz']]));
+  expect(!p.errs.length, '22: ' + p.errs.join(' | '));
+  await ctx.close();
+}
+
+// ---------- 23) H41: فشل إجراء غير متزامن أو استثناء داخل الإرسال ----------
+{
+  // أ) وحدة الإحصاءات لا تُحمَّل (انقطاع قبل حفظها في الجهاز): «تصدير CSV» يرمي داخل إجراء غير متزامن
+  const {p, ctx} = await open();
+  const rej = []; await p.exposeFunction('__rej', s => rej.push(s));
+  await p.evaluate(() => addEventListener('unhandledrejection', e => window.__rej(String(e.reason?.message || e.reason))));
+  await p.route(/\/js\/stats\.js/, r => r.abort());
+  const pre = await p.evaluate(async () => !!(await import('./js/lazy.js')).mod('stats'));
+  await p.evaluate(() => { const b = document.createElement('button'); b.dataset.act = 'exportCsv'; b.dataset.id = 'tc-ahsa'; document.querySelector('#main').append(b); b.click(); });
+  await p.waitForTimeout(700);
+  const t1 = await p.evaluate(async () => { const t = (await import('./js/i18n.js')).t; return {toast: document.querySelector('#toast')?.textContent || '', want: [t('err.load'), t('err.offlineNow')]}; });
+  expect(!pre, '23: وحدة الإحصاءات محمّلة قبل الفحص (الفحص لا يختبر شيئاً)');
+  expect(!rej.length, '23: فشل إجراء غير متزامن وعد مرفوض بلا معالجة: ' + rej.join(' | '));
+  expect(t1.want.some(w => t1.toast.includes(w)), '23: فشل إجراء غير متزامن بلا رسالة للمستخدم: ' + JSON.stringify(t1.toast));
+  await ctx.close();
+}
+{
+  // ب) تعذّر تحميل أغراض المكتب للتصدير: رسالة خطأ لا «لا توجد أغراض للتصدير»، والضغط التالي يعيد المحاولة
+  const d = {...base(), 'items/h1': item('h1'), 'itemSecrets/h1': secret()};
+  const {p, ctx} = await open({user: staff, mode: 'staff', db: d});
+  await p.evaluate(async () => { (await import('./js/state.js')).S.stats = {}; await (await import('./js/lazy.js')).load('stats'); window.__FAKE.listErr = '^items$'; });
+  const csv = () => p.evaluate(() => { const b = document.createElement('button'); b.dataset.act = 'exportCsv'; b.dataset.id = 'tc-ahsa'; document.querySelector('#main').append(b); b.click(); }).then(() => p.waitForTimeout(800));
+  await csv();
+  const r1 = await p.evaluate(async () => { const t = (await import('./js/i18n.js')).t; return {toast: document.querySelector('#toast')?.textContent || '', load: t('err.load'), empty: t('sx.csvEmpty')}; });
+  expect(r1.toast.includes(r1.load) && !r1.toast.includes(r1.empty), '23: تعذّر تحميل الأغراض فظهر للتصدير: ' + JSON.stringify(r1.toast));
+  await p.evaluate(() => { window.__FAKE.listErr = ''; document.querySelector('#toast').textContent = ''; });
+  const dl = p.waitForEvent('download', {timeout: 3000}).catch(() => null);
+  await csv();
+  expect(!!(await dl), '23: بعد عودة الاتصال لا يعيد «تصدير CSV» المحاولة (بقي الفشل محفوظاً)');
+  expect(!p.errs.length, '23: ' + p.errs.join(' | '));
+  await ctx.close();
+}
+{
+  // د) «تصدير CSV» أثناء تحميل الإحصاءات (مثل تحديثها الآلي عند فتح اللوحة) ينتظره، لا «لا توجد أغراض للتصدير»
+  const d = {...base(), 'items/h1': item('h1'), 'itemSecrets/h1': secret()};
+  const {p, ctx} = await open({user: staff, mode: 'staff', db: d});
+  await p.evaluate(async () => { (await import('./js/state.js')).S.stats = {}; const m = await (await import('./js/lazy.js')).load('stats'); window.__FAKE.slow = 400; m.loadStats('tc-ahsa'); });
+  const dl = p.waitForEvent('download', {timeout: 4000}).catch(() => null);
+  await p.evaluate(() => { const b = document.createElement('button'); b.dataset.act = 'exportCsv'; b.dataset.id = 'tc-ahsa'; document.querySelector('#main').append(b); b.click(); });
+  const got = await dl;
+  const toast = await p.evaluate(() => document.querySelector('#toast')?.textContent || '');
+  expect(!!got, '23: «تصدير CSV» أثناء تحميل الإحصاءات لم ينتظره: ' + JSON.stringify(toast));
+  await ctx.close();
+}
+{
+  // ج) استثناء غير متوقع داخل الإرسال (هنا: FormData): الزر يعود للعمل ورسالة في النموذج
+  const {p, ctx} = await open({user: zed});
+  const rej = []; await p.exposeFunction('__rej', s => rej.push(s));
+  await p.evaluate(() => addEventListener('unhandledrejection', e => window.__rej(String(e.reason?.message || e.reason))));
+  await go(p, 'report');
+  const r = await p.evaluate(async () => {
+    const f = document.querySelector('form[data-form=report]'); const FD = window.FormData;
+    (await import('./js/actions.js')).showStep(f, 3);
+    window.FormData = class { constructor(){ throw new TypeError('boom'); } };
+    f.querySelector('button[type=submit]').click(); await new Promise(res => setTimeout(res, 300));
+    window.FormData = FD;
+    const b = f.querySelector('button[type=submit]'), e = f.querySelector('.form-err');
+    return {disabled: b.disabled, err: e && !e.hidden ? e.textContent : '', want: (await import('./js/i18n.js')).t('err.save')};
+  });
+  expect(!rej.length, '23: استثناء داخل الإرسال وعد مرفوض بلا معالجة: ' + rej.join(' | '));
+  expect(!r.disabled && r.err === r.want, '23: بعد استثناء داخل الإرسال: الزر معطّل أو لا رسالة ' + JSON.stringify(r));
+  await ctx.close();
+}
+
+// ---------- 24) H41: تبديل المكتب أثناء تحميل عند الطلب ----------
+{
+  const d = {...base(), 'offices/apt-x': {name: 'مطار', short: 'المطار', type: 'airport', city: 'الدمام', retentionDays: 60, pickupDays: 5, spots: ['الصالة'], active: true, createdAt: 2, code: 'APX'},
+    'items/r1': item('r1', {status: 'returned', returnedAt: now - day}),
+    'claims/r1_zed': {itemId: 'r1', officeId: O, uid: 'zed', no: 'REQ-R1AA', proof: 'x', status: 'done', doneAt: now - day, createdAt: now - 2 * day},
+    'reports/rc': {officeId: O, uid: 'zed', cat: 'bags', title: 'حقيبتي', status: 'closed', closedReason: 'self', closedAt: now - day, createdAt: now - 2 * day}};
+  const {p, ctx} = await open({user: {uid: 'owner', displayName: 'Owner', email: 'o@example.com'}, mode: 'admin', db: d});
+  const r = await p.evaluate(async () => {
+    const st = await import('./js/state.js');
+    st.setOffice('tc-ahsa', true); await new Promise(res => setTimeout(res, 300));
+    window.__FAKE.slow = 400;
+    st.loadExtraItems('returned'); st.loadClaimHistory(); st.loadClosedReports();
+    await new Promise(res => setTimeout(res, 50));
+    st.setOffice('apt-x', true);
+    await new Promise(res => setTimeout(res, 1500));
+    window.__FAKE.slow = 0;
+    return {office: st.S.officeId, extra: (st.S.extraItems.returned || []).map(i => i.id), hist: (st.S.claimHist || []).map(c => c.id), closed: (st.S.closedReps || []).map(x => x.id)};
+  });
+  expect(r.office === 'apt-x', '24: لم يتبدل المكتب ' + r.office);
+  expect(!r.extra.length && !r.hist.length && !r.closed.length, '24: بيانات المكتب السابق ظهرت في الجديد بعد تبديله أثناء التحميل ' + JSON.stringify(r));
+  expect(!p.errs.length, '24: ' + p.errs.join(' | '));
+  await ctx.close();
+}
+
+// ---------- 25) H41: لا تسرّب في الاشتراكات ----------
+{
+  const d = {...base(), 'offices/apt-x': {name: 'مطار', short: 'المطار', type: 'airport', city: 'الدمام', retentionDays: 60, pickupDays: 5, spots: ['الصالة'], active: true, createdAt: 2, code: 'APX'},
+    'items/h1': item('h1'), 'itemSecrets/h1': secret(), 'items/h2': item('h2', {status: 'returned', returnedAt: now - day}), 'itemSecrets/h2': secret(),
+    'claims/h1_zed': {itemId: 'h1', officeId: O, uid: 'zed', no: 'REQ-H1AA', proof: 'x', status: 'pending', createdAt: now - 3600e3},
+    'reports/rp': {officeId: O, uid: 'zed', cat: 'bags', title: 'حقيبتي', status: 'open', lostDate: ds(2), createdAt: now - day}};
+  for (const [who, mode, steps] of [[zed, 'visitor', [['browse'], ['item', {id: 'h1'}], ['mine'], ['regs'], ['report', {id: 'rp'}], ['home']]],
+    [staff, 'staff', [['staff', {tab: 'items'}], ['item', {id: 'h1'}], ['item', {id: 'h2'}], ['staff', {tab: 'claims'}], ['staff', {tab: 'reports'}], ['stats', {office: O}]]],
+    [{uid: 'owner', displayName: 'Owner', email: 'o@example.com'}, 'admin', 'office']]){
+    const {p, ctx} = await open({user: who, mode, db: d});
+    const loop = async () => {
+      if (steps === 'office'){ for (const o of ['apt-x', 'tc-ahsa']){ await p.evaluate(async o => (await import('./js/state.js')).setOffice(o, true), o); await p.waitForTimeout(300); } return; }
+      for (const [r, pr] of steps){ await go(p, r, pr || {}); }
+    };
+    await loop(); await go(p, 'home'); const a = await p.evaluate(() => window.__listeners().length);
+    for (let k = 0; k < 3; k++) await loop();
+    await go(p, 'home'); const b = await p.evaluate(() => window.__listeners());
+    expect(b.length <= a, `25: الاشتراكات المفتوحة زادت بعد تكرار التنقل (${who.uid}/${mode}): ${a} → ${b.length}`);
+    const dup = Object.entries(b.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {})).filter(([, n]) => n > 1);
+    expect(!dup.length, `25: اشتراك مكرر (${who.uid}/${mode}): ` + JSON.stringify(dup));
+    expect(!p.errs.length, '25: ' + p.errs.join(' | '));
+    await ctx.close();
+  }
+}
+
+// ---------- 26) H41: تعديل البلاغ بلا تغيير لا يجدّد وقت المحتوى ----------
+{
+  const C0 = now - 5 * day;
+  const d = {...base(), 'reports/rq': {officeId: O, uid: 'zed', cat: 'bags', sub: 'حقيبة ظهر', color: 'black', title: 'حقيبتي السوداء', desc: 'عليها ميدالية', spot: 'المكتبة', bldg: '', room: '',
+    status: 'open', lostDate: ds(6), createdAt: C0, contentAt: C0}};
+  const {p, ctx} = await open({user: zed, db: d});
+  await go(p, 'report', {id: 'rq'});
+  await submitStep(p, 'form[data-form=report]');
+  const a = (await db(p))['reports/rq'];
+  const w1 = await p.evaluate(() => window.__FAKE.writes.filter(w => w[1] === 'reports/rq').length);
+  expect(a.contentAt === C0 && !a.editedAt && !w1, '26: «حفظ» بلا تغيير جدّد وقت المحتوى أو التعديل ' + JSON.stringify({contentAt: a.contentAt === C0 ? 'كما هو' : a.contentAt, editedAt: a.editedAt, writes: w1}));
+  await go(p, 'report', {id: 'rq'});
+  await fill(p, '#r-desc', 'عليها ميدالية زرقاء');
+  await submitStep(p, 'form[data-form=report]');
+  const b = (await db(p))['reports/rq'];
+  expect(b.desc === 'عليها ميدالية زرقاء' && b.contentAt !== C0 && b.editedAt, '26: تعديل الوصف لم يكتب وقت المحتوى والتعديل ' + JSON.stringify({desc: b.desc, contentAt: b.contentAt, editedAt: b.editedAt}));
+  expect(!p.errs.length, '26: ' + p.errs.join(' | '));
+  await ctx.close();
+}
+
 await browser.close(); server.close();
 if (fails.length){ console.error(`✘ ${fails.length} من ${checks}:\n- ` + fails.join('\n- ')); process.exit(1); }
-console.log(`✔ فحص الثغرات H39 وH40 سليم: ${checks} فحصاً (المقارنة النصية، والبلاغ السابق للعثور بوقت الخادم، والصورة المخفية، وتعديل الغرض، ورسالة الانقطاع، والطلب المجمّع، والنسخ، والخروج، وتوزيع الرموز، والقواعد v23؛ H40: سجل التسليم بلا بيانات شخصية، ونتيجة المطابقة التالفة، ومخازن عامل الخدمة، ورسائل الدخول).`);
+console.log(`✔ فحص الثغرات H39 وH40 وH41 سليم: ${checks} فحصاً (المقارنة النصية، والبلاغ السابق للعثور بوقت الخادم، والصورة المخفية، وتعديل الغرض، ورسالة الانقطاع، والطلب المجمّع، والنسخ، والخروج، وتوزيع الرموز، والقواعد v23؛ H40: سجل التسليم بلا بيانات شخصية، ونتيجة المطابقة التالفة، ومخازن عامل الخدمة، ورسائل الدخول؛ H41: صفحة الغرض للإدارة، وإجابات الاختيار من البلاغ وفي التعديل، وأماكن المكتب بالإنجليزية، والأسئلة المقترحة، وحذف الحساب، وحذف البلاغ، وفشل الإجراءات، وتبديل المكتب أثناء التحميل، وتسرّب الاشتراكات، وتعديل البلاغ بلا تغيير).`);

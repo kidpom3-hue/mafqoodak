@@ -614,10 +614,15 @@ export async function loadAdminCounts(force = false){
   finally { adminLoading = false; changed(); }
 }
 // للموظف: جلب الأغراض غير النشطة عند اختيار الفلتر فقط (مرة واحدة لكل اختيار)
+// H41: كل قراءة عند الطلب تُحفظ فقط إن بقي المكتب نفسه بعد وصولها (تبديل المكتب أثناء التحميل كان يعرض أغراض المكتب
+// السابق أو طلباته أو بلاغاته في المكتب الجديد، فيتصرف الموظف فيها ظاناً أنها من مكتبه الحالي)
 export async function loadExtraItems(status){
   const id = S.officeId; const list = status === 'all' ? ['returned', 'archived', 'disposed'] : [status];
   for (const st of list){
-    try { S.extraItems[st] = await dbx.list('items', [['officeId', '==', id], ['status', '==', st]]); } catch (e){ errH('extra items')(e); S.extraItems[st] = []; }
+    let l = [];
+    try { l = await dbx.list('items', [['officeId', '==', id], ['status', '==', st]]); } catch (e){ errH('extra items')(e); }
+    if (S.officeId !== id) return;
+    S.extraItems[st] = l;
   }
   watchSecrets(); changed();
 }
@@ -657,14 +662,16 @@ export async function loadAudit(officeId, filter, force = false){
 // للموظف: سجل الطلبات المنتهية عند الطلب
 // البلاغات المغلقة لمكتب (للموظف، عند فتح «مغلقة» في تبويب البلاغات): قراءة واحدة عند الطلب، لا اشتراك
 export async function loadClosedReports(){
-  try { S.closedReps = await dbx.list('reports', [['officeId', '==', S.officeId], ['status', '==', 'closed']]); }
-  catch (e){ errH('closed reports')(e); S.closedReps = []; }
-  changed();
+  const id = S.officeId; let l = [];
+  try { l = await dbx.list('reports', [['officeId', '==', id], ['status', '==', 'closed']]); }
+  catch (e){ errH('closed reports')(e); }
+  if (S.officeId === id){ S.closedReps = l; changed(); }
 }
 export async function loadClaimHistory(){
-  try { S.claimHist = await dbx.list('claims', [['officeId', '==', S.officeId], ['status', 'in', ['done', 'rejected', 'expired', 'cancelled']]]); }
-  catch (e){ errH('claim history')(e); S.claimHist = []; }
-  changed();
+  const id = S.officeId; let l = [];
+  try { l = await dbx.list('claims', [['officeId', '==', id], ['status', 'in', ['done', 'rejected', 'expired', 'cancelled']]]); }
+  catch (e){ errH('claim history')(e); }
+  if (S.officeId === id){ S.claimHist = l; changed(); }
 }
 
 /* H19: وضع المكتب الواحد (SETTINGS.singleOffice): رقم المكتب إن كان موجوداً ونشطاً، وإلا '' (السلوك القديم).
@@ -770,17 +777,18 @@ export async function createLimited(path, data, extra){
   }
   LS.set('rateAt', Date.now());
 }
+// نص الخطأ للمستخدم: رسالة جاهزة من workflow.js (msg)، وإلا حسب رمز Firestore. H41: يستعمله أيضاً معالج الأزرار والنماذج
+// في actions.js لأي خطأ لم يعالجه إجراؤه
+export function errMsg(e, fallback = 'err.save'){
+  if (e?.msg) return e.msg;
+  const c = String(e?.code || '');
+  return t(c.includes('permission-denied') ? 'err.denied' : c.includes('resource-exhausted') ? 'err.quota'
+    : c.includes('unavailable') ? 'err.offline' : c.includes('invalid-argument') ? 'err.invalid' : offlineErr() ? 'err.offlineNow' : fallback);
+}
 export async function write(fn, okMsg){
   if (offlineErr()){ toast(t('err.offlineNow')); return false; }
   try { await fn(); if (okMsg) toast(okMsg); return true; }
-  catch (e){
-    console.warn(e);
-    if (e?.msg){ toast(e.msg); return false; }   // رسالة عربية جاهزة من workflow.js
-    const c = e?.code || '';
-    toast(t(c.includes('permission-denied') ? 'err.denied' : c.includes('resource-exhausted') ? 'err.quota'
-      : c.includes('unavailable') ? 'err.offline' : c.includes('invalid-argument') ? 'err.invalid' : 'err.save'));
-    return false;
-  }
+  catch (e){ console.warn(e); toast(errMsg(e)); return false; }
 }
 export function authErr(e){
   const c = e?.code || '';

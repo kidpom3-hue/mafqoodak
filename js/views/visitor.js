@@ -1,15 +1,15 @@
 // صفحات الزائر: اختيار المكان، التصفح، تفاصيل الغرض، طلب الاستلام، البلاغ، طلباتي، المكتب
 import { icon, LOGO, brandOf, CATS, cat, normCat, catName, isGrouped, isHiddenCat, colorName, otype, otypeName, oName, oPlace, oHours, oCity, subLabel, statusLabel, ITEM_STATUS, CLAIM_STATUS, REPORT_STATUS, FOUND_STATUS, claimOf, keepDaysOf, claimHasRequired, regCatOk, canDelegate } from '../constants.js';
-import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, relDay, relTime, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
+import { $, $$, esc, fmtPickup, today, dayNum, daysAgo, fmtDate, daysWord, pill, colorDot, tokens, textScore, spotText, showTitle, isoDay, LS, disposalLabel, when } from '../utils.js';
 import { t, tp, tAr, noteText } from '../i18n.js';
-import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, alertKeys, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode, iHandedIn, ensureRegs, regAt } from '../state.js';
-import { backBtn, relT, relDayT, thumbHtml, miniItem, catPicker, subsPicker, catFields, nameField, NAME_MAX, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack, telLink, reviewDaysOf, pickupDaysOf, delegateOf, updOf } from './common.js';
+import { S, curOffice, item, full, myReports, myClaims, myFound, myCode, suggestFor, unseenCount, ensureItem, itemLoading, officeName, ACTIVE, awaitingAnswer, isStale, claimNo, claimEditable, pickOf, rejectedOf, unseenKeys, keyTab, keyCard, singleMode, iHandedIn, ensureRegs, regAt } from '../state.js';
+import { backBtn, relT, relDayT, miniItem, catPicker, subsPicker, catFields, nameField, NAME_MAX, photoField, spotOptions, spotExtra, resetForm, loginPrompt, verifyPrompt, photoImg, blurBadge, isBlur, staffView, whenLine, claimTimeline, detailReq, mcard, tabNum, CARD_OPEN, ENDED_OPEN, qaBox, dateOf, claimEmailOk, claimDomainsOf, FORM, brandLogo, collegeLinks, oKicker, emptyBox, navBtn, stepper, step, stepNav, stepBack, telLink, reviewDaysOf, pickupDaysOf, delegateOf, updOf } from './common.js';
 export { CARD_OPEN, ENDED_OPEN };
 import { need, loadingHtml } from '../lazy.js';   // H8: دوال الموظف في صفحة الغرض تُحمَّل عند الحاجة
 import { aiReady } from '../firebase.js';
 import { hydrate, go } from '../ui.js';
 import { canDeleteItem } from '../workflow.js';   // v9: زر الحذف حسب صلاحيته (القواعد تفرضها أيضاً)
-import { msgOf } from '../notify.js';
+
 import { installMode, installSnoozed } from '../install.js';   // H27: بطاقة «تثبيت المنصة» في «طلباتي»
 
 /* ---------- visitor: choose place ---------- */
